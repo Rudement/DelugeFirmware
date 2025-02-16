@@ -124,6 +124,10 @@ void UITimerManager::routine() {
 					automationView.blinkSelectedNoteRow();
 					break;
 
+				case TimerName::SELECTED_CLIP_PULSE:
+					sessionView.gridPulseSelectedClip();
+					break;
+
 				case TimerName::MATRIX_DRIVER:
 					PadLEDs::timerRoutine();
 					break;
