@@ -153,8 +153,28 @@ inline void heatBuffer(q31_t* startSample, q31_t* endSample, q31_t level) {
 	do {
 		q31_t c = *currentSample;
 
-		// c * 2^octaves * (1 + frac). The 2* undoes the halving in multiply_32x32_rshift32.
-		q31_t x = lshiftAndSaturateUnknown(add_saturate(c, 2 * multiply_32x32_rshift32(c, frac)), octaves);
+		// c * (1 + frac), already saturated into q31 by add_saturate.
+		// The 2* undoes the halving in multiply_32x32_rshift32.
+		const q31_t driven = add_saturate(c, 2 * multiply_32x32_rshift32(c, frac));
+
+		// THE octaves == 0 GUARD IS LOAD-BEARING. DO NOT REMOVE IT.
+		//
+		// lshiftAndSaturateUnknown(val, 0) is documented in functions.h as forbidden —
+		// "lshift must be greater than 0! Not 0" — and it fails silently rather than loudly.
+		// It calls signed_saturate_operand_unknown(val, 32 - 0), whose switch only covers 31
+		// down to 13 and whose default is signed_saturate<12>. So a shift of zero clamps the
+		// sample to TWELVE BITS and shifts by nothing: about 120 dB of attenuation, i.e.
+		// silence, not merely a level drop.
+		//
+		// `octaves` is zero across the bottom of the knob (level < 2^26, so k < 6.25 of 50),
+		// which is precisely the range that was reported as muting on hardware — twice, at two
+		// different widths, because earlier param laws put the octaves==0 boundary in a
+		// different place. It was misdiagnosed as insufficient drive and then as makeup gain
+		// before the real cause was found. See HANDOFF.md.
+		//
+		// At octaves == 0 no shift is wanted anyway, and `driven` is already saturated, so the
+		// correct behaviour is simply to pass it through.
+		const q31_t x = (octaves > 0) ? lshiftAndSaturateUnknown(driven, octaves) : driven;
 		q31_t y = softClipCubic(x);
 
 		*currentSample = lshiftAndSaturateUnknown(multiply_32x32_rshift32(y, makeup), 1);
