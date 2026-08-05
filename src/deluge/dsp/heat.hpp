@@ -71,17 +71,30 @@ inline q31_t softClipCubic(q31_t x) {
 	    multiply_32x32_rshift32(THREE_QUARTERS_Q31, x) - multiply_32x32_rshift32(ONE_QUARTER_Q31, x3), 2);
 }
 
-/// Makeup gain. Chosen so that at level 0 the small-signal gain of the whole stage is
-/// exactly 1.0 (turning Heat up off its stop must not step the level), while a clipped
-/// signal falls only ~1.7 dB across the entire sweep — so Heat reads as distortion
-/// rather than as a volume control. Sweeps 0.667 down to 0.542.
+/// Makeup gain. Anchors the stage's PEAK response at unity: sweeps 1.0 down to 0.75 as
+/// `level` runs 0..2^29.
 ///
-/// The shift is tied to `level`'s real range, exactly as in heatBuffer(): level tops out just
-/// under 2^29, not 2^31, so >>1 is what produces the intended 0.667..0.542 sweep. It was >>3,
-/// which only reached 0.635 and left the loud end under-compensated.
+/// WHY NOT ANCHOR SMALL-SIGNAL GAIN. The obvious choice is makeup = 2/3, which cancels the
+/// cubic's slope of 1.5 at the origin and makes quiet signals pass at exactly unity. That was
+/// the original design, and it is wrong for this call site. softClipCubic saturates at y(±1)
+/// = ±1, so any sample loud enough to reach the knee leaves the curve at the ceiling and is
+/// then still multiplied by 0.667 — a flat 3.5 dB drop. Heat runs on oscBuffer BEFORE
+/// overallOscAmplitude is applied (see voice.cpp), where the signal is typically hot, so in
+/// practice almost everything hit that drop. With drive below about 2x there are not yet
+/// enough harmonics to mask it, so knob 1-6 audibly ducked the level instead of dirtying it.
+/// Reported from hardware 2026-08-05.
+///
+/// A saturating curve cannot be transparent at both ends — preserving peaks costs you
+/// small-signal gain and vice versa. Peaks win here because the call site is hot.
+///
+/// CONSEQUENCE, so it is not misdiagnosed later: quiet material now gets up to +3.5 dB as Heat
+/// comes off its stop, because small signals see the cubic's full 1.5 slope. That step is
+/// expected. If it ever needs splitting, start the constant near 0.8 * ONE_Q31 instead of
+/// ONE_Q31 — that trades ~1.9 dB of peak drop for ~1.6 dB of small-signal lift.
 inline q31_t heatMakeup(q31_t level) {
-	constexpr q31_t TWO_THIRDS_Q31 = 0.66667 * ONE_Q31;
-	return TWO_THIRDS_Q31 - (level >> 1);
+	// level tops out just under 2^29 (see heatBuffer), so this lands on 0.75 at full drive —
+	// a 2.5 dB fall across the sweep, enough that Heat reads as drive rather than as volume.
+	return ONE_Q31 - level;
 }
 
 /*
