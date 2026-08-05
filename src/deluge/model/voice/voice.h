@@ -25,6 +25,7 @@
 #include "modulation/lfo.h"
 #include "modulation/params/param.h"
 #include "modulation/patch/patcher.h"
+#include "util/fixedpoint.h"
 #include <bitset>
 #include <compare>
 #include <memory>
@@ -74,6 +75,9 @@ public:
 	int32_t portaEnvelopeMaxAmplitude;
 
 	std::array<uint32_t, 2> lastSaturationTanHWorkingValue;
+	/// One-pole tone-filter memory for Heat, one per channel. Stateful, so it must be
+	/// zeroed on note-on beside lastSaturationTanHWorkingValue.
+	std::array<q31_t, 2> heatToneState;
 
 	int32_t overallOscAmplitudeLastTime;
 	std::array<int32_t, kNumSources> sourceAmplitudesLastTime;

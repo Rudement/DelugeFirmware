@@ -74,6 +74,7 @@ enum Local : ParamType {
 	LOCAL_MODULATOR_0_VOLUME,
 	LOCAL_MODULATOR_1_VOLUME,
 	LOCAL_FOLD,
+	LOCAL_HEAT,
 
 	// Local non-volume params begin
 	FIRST_LOCAL_NON_VOLUME,
@@ -186,6 +187,7 @@ enum UnpatchedShared : ParamType {
 	UNPATCHED_MOD_FX_FEEDBACK,
 	UNPATCHED_SIDECHAIN_SHAPE,
 	UNPATCHED_COMPRESSOR_THRESHOLD,
+	UNPATCHED_HEAT_TONE,
 	// Arp
 	UNPATCHED_FIRST_ARP_PARAM,
 	UNPATCHED_ARP_GATE = UNPATCHED_FIRST_ARP_PARAM,
@@ -314,7 +316,7 @@ const uint32_t patchedParamShortcuts[kDisplayWidth][kDisplayHeight] = {
     {LOCAL_MODULATOR_0_VOLUME, LOCAL_MODULATOR_0_PITCH_ADJUST, kNoParamID                    , kNoParamID             , kNoParamID     , LOCAL_MODULATOR_0_FEEDBACK, kNoParamID            , kNoParamID},
     {LOCAL_MODULATOR_1_VOLUME, LOCAL_MODULATOR_1_PITCH_ADJUST, kNoParamID                    , kNoParamID             , kNoParamID     , LOCAL_MODULATOR_1_FEEDBACK, kNoParamID            , kNoParamID},
     {GLOBAL_VOLUME_POST_FX   , LOCAL_PITCH_ADJUST            , kNoParamID                    , LOCAL_PAN              , kNoParamID     , kNoParamID                , kNoParamID            , kNoParamID},
-    {kNoParamID              , kNoParamID                    , kNoParamID                    , kNoParamID             , kNoParamID     , kNoParamID                , kNoParamID            , LOCAL_FOLD},
+    {kNoParamID              , kNoParamID                    , kNoParamID                    , kNoParamID             , kNoParamID     , kNoParamID                , LOCAL_HEAT            , LOCAL_FOLD},
     {LOCAL_ENV_0_RELEASE     , LOCAL_ENV_0_SUSTAIN           , LOCAL_ENV_0_DECAY             , LOCAL_ENV_0_ATTACK     , LOCAL_LPF_MORPH, kNoParamID                , LOCAL_LPF_RESONANCE   , LOCAL_LPF_FREQ},
     {LOCAL_ENV_1_RELEASE     , LOCAL_ENV_1_SUSTAIN           , LOCAL_ENV_1_DECAY             , LOCAL_ENV_1_ATTACK     , LOCAL_HPF_MORPH, kNoParamID                , LOCAL_HPF_RESONANCE   , LOCAL_HPF_FREQ},
     {kNoParamID              , kNoParamID                    , kNoParamID					 , kNoParamID             , kNoParamID     , kNoParamID                , kNoParamID            , kNoParamID},
@@ -356,7 +358,7 @@ const uint32_t unpatchedNonGlobalParamShortcuts[kDisplayWidth][kDisplayHeight] =
     {kNoParamID          , kNoParamID, kNoParamID        , kNoParamID, kNoParamID                , kNoParamID                     , kNoParamID           , kNoParamID},
     {kNoParamID          , kNoParamID, kNoParamID        , kNoParamID, kNoParamID                , kNoParamID                     , kNoParamID           , UNPATCHED_STUTTER_RATE},
     {kNoParamID          , kNoParamID, kNoParamID        , kNoParamID, kNoParamID                , UNPATCHED_SAMPLE_RATE_REDUCTION, UNPATCHED_BITCRUSHING, kNoParamID},
-    {UNPATCHED_PORTAMENTO, kNoParamID, kNoParamID        , kNoParamID, kNoParamID                , UNPATCHED_COMPRESSOR_THRESHOLD , kNoParamID           , kNoParamID},
+    {UNPATCHED_PORTAMENTO, kNoParamID, kNoParamID        , kNoParamID, kNoParamID                , UNPATCHED_COMPRESSOR_THRESHOLD , UNPATCHED_HEAT_TONE  , kNoParamID},
     {kNoParamID          , kNoParamID, kNoParamID        , kNoParamID, kNoParamID                , kNoParamID                     , kNoParamID           , kNoParamID},
     {kNoParamID          , kNoParamID, kNoParamID        , kNoParamID, kNoParamID                , kNoParamID                     , kNoParamID           , kNoParamID},
     {kNoParamID          , kNoParamID, kNoParamID        , kNoParamID, UNPATCHED_SIDECHAIN_SHAPE , kNoParamID                     , UNPATCHED_BASS       , UNPATCHED_BASS_FREQ},

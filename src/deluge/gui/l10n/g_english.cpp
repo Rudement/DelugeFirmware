@@ -132,6 +132,8 @@ PLACE_SDRAM_DATA Language english{
         {STRING_FOR_DISTORTION, "Distortion"},
         {STRING_FOR_DECIMATION, "DECIMATION"},
         {STRING_FOR_BITCRUSH, "Bitcrush"},
+        {STRING_FOR_HEAT, "Heat"},
+        {STRING_FOR_HEAT_TONE, "Heat tone"},
         {STRING_FOR_MODFX_OFFSET, "MOD-FX offset"},
         {STRING_FOR_MODFX_FEEDBACK, "MOD-FX feedback"},
         {STRING_FOR_MODFX_DEPTH, "MOD-FX depth"},

@@ -120,6 +120,7 @@ char const* getPatchedParamShortName(ParamType type) {
 	    [LOCAL_MODULATOR_0_VOLUME]       = "Mod1 level",
 	    [LOCAL_MODULATOR_1_VOLUME]       = "Mod2 level",
 	    [LOCAL_FOLD]                     = "Wavefold",
+	    [LOCAL_HEAT]                     = "Heat",
 	    [LOCAL_MODULATOR_0_FEEDBACK]     = "Mod1 feed",
 	    [LOCAL_MODULATOR_1_FEEDBACK]     = "Mod2 feed",
 	    [LOCAL_CARRIER_0_FEEDBACK]       = "Osc1 feed",
@@ -209,6 +210,7 @@ char const* getPatchedParamDisplayName(int32_t p) {
 	    [LOCAL_MODULATOR_0_VOLUME] = STRING_FOR_PARAM_LOCAL_MODULATOR_0_VOLUME,
 	    [LOCAL_MODULATOR_1_VOLUME] = STRING_FOR_PARAM_LOCAL_MODULATOR_1_VOLUME,
 	    [LOCAL_FOLD] = STRING_FOR_WAVEFOLDER,
+	    [LOCAL_HEAT] = STRING_FOR_HEAT,
 	    [LOCAL_MODULATOR_0_FEEDBACK] = STRING_FOR_PARAM_LOCAL_MODULATOR_0_FEEDBACK,
 	    [LOCAL_MODULATOR_1_FEEDBACK] = STRING_FOR_PARAM_LOCAL_MODULATOR_1_FEEDBACK,
 	    [LOCAL_CARRIER_0_FEEDBACK] = STRING_FOR_PARAM_LOCAL_CARRIER_0_FEEDBACK,
@@ -287,6 +289,7 @@ char const* getParamDisplayName(Kind kind, int32_t p) {
 		    [UNPATCHED_MOD_FX_FEEDBACK] = STRING_FOR_MODFX_FEEDBACK,
 		    [UNPATCHED_SIDECHAIN_SHAPE] = STRING_FOR_SIDECHAIN_SHAPE,
 		    [UNPATCHED_COMPRESSOR_THRESHOLD] = STRING_FOR_THRESHOLD,
+		    [UNPATCHED_HEAT_TONE] = STRING_FOR_HEAT_TONE,
 		    [UNPATCHED_ARP_GATE] = STRING_FOR_ARP_GATE_MENU_TITLE,
 		    [UNPATCHED_ARP_RHYTHM] = STRING_FOR_ARP_RHYTHM_MENU_TITLE,
 		    [UNPATCHED_ARP_SEQUENCE_LENGTH] = STRING_FOR_ARP_SEQUENCE_LENGTH_MENU_TITLE,
@@ -522,6 +525,9 @@ constexpr char const* paramNameForFileConst(Kind const kind, ParamType const par
 		case UNPATCHED_COMPRESSOR_THRESHOLD:
 			return "compressorThreshold";
 
+		case UNPATCHED_HEAT_TONE:
+			return "heatTone";
+
 		case UNPATCHED_ARP_GATE:
 			return "arpGate";
 
@@ -736,6 +742,9 @@ constexpr char const* paramNameForFileConst(Kind const kind, ParamType const par
 
 		case LOCAL_FOLD:
 			return "waveFold";
+
+		case LOCAL_HEAT:
+			return "heat";
 
 		case LOCAL_LAST:
 		    // Intentionally not handled
