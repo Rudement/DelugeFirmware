@@ -135,6 +135,9 @@ void ModControllableAudio::initParams(ParamManager* paramManager) {
 
 	unpatchedParams->params[params::UNPATCHED_BITCRUSHING].setCurrentValueBasicForSetup(-2147483648);
 
+	// Heat Tone defaults to centre, which the tilt filter treats as a true bypass.
+	unpatchedParams->params[params::UNPATCHED_HEAT_TONE].setCurrentValueBasicForSetup(0);
+
 	unpatchedParams->params[params::UNPATCHED_SIDECHAIN_SHAPE].setCurrentValueBasicForSetup(-601295438);
 	unpatchedParams->params[params::UNPATCHED_COMPRESSOR_THRESHOLD].setCurrentValueBasicForSetup(0);
 }
@@ -496,6 +499,8 @@ void ModControllableAudio::writeParamAttributesToFile(Serializer& writer, ParamM
 	                                       writeAutomation, false, valuesForOverride);
 	unpatchedParams->writeParamAsAttribute(writer, "bitCrush", params::UNPATCHED_BITCRUSHING, writeAutomation, false,
 	                                       valuesForOverride);
+	unpatchedParams->writeParamAsAttribute(writer, "heatTone", params::UNPATCHED_HEAT_TONE, writeAutomation, false,
+	                                       valuesForOverride);
 	unpatchedParams->writeParamAsAttribute(writer, "modFXOffset", params::UNPATCHED_MOD_FX_OFFSET, writeAutomation,
 	                                       false, valuesForOverride);
 	unpatchedParams->writeParamAsAttribute(writer, "modFXFeedback", params::UNPATCHED_MOD_FX_FEEDBACK, writeAutomation,
@@ -597,6 +602,11 @@ bool ModControllableAudio::readParamTagFromFile(Deserializer& reader, char const
 		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_BITCRUSHING,
 		                           readAutomationUpToPos);
 		reader.exitTag("bitCrush");
+	}
+
+	else if (!strcmp(tagName, "heatTone")) {
+		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_HEAT_TONE, readAutomationUpToPos);
+		reader.exitTag("heatTone");
 	}
 
 	else if (!strcmp(tagName, "modFXOffset")) {
