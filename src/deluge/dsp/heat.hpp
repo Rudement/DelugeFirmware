@@ -83,13 +83,25 @@ inline q31_t heatMakeup(q31_t level) {
 /*
  * Heat (drive stage).
  *
- * Pre-gain is linear in the param: 1x at level 0 rising to 33x at full. Linear rather
- * than exponential because the clipper already compresses the top of the range, so the
- * audible result is roughly logarithmic anyway — and a linear law is one add and one
- * shift rather than a lookup.
+ * Pre-gain sweeps 1x to 256x on an EXPONENTIAL taper — gain = 2^(8 * level).
  *
- * Measured small-signal gain through the whole stage: 1.0x, 2.6x, 8.6x, 15.3x, 21.0x,
- * 25.8x at level 0.00, 0.05, 0.25, 0.50, 0.75, 1.00.
+ * The first hardware test used a linear 1x..33x law and was, in George's words, "not very
+ * audible". Two things were wrong with it. It was ~4x weaker than the wavefolder sitting
+ * next to it — foldBufferPolyApproximation() shifts its product left by 8, this shifted by
+ * 6, which is 12 dB less drive:
+ *
+ *     level 0.25   fold x32    old heat x9
+ *     level 0.50   fold x64    old heat x17
+ *     level 1.00   fold x128   old heat x33
+ *
+ * And a linear taper wastes the knob: by 25% you are already most of the way to the
+ * maximum in perceptual terms, so the top three quarters of the travel all sound alike.
+ *
+ * The exponential taper fixes both. `s` is the integer part of 8*level and `f` the
+ * fraction; 2^s * (1 + f) is the standard linear-interpolation-in-the-exponent
+ * approximation, and it is continuous at every octave boundary because 2^s * 2 == 2^(s+1).
+ * Measured gain: 1.0x, 1.8x, 3.2x, 9.6x, 16x, 51x, 256x at level 0, 0.1, 0.2, 0.4, 0.5,
+ * 0.7, 1.0 — monotonic, and useful across the whole sweep.
  *
  * Memoryless, so an interleaved stereo buffer can be passed straight through as one
  * long range — exactly the shortcut foldBufferPolyApproximation() takes.
@@ -100,13 +112,17 @@ inline void heatBuffer(q31_t* startSample, q31_t* endSample, q31_t level) {
 	}
 
 	const q31_t makeup = heatMakeup(level);
+	// 8 * level, split into integer octaves and a fraction. The cast matters: shifting a
+	// signed q31_t left by 3 would overflow into the sign bit.
+	const int32_t octaves = level >> 28;                                        // 0..7
+	const q31_t frac = static_cast<q31_t>((static_cast<uint32_t>(level) << 3) & 0x7FFFFFFF);
 	q31_t* currentSample = startSample;
 
 	do {
 		q31_t c = *currentSample;
 
-		// c * (1 + 32*level), saturating. mul halves, <<6 multiplies by 64.
-		q31_t x = add_saturate(c, lshiftAndSaturateUnknown(multiply_32x32_rshift32(level, c), 6));
+		// c * 2^octaves * (1 + frac). The 2* undoes the halving in multiply_32x32_rshift32.
+		q31_t x = lshiftAndSaturateUnknown(add_saturate(c, 2 * multiply_32x32_rshift32(c, frac)), octaves);
 		q31_t y = softClipCubic(x);
 
 		*currentSample = lshiftAndSaturateUnknown(multiply_32x32_rshift32(y, makeup), 1);
