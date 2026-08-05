@@ -74,7 +74,6 @@ enum Local : ParamType {
 	LOCAL_MODULATOR_0_VOLUME,
 	LOCAL_MODULATOR_1_VOLUME,
 	LOCAL_FOLD,
-	LOCAL_HEAT,
 
 	// Local non-volume params begin
 	FIRST_LOCAL_NON_VOLUME,
@@ -84,6 +83,12 @@ enum Local : ParamType {
 	LOCAL_CARRIER_1_FEEDBACK,
 	LOCAL_LPF_RESONANCE,
 	LOCAL_HPF_RESONANCE,
+	// Heat is deliberately NOT in the volume block above. Volume params get a parabola applied in
+	// getFinalParameterValueVolume(), which squashed the bottom half of the knob flat — Heat did
+	// nothing until 26/50. Here it uses getFinalParameterValueLinear() instead, so the final value
+	// rises linearly with knob position and heatBuffer()'s exponential taper spreads evenly.
+	// Its neutral value (25 * 10737418) is shared with the resonance/morph params either side.
+	LOCAL_HEAT,
 	LOCAL_ENV_0_SUSTAIN,
 	LOCAL_ENV_1_SUSTAIN,
 	LOCAL_ENV_2_SUSTAIN,

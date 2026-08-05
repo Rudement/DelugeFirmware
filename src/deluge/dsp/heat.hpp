@@ -75,9 +75,13 @@ inline q31_t softClipCubic(q31_t x) {
 /// exactly 1.0 (turning Heat up off its stop must not step the level), while a clipped
 /// signal falls only ~1.7 dB across the entire sweep — so Heat reads as distortion
 /// rather than as a volume control. Sweeps 0.667 down to 0.542.
+///
+/// The shift is tied to `level`'s real range, exactly as in heatBuffer(): level tops out just
+/// under 2^29, not 2^31, so >>1 is what produces the intended 0.667..0.542 sweep. It was >>3,
+/// which only reached 0.635 and left the loud end under-compensated.
 inline q31_t heatMakeup(q31_t level) {
 	constexpr q31_t TWO_THIRDS_Q31 = 0.66667 * ONE_Q31;
-	return TWO_THIRDS_Q31 - (level >> 3);
+	return TWO_THIRDS_Q31 - (level >> 1);
 }
 
 /*
@@ -97,11 +101,19 @@ inline q31_t heatMakeup(q31_t level) {
  * And a linear taper wastes the knob: by 25% you are already most of the way to the
  * maximum in perceptual terms, so the top three quarters of the travel all sound alike.
  *
- * The exponential taper fixes both. `s` is the integer part of 8*level and `f` the
- * fraction; 2^s * (1 + f) is the standard linear-interpolation-in-the-exponent
- * approximation, and it is continuous at every octave boundary because 2^s * 2 == 2^(s+1).
- * Measured gain: 1.0x, 1.8x, 3.2x, 9.6x, 16x, 51x, 256x at level 0, 0.1, 0.2, 0.4, 0.5,
- * 0.7, 1.0 — monotonic, and useful across the whole sweep.
+ * The exponential taper fixes both. `s` is the integer part and `f` the fraction; 2^s * (1 + f)
+ * is the standard linear-interpolation-in-the-exponent approximation, and it is continuous at
+ * every octave boundary because 2^s * 2 == 2^(s+1).
+ *
+ * Measured against the REAL param pipeline (not the DSP in isolation — that was the earlier
+ * mistake), knob position 0..50:
+ *
+ *     knob   0    3    5   10   15   20   25   30   35    40    45    50
+ *     gain  1.0  1.5  1.8  3.2  5.6  9.6   16   29   51    90   154   256
+ *
+ * Roughly a constant ratio per step, audible by knob 3-5, and no dead zone. Getting here needed
+ * BOTH the >>26 above and moving LOCAL_HEAT out of the patcher's volume block (see param.h) —
+ * the volume block's parabola alone held the entire bottom half between 1.0x and 2.0x.
  *
  * Memoryless, so an interleaved stereo buffer can be passed straight through as one
  * long range — exactly the shortcut foldBufferPolyApproximation() takes.
@@ -112,10 +124,17 @@ inline void heatBuffer(q31_t* startSample, q31_t* endSample, q31_t level) {
 	}
 
 	const q31_t makeup = heatMakeup(level);
-	// 8 * level, split into integer octaves and a fraction. The cast matters: shifting a
-	// signed q31_t left by 3 would overflow into the sign bit.
-	const int32_t octaves = level >> 28;                                        // 0..7
-	const q31_t frac = static_cast<q31_t>((static_cast<uint32_t>(level) << 3) & 0x7FFFFFFF);
+	// Split `level` into integer octaves and a fraction. The cast matters: shifting a signed
+	// q31_t left would overflow into the sign bit.
+	//
+	// THE SHIFT IS TIED TO THE PARAM PIPELINE, not to q31. `level` is
+	// paramFinalValues[LOCAL_HEAT], which does NOT span the full q31 range: with neutral value
+	// 25*10737418 and getFinalParameterValueLinear's `<<3`, it tops out just under 2^29. So >>26
+	// is what yields 0..7 octaves. An earlier version used >>28 on the assumption that level was
+	// full-scale q31 — that capped the whole control at 16x instead of 256x. If the neutral value
+	// or the param's patcher block ever changes, recompute this.
+	const int32_t octaves = level >> 26;                                        // 0..7
+	const q31_t frac = static_cast<q31_t>((static_cast<uint32_t>(level) << 5) & 0x7FFFFFFF);
 	q31_t* currentSample = startSample;
 
 	do {
