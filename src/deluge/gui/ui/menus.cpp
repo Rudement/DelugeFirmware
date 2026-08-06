@@ -325,6 +325,38 @@ Submenu eqMenu{
     },
 };
 
+// Gristleizer -----------------------------------------------------------------------------
+// Nine shared unpatched params, so ONE set of menu items serves synths, kits, audio clips and
+// song FX alike — unlike Heat, which is per-voice and therefore cannot appear outside a synth.
+// Ordered as the signal flows: LFO, then what the LFO drives, then the output stage.
+UnpatchedParam gristleRateMenu{STRING_FOR_RATE, STRING_FOR_GRISTLE_RATE, params::UNPATCHED_GRISTLE_RATE};
+UnpatchedParam gristleDepthMenu{STRING_FOR_DEPTH, STRING_FOR_GRISTLE_DEPTH, params::UNPATCHED_GRISTLE_DEPTH};
+UnpatchedParam gristleShapeMenu{STRING_FOR_SHAPE, STRING_FOR_GRISTLE_SHAPE, params::UNPATCHED_GRISTLE_SHAPE};
+UnpatchedParam gristleBiasMenu{STRING_FOR_BIAS, STRING_FOR_GRISTLE_BIAS, params::UNPATCHED_GRISTLE_BIAS};
+UnpatchedParam gristleModeMenu{STRING_FOR_MODE, STRING_FOR_GRISTLE_MODE, params::UNPATCHED_GRISTLE_MODE};
+UnpatchedParam gristleFreqMenu{STRING_FOR_FREQUENCY, STRING_FOR_GRISTLE_FREQ, params::UNPATCHED_GRISTLE_FREQ};
+UnpatchedParam gristleResMenu{STRING_FOR_RESONANCE, STRING_FOR_GRISTLE_RES, params::UNPATCHED_GRISTLE_RES};
+UnpatchedParam gristleDirtMenu{STRING_FOR_DIRT, STRING_FOR_GRISTLE_DIRT, params::UNPATCHED_GRISTLE_DIRT};
+UnpatchedParam gristleLevelMenu{STRING_FOR_LEVEL, STRING_FOR_GRISTLE_LEVEL, params::UNPATCHED_GRISTLE_LEVEL};
+
+// This is a plain Submenu backed by a std::vector, so nine entries need no pagination work.
+// (On `main` the EQ submenu is a fixed-4 EqMenu and would have needed rewriting — 1.2.1 is
+// easier here. Worth knowing before porting this forward.)
+Submenu gristleMenu{
+    STRING_FOR_GRISTLE,
+    {
+        &gristleRateMenu,
+        &gristleDepthMenu,
+        &gristleShapeMenu,
+        &gristleBiasMenu,
+        &gristleModeMenu,
+        &gristleFreqMenu,
+        &gristleResMenu,
+        &gristleDirtMenu,
+        &gristleLevelMenu,
+    },
+};
+
 // Delay ---------------------------------------------------------------------------------
 patched_param::Integer delayFeedbackMenu{STRING_FOR_AMOUNT, STRING_FOR_DELAY_AMOUNT, params::GLOBAL_DELAY_FEEDBACK};
 patched_param::Integer delayRateMenu{STRING_FOR_RATE, STRING_FOR_DELAY_RATE, params::GLOBAL_DELAY_RATE};
@@ -607,6 +639,7 @@ Submenu globalFXMenu{
         &globalReverbMenu,
         &globalModFXMenu,
         &globalDistortionMenu,
+        &gristleMenu,
     },
 };
 
@@ -673,6 +706,7 @@ Submenu audioClipFXMenu{
         &globalReverbMenu,
         &globalModFXMenu,
         &audioClipDistortionMenu,
+        &gristleMenu,
     },
 };
 
@@ -1147,6 +1181,7 @@ Submenu soundFXMenu{
         &reverbMenu,
         &modFXMenu,
         &soundDistortionMenu,
+        &gristleMenu,
         &noiseMenu,
     },
 };

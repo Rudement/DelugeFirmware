@@ -76,8 +76,12 @@ const int32_t defaultParamToCCMapping[kDisplayWidth][kDisplayHeight] = {
     {51, MIDI_CC_NONE, 50, MIDI_CC_NONE, MIDI_CC_NONE, 89, 87, 85},
     {58, MIDI_CC_NONE, MIDI_CC_NONE, MIDI_CC_NONE, 18, 17, 93, 16},
     {59, MIDI_CC_NONE, MIDI_CC_NONE, 91, MIDI_CC_NONE, MIDI_CC_NONE, MIDI_CC_NONE, MIDI_CC_NONE},
-    {53, MIDI_CC_NONE, MIDI_CC_NONE, 52, MIDI_CC_NONE, MIDI_CC_NONE, MIDI_CC_NONE, MIDI_CC_NONE},
-    {MIDI_CC_NONE, MIDI_CC_NONE, MIDI_CC_NONE, MIDI_CC_NONE, MIDI_CC_NONE, MIDI_CC_NONE, MIDI_CC_NONE, MIDI_CC_NONE}};
+    {53, MIDI_CC_NONE, MIDI_CC_NONE, 52, MIDI_CC_NONE, MIDI_CC_NONE, MIDI_CC_NONE, 110},
+    // The Gristleizer. CCs 102-110 are undefined in the MIDI spec and unused elsewhere in this
+    // table. Remember that on 1.2.1 a CC is inseparable from a grid position — this map is
+    // indexed [column][row] and MidiFollow resolves a CC back to a param by scanning it for a
+    // position, so removing these pads from the shortcut tables would also remove the CCs.
+    {102, 103, 104, 105, 106, 107, 108, 109}};
 
 MidiFollow midiFollow{};
 

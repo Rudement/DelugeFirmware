@@ -27,8 +27,7 @@ public:
 
 	bool isRelevant(ModControllableAudio* modControllable, int32_t whichThing) {
 		return util::one_of(modControllable->getModFXType(),
-		                    {ModFXType::CHORUS, ModFXType::CHORUS_STEREO, ModFXType::GRAIN, ModFXType::PHASER,
-		                     ModFXType::GRISTLE});
+		                    {ModFXType::CHORUS, ModFXType::CHORUS_STEREO, ModFXType::GRAIN, ModFXType::PHASER});
 	}
 };
 } // namespace deluge::gui::menu_item::mod_fx

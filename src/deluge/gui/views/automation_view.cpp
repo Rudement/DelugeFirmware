@@ -118,8 +118,10 @@ const uint32_t mutePadActionUIModes[] = {UI_MODE_NOTES_PRESSED, UI_MODE_AUDITION
 
 const uint32_t verticalScrollUIModes[] = {UI_MODE_NOTES_PRESSED, UI_MODE_AUDITIONING, UI_MODE_RECORD_COUNT_IN, 0};
 
-constexpr int32_t kNumNonGlobalParamsForAutomation = 63; // 60 stock + LOCAL_HEAT + UNPATCHED_MID + UNPATCHED_MID_FREQ
-constexpr int32_t kNumGlobalParamsForAutomation = 28; // 26 stock + UNPATCHED_MID + UNPATCHED_MID_FREQ
+constexpr int32_t kNumNonGlobalParamsForAutomation =
+    72; // 60 stock + LOCAL_HEAT + UNPATCHED_MID + UNPATCHED_MID_FREQ + 9 Gristleizer
+constexpr int32_t kNumGlobalParamsForAutomation =
+    37; // 26 stock + UNPATCHED_MID + UNPATCHED_MID_FREQ + 9 Gristleizer
 constexpr int32_t kParamNodeWidth = 3;
 
 // synth and kit rows FX - sorted in the order that Parameters are scrolled through on the display
@@ -211,6 +213,16 @@ const std::array<std::pair<params::Kind, ParamType>, kNumNonGlobalParamsForAutom
     {params::Kind::UNPATCHED_SOUND, params::UNPATCHED_STUTTER_RATE},
     // Compressor Threshold
     {params::Kind::UNPATCHED_SOUND, params::UNPATCHED_COMPRESSOR_THRESHOLD},
+    // Gristleizer: Rate, Depth, Shape, Bias, Mode, Level, Freq, Reso, Dirt
+    {params::Kind::UNPATCHED_SOUND, params::UNPATCHED_GRISTLE_RATE},
+    {params::Kind::UNPATCHED_SOUND, params::UNPATCHED_GRISTLE_DEPTH},
+    {params::Kind::UNPATCHED_SOUND, params::UNPATCHED_GRISTLE_SHAPE},
+    {params::Kind::UNPATCHED_SOUND, params::UNPATCHED_GRISTLE_BIAS},
+    {params::Kind::UNPATCHED_SOUND, params::UNPATCHED_GRISTLE_MODE},
+    {params::Kind::UNPATCHED_SOUND, params::UNPATCHED_GRISTLE_LEVEL},
+    {params::Kind::UNPATCHED_SOUND, params::UNPATCHED_GRISTLE_FREQ},
+    {params::Kind::UNPATCHED_SOUND, params::UNPATCHED_GRISTLE_RES},
+    {params::Kind::UNPATCHED_SOUND, params::UNPATCHED_GRISTLE_DIRT},
 }};
 
 // global FX - sorted in the order that Parameters are scrolled through on the display
@@ -257,6 +269,16 @@ const std::array<std::pair<params::Kind, ParamType>, kNumGlobalParamsForAutomati
     {params::Kind::UNPATCHED_GLOBAL, params::UNPATCHED_STUTTER_RATE},
     // Compressor Threshold
     {params::Kind::UNPATCHED_GLOBAL, params::UNPATCHED_COMPRESSOR_THRESHOLD},
+    // Gristleizer: Rate, Depth, Shape, Bias, Mode, Level, Freq, Reso, Dirt
+    {params::Kind::UNPATCHED_GLOBAL, params::UNPATCHED_GRISTLE_RATE},
+    {params::Kind::UNPATCHED_GLOBAL, params::UNPATCHED_GRISTLE_DEPTH},
+    {params::Kind::UNPATCHED_GLOBAL, params::UNPATCHED_GRISTLE_SHAPE},
+    {params::Kind::UNPATCHED_GLOBAL, params::UNPATCHED_GRISTLE_BIAS},
+    {params::Kind::UNPATCHED_GLOBAL, params::UNPATCHED_GRISTLE_MODE},
+    {params::Kind::UNPATCHED_GLOBAL, params::UNPATCHED_GRISTLE_LEVEL},
+    {params::Kind::UNPATCHED_GLOBAL, params::UNPATCHED_GRISTLE_FREQ},
+    {params::Kind::UNPATCHED_GLOBAL, params::UNPATCHED_GRISTLE_RES},
+    {params::Kind::UNPATCHED_GLOBAL, params::UNPATCHED_GRISTLE_DIRT},
 }};
 
 // VU meter style colours for the automation editor

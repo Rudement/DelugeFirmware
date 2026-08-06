@@ -26,9 +26,8 @@ public:
 	using UnpatchedParam::UnpatchedParam;
 
 	bool isRelevant(ModControllableAudio* modControllable, int32_t whichThing) {
-		// GRISTLE uses this param as its triangle->square Shape morph.
 		return (util::one_of(modControllable->getModFXType(),
-		                     {ModFXType::FLANGER, ModFXType::PHASER, ModFXType::GRAIN, ModFXType::GRISTLE}));
+		                     {ModFXType::FLANGER, ModFXType::PHASER, ModFXType::GRAIN}));
 	}
 };
 } // namespace deluge::gui::menu_item::mod_fx

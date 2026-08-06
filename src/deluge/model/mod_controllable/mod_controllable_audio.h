@@ -20,6 +20,7 @@
 #include "definitions_cxx.hpp"
 #include "dsp/compressor/rms_feedback.h"
 #include "dsp/delay/delay.h"
+#include "dsp/gristle.hpp"
 #include "hid/button.h"
 #include "model/fx/stutterer.h"
 #include "model/mod_controllable/filters/filter_config.h"
@@ -101,9 +102,10 @@ public:
 	// Phaser
 	StereoSample phaserMemory;
 	StereoSample allpassMemory[kNumAllpassFiltersPhaser];
-	// Gristle's one-pole lowpass state. The two channels MUST keep separate state: running
-	// a single one-pole over an interleaved buffer combs instead of filtering.
-	StereoSample gristleMemory{};
+	// The Gristleizer's LFO phase plus its state-variable filter memory. The two channels MUST
+	// keep separate filter state: running one filter over an interleaved buffer combs instead
+	// of filtering. The LFO phase is deliberately shared so both sides chop together.
+	deluge::dsp::gristle::Memory gristleMemory{};
 
 	// EQ
 	int32_t bassFreq; // These two should eventually not be variables like this

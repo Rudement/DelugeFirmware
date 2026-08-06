@@ -182,6 +182,21 @@ enum UnpatchedShared : ParamType {
 	UNPATCHED_SIDECHAIN_SHAPE,
 	UNPATCHED_COMPRESSOR_THRESHOLD,
 	UNPATCHED_HEAT_TONE,
+	// The Gristleizer. Shared rather than sound-only so it reaches synths, kits, audio clips and
+	// song FX alike — it runs in ModControllableAudio::processFX, which every ModControllable
+	// calls. Appending these before UNPATCHED_NUM_SHARED shifts the UnpatchedSound and
+	// UnpatchedGlobal sub-ranges, which is safe: song files store params by NAME
+	// (paramNameForFile), and everything else that switches on these values is a switch, not an
+	// ordered table. The one ordered thing is the automation arrays, which are rebuilt below.
+	UNPATCHED_GRISTLE_RATE,
+	UNPATCHED_GRISTLE_DEPTH,
+	UNPATCHED_GRISTLE_SHAPE,
+	UNPATCHED_GRISTLE_BIAS,
+	UNPATCHED_GRISTLE_MODE,
+	UNPATCHED_GRISTLE_LEVEL,
+	UNPATCHED_GRISTLE_FREQ,
+	UNPATCHED_GRISTLE_RES,
+	UNPATCHED_GRISTLE_DIRT,
 	/// Special value for chaining the UNPATCHED_* params
 	UNPATCHED_NUM_SHARED,
 };
@@ -314,8 +329,8 @@ const uint32_t unpatchedNonGlobalParamShortcuts[kDisplayWidth][kDisplayHeight] =
     {kNoParamID          , kNoParamID, UNPATCHED_ARP_GATE, kNoParamID, kNoParamID                , UNPATCHED_MID_FREQ             , UNPATCHED_TREBLE     , UNPATCHED_TREBLE_FREQ},
     {kNoParamID          , kNoParamID, kNoParamID        , kNoParamID, UNPATCHED_MOD_FX_OFFSET   , UNPATCHED_MOD_FX_FEEDBACK      , kNoParamID           , kNoParamID},
     {kNoParamID          , kNoParamID, kNoParamID        , kNoParamID, kNoParamID                , kNoParamID                     , kNoParamID           , kNoParamID},
-    {kNoParamID          , kNoParamID, kNoParamID        , kNoParamID, kNoParamID                , kNoParamID                     , kNoParamID           , kNoParamID},
-    {kNoParamID          , kNoParamID, kNoParamID        , kNoParamID, kNoParamID                , kNoParamID                     , kNoParamID           , kNoParamID}
+    {kNoParamID          , kNoParamID, kNoParamID        , kNoParamID, kNoParamID                , kNoParamID                     , kNoParamID           , UNPATCHED_GRISTLE_DIRT},
+    {UNPATCHED_GRISTLE_RATE, UNPATCHED_GRISTLE_DEPTH, UNPATCHED_GRISTLE_SHAPE, UNPATCHED_GRISTLE_BIAS, UNPATCHED_GRISTLE_MODE, UNPATCHED_GRISTLE_FREQ, UNPATCHED_GRISTLE_RES, UNPATCHED_GRISTLE_LEVEL}
 };
 // clang-format on
 
@@ -337,8 +352,8 @@ const uint32_t unpatchedGlobalParamShortcuts[kDisplayWidth][kDisplayHeight] = {
     {kNoParamID          , kNoParamID            , kNoParamID                , kNoParamID                  , kNoParamID				   , UNPATCHED_MID_FREQ			   		 	, UNPATCHED_TREBLE      , UNPATCHED_TREBLE_FREQ},
     {kNoParamID          , kNoParamID            , kNoParamID                , kNoParamID                  , UNPATCHED_MOD_FX_OFFSET   , UNPATCHED_MOD_FX_FEEDBACK		, UNPATCHED_MOD_FX_DEPTH, UNPATCHED_MOD_FX_RATE},
     {kNoParamID          , kNoParamID            , kNoParamID                , UNPATCHED_REVERB_SEND_AMOUNT, kNoParamID				   , kNoParamID			   		 	, kNoParamID            , kNoParamID},
-    {UNPATCHED_DELAY_RATE, kNoParamID            , kNoParamID                , UNPATCHED_DELAY_AMOUNT      , kNoParamID				   , kNoParamID			  		 	, kNoParamID            , kNoParamID},
-    {kNoParamID          , kNoParamID            , kNoParamID                , kNoParamID                  , kNoParamID				   , kNoParamID			   		 	, kNoParamID            , kNoParamID}};
+    {UNPATCHED_DELAY_RATE, kNoParamID            , kNoParamID                , UNPATCHED_DELAY_AMOUNT      , kNoParamID				   , kNoParamID			  		 	, kNoParamID            , UNPATCHED_GRISTLE_DIRT},
+    {UNPATCHED_GRISTLE_RATE, UNPATCHED_GRISTLE_DEPTH, UNPATCHED_GRISTLE_SHAPE, UNPATCHED_GRISTLE_BIAS      , UNPATCHED_GRISTLE_MODE   , UNPATCHED_GRISTLE_FREQ           , UNPATCHED_GRISTLE_RES  , UNPATCHED_GRISTLE_LEVEL}};
 // clang-format on
 
 } // namespace deluge::modulation::params

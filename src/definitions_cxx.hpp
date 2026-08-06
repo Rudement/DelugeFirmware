@@ -420,12 +420,12 @@ enum class ModFXType : uint8_t {
 	CHORUS,
 	PHASER,
 	CHORUS_STEREO,
-	// GRISTLE sits BEFORE grain deliberately. getModFXTypeDisplayName() and mod_fx::Type
-	// both hide the LAST entry when the GrainFX runtime feature is off (modTypeCount =
-	// kNumModFXTypes - 1), so anything appended after GRAIN would silently vanish from the
-	// gold-knob cycle and the type menu for any user who has Grain disabled. Song files
-	// store this enum by NAME via fxTypeToString(), so inserting here does not break them.
-	GRISTLE,
+	// NOTE FOR ANYONE ADDING A ModFX TYPE: insert it BEFORE grain, never after.
+	// getModFXTypeDisplayName() and mod_fx::Type both hide the LAST entry when the GrainFX
+	// runtime feature is off (modTypeCount = kNumModFXTypes - 1), so anything appended after
+	// GRAIN silently vanishes from the gold-knob cycle and the type menu for any user who has
+	// Grain disabled. Song files store this enum by NAME via fxTypeToString(), so inserting
+	// mid-enum does not break them.
 	GRAIN, // Look below if you want to add another one
 };
 

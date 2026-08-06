@@ -774,6 +774,26 @@ enum class String : size_t {
 	STRING_FOR_WAVEFOLD,
 	STRING_FOR_HEAT,
 	STRING_FOR_HEAT_TONE,
+
+	// The Gristleizer. Names are qualified ("Gristle rate", not "Rate") because these are the
+	// strings automation view and MIDI Follow display, where an unqualified "Rate" would be
+	// indistinguishable from the ModFX one. Every 7SEG form is exactly four characters.
+	// Short menu-entry labels the Gristleizer submenu needs and the tree did not already have.
+	STRING_FOR_BIAS,
+	STRING_FOR_DIRT,
+	STRING_FOR_LEVEL,
+
+	STRING_FOR_GRISTLE,
+	STRING_FOR_GRISTLE_RATE,
+	STRING_FOR_GRISTLE_DEPTH,
+	STRING_FOR_GRISTLE_SHAPE,
+	STRING_FOR_GRISTLE_BIAS,
+	STRING_FOR_GRISTLE_MODE,
+	STRING_FOR_GRISTLE_LEVEL,
+	STRING_FOR_GRISTLE_FREQ,
+	STRING_FOR_GRISTLE_RES,
+	STRING_FOR_GRISTLE_DIRT,
+
 	STRING_FOR_MOD_MATRIX,
 
 	STRING_FOR_CHECKSUM_FAIL,
@@ -786,7 +806,6 @@ enum class String : size_t {
 	STRING_FOR_AUTOMATION_CLEARED,
 
 	STRING_FOR_GRAIN,
-	STRING_FOR_GRISTLE,
 	STRING_FOR_FILL,
 
 	/* Strings Specifically for Automation Instrument Clip View

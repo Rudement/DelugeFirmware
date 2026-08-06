@@ -206,7 +206,16 @@ char const* getParamDisplayName(Kind kind, int32_t p) {
 		    [UNPATCHED_MOD_FX_FEEDBACK] = STRING_FOR_MODFX_FEEDBACK,
 		    [UNPATCHED_SIDECHAIN_SHAPE] = STRING_FOR_SIDECHAIN_SHAPE,
 		    [UNPATCHED_COMPRESSOR_THRESHOLD] = STRING_FOR_THRESHOLD,
-		    [UNPATCHED_HEAT_TONE] = STRING_FOR_HEAT_TONE};
+		    [UNPATCHED_HEAT_TONE] = STRING_FOR_HEAT_TONE,
+		    [UNPATCHED_GRISTLE_RATE] = STRING_FOR_GRISTLE_RATE,
+		    [UNPATCHED_GRISTLE_DEPTH] = STRING_FOR_GRISTLE_DEPTH,
+		    [UNPATCHED_GRISTLE_SHAPE] = STRING_FOR_GRISTLE_SHAPE,
+		    [UNPATCHED_GRISTLE_BIAS] = STRING_FOR_GRISTLE_BIAS,
+		    [UNPATCHED_GRISTLE_MODE] = STRING_FOR_GRISTLE_MODE,
+		    [UNPATCHED_GRISTLE_LEVEL] = STRING_FOR_GRISTLE_LEVEL,
+		    [UNPATCHED_GRISTLE_FREQ] = STRING_FOR_GRISTLE_FREQ,
+		    [UNPATCHED_GRISTLE_RES] = STRING_FOR_GRISTLE_RES,
+		    [UNPATCHED_GRISTLE_DIRT] = STRING_FOR_GRISTLE_DIRT};
 		return l10n::get(NAMES[p]);
 	}
 
@@ -384,6 +393,37 @@ constexpr char const* paramNameForFileConst(Kind const kind, ParamType const par
 
 		case UNPATCHED_MID_FREQ:
 			return "midFreq";
+
+		// The Gristleizer. These strings are what makes inserting the params mid-enum safe:
+		// songs store params by name, so a saved song survives the sub-ranges shifting.
+		// param.cpp's static_assert(validateParams()) round-trips every one of these, so a
+		// duplicate or a missing case is a compile-time failure rather than a runtime one.
+		case UNPATCHED_GRISTLE_RATE:
+			return "gristleRate";
+
+		case UNPATCHED_GRISTLE_DEPTH:
+			return "gristleDepth";
+
+		case UNPATCHED_GRISTLE_SHAPE:
+			return "gristleShape";
+
+		case UNPATCHED_GRISTLE_BIAS:
+			return "gristleBias";
+
+		case UNPATCHED_GRISTLE_MODE:
+			return "gristleMode";
+
+		case UNPATCHED_GRISTLE_LEVEL:
+			return "gristleLevel";
+
+		case UNPATCHED_GRISTLE_FREQ:
+			return "gristleFreq";
+
+		case UNPATCHED_GRISTLE_RES:
+			return "gristleRes";
+
+		case UNPATCHED_GRISTLE_DIRT:
+			return "gristleDirt";
 
 		case UNPATCHED_SAMPLE_RATE_REDUCTION:
 			return "sampleRateReduction";

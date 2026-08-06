@@ -220,8 +220,6 @@ char const* GlobalEffectable::getModFXTypeDisplayName() {
 		return l10n::get(STRING_FOR_STEREO_CHORUS);
 	case ModFXType::GRAIN:
 		return l10n::get(STRING_FOR_GRAIN);
-	case ModFXType::GRISTLE:
-		return l10n::get(STRING_FOR_GRISTLE);
 	default:
 		return l10n::get(STRING_FOR_NONE);
 	}
@@ -757,7 +755,7 @@ void GlobalEffectable::ensureModFXParamIsValid() {
 		}
 		else if (currentModFXParam == ModFXParam::OFFSET) {
 			if (modFXType != ModFXType::CHORUS && modFXType != ModFXType::CHORUS_STEREO
-			    && modFXType != ModFXType::GRAIN && modFXType != ModFXType::GRISTLE) {
+			    && modFXType != ModFXType::GRAIN) {
 				goto ohNo;
 			}
 		}
