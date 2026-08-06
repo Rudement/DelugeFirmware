@@ -21,6 +21,16 @@ else()
     set(SEMVER_PRERELEASE_ID "-${RELEASE_TYPE}")
 endif()
 
+# Label used for the .bin/.elf/.hex filenames and for the on-device Firmware Version screen,
+# so this fork's builds are distinguishable from a stock build at a glance.
+#
+# PROJECT_VERSION is deliberately NOT changed. Upstream's release_1_2_1 tag still declares
+# 1.2.0, and PROJECT_VERSION feeds BUILD_VERSION_STRING_SHORT, which storage_manager.cpp
+# writes into every saved song as the firmwareVersion attribute. Changing it would make songs
+# saved here claim a version no official firmware ever reported. DISPLAY_VERSION only affects
+# the filename and the version readout, so song files stay byte-identical to stock 1.2.1.
+set(DISPLAY_VERSION "1.2.1-rudement")
+
 if(CMAKE_HOST_WIN32)
   # Find python by ourselves, since on windows the find_package lookup
   # seems to fail
@@ -82,7 +92,7 @@ string(TIMESTAMP DATE_TODAY "%Y.%m.%d")
 if(RELEASE_TYPE STREQUAL "release")
     set(BUILD_VERSION_SUFFIX "-c${PROJECT_VERSION}") # Used for filename
 else()
-    set(BUILD_VERSION_SUFFIX "-v${PROJECT_VERSION}${SEMVER_PRERELEASE_ID}+${DATE_TODAY}-${GIT_COMMIT_SHORT}") # Used for filename
+    set(BUILD_VERSION_SUFFIX "-v${DISPLAY_VERSION}+${DATE_TODAY}-${GIT_COMMIT_SHORT}") # Used for filename
 endif()
 
 string(REPLACE "." "_" BUILD_VERSION_SUFFIX ${BUILD_VERSION_SUFFIX})
