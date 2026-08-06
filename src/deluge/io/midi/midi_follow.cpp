@@ -176,6 +176,13 @@ void MidiFollow::initDefaultMappings() {
 	soundParamToCC[params::LOCAL_OSC_B_VOLUME] = 26;
 	ccToSoundParam[27] = params::UNPATCHED_START + params::UNPATCHED_COMPRESSOR_THRESHOLD;
 	soundParamToCC[params::UNPATCHED_START + params::UNPATCHED_COMPRESSOR_THRESHOLD] = 27;
+
+	// Heat. CC 22 and 31 are claimed by neither the Deluge's default map nor the MIDI
+	// spec — checked against both before choosing.
+	ccToSoundParam[22] = params::LOCAL_HEAT;
+	soundParamToCC[params::LOCAL_HEAT] = 22;
+	ccToSoundParam[31] = params::UNPATCHED_START + params::UNPATCHED_HEAT_TONE;
+	soundParamToCC[params::UNPATCHED_START + params::UNPATCHED_HEAT_TONE] = 31;
 	ccToSoundParam[28] = params::LOCAL_OSC_B_PHASE_WIDTH;
 	soundParamToCC[params::LOCAL_OSC_B_PHASE_WIDTH] = 28;
 	ccToSoundParam[29] = params::LOCAL_CARRIER_1_FEEDBACK;

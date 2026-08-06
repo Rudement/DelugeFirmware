@@ -145,6 +145,7 @@ void Sound::initParams(ParamManager* paramManager) {
 	    getParamFromUserValue(params::GLOBAL_VOLUME_POST_FX, 40));
 	patchedParams->params[params::GLOBAL_VOLUME_POST_REVERB_SEND].setCurrentValueBasicForSetup(0);
 	patchedParams->params[params::LOCAL_FOLD].setCurrentValueBasicForSetup(-2147483648);
+	patchedParams->params[params::LOCAL_HEAT].setCurrentValueBasicForSetup(-2147483648);
 	patchedParams->params[params::LOCAL_HPF_RESONANCE].setCurrentValueBasicForSetup(-2147483648);
 	patchedParams->params[params::LOCAL_HPF_FREQ].setCurrentValueBasicForSetup(-2147483648);
 	patchedParams->params[params::LOCAL_HPF_MORPH].setCurrentValueBasicForSetup(-2147483648);
@@ -1274,6 +1275,11 @@ Error Sound::readTagFromFileOrError(Deserializer& reader, char const* tagName, P
 		ENSURE_PARAM_MANAGER_EXISTS
 		patchedParams->readParam(reader, patchedParamsSummary, params::LOCAL_FOLD, readAutomationUpToPos);
 		reader.exitTag("waveFold");
+	}
+	else if (!strcmp(tagName, "heat")) {
+		ENSURE_PARAM_MANAGER_EXISTS
+		patchedParams->readParam(reader, patchedParamsSummary, params::LOCAL_HEAT, readAutomationUpToPos);
+		reader.exitTag("heat");
 	}
 	else if (!strcmp(tagName, "midiOutput")) {
 		reader.match('{');
@@ -3823,6 +3829,10 @@ bool Sound::readParamTagFromFile(Deserializer& reader, char const* tagName, Para
 		patchedParams->readParam(reader, patchedParamsSummary, params::LOCAL_FOLD, readAutomationUpToPos);
 		reader.exitTag("waveFold");
 	}
+	else if (!strcmp(tagName, "heat")) {
+		patchedParams->readParam(reader, patchedParamsSummary, params::LOCAL_HEAT, readAutomationUpToPos);
+		reader.exitTag("heat");
+	}
 
 	else if (!strcmp(tagName, "envelope1")) {
 		reader.match('{');
@@ -4100,6 +4110,7 @@ void Sound::writeParamsToFile(Serializer& writer, ParamManager* paramManager, bo
 	patchedParams->writeParamAsAttribute(writer, "hpfMorph", params::LOCAL_HPF_MORPH, writeAutomation);
 
 	patchedParams->writeParamAsAttribute(writer, "waveFold", params::LOCAL_FOLD, writeAutomation);
+	patchedParams->writeParamAsAttribute(writer, "heat", params::LOCAL_HEAT, writeAutomation);
 
 	writer.writeOpeningTagEnd();
 
