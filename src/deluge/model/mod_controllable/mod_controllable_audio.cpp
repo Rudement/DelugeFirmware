@@ -18,6 +18,7 @@
 #include "model/mod_controllable/mod_controllable_audio.h"
 #include "definitions_cxx.hpp"
 #include "deluge/model/settings/runtime_feature_settings.h"
+#include "dsp/gristle.hpp"
 #include "dsp/stereo_sample.h"
 #include "gui/l10n/l10n.h"
 #include "gui/views/automation_view.h"
@@ -203,6 +204,7 @@ void ModControllableAudio::processFX(StereoSample* buffer, int32_t numSamples, M
 		int32_t modFXDelayOffset;
 		int32_t thisModFXDelayDepth;
 		int32_t feedback;
+		deluge::dsp::gristle::Config gristleConfig{};
 
 		if (modFXType == ModFXType::FLANGER || modFXType == ModFXType::PHASER) {
 
@@ -294,6 +296,18 @@ void ModControllableAudio::processFX(StereoSample* buffer, int32_t numSamples, M
 			grainVol = std::max<int32_t>(0, std::min<int32_t>(2147483647, grainVol));
 			grainDryVol = (int32_t)std::clamp<int64_t>(((int64_t)(2147483648 - grainVol) << 3), 0, 2147483647);
 			grainFeedbackVol = grainVol >> 3;
+		}
+		else if (modFXType == ModFXType::GRISTLE) {
+			// Gristle renders from the raw triangle and does its own waveform morph in
+			// shapeLFO(), so the LFO type here is always TRIANGLE — the Shape knob is not an
+			// LFOType selection.
+			modFXLFOWaveType = LFOType::TRIANGLE;
+			gristleConfig = deluge::dsp::gristle::setup(unpatchedParams->getValue(params::UNPATCHED_MOD_FX_FEEDBACK),
+			                                            unpatchedParams->getValue(params::UNPATCHED_MOD_FX_OFFSET),
+			                                            modFXDepth);
+			// postFXVolume is deliberately left alone: this effect only ever attenuates, so
+			// there is no makeup gain to apply. Adding one would reintroduce exactly the
+			// peak-vs-small-signal problem that Heat hit (handoff bug 3).
 		}
 
 		StereoSample* currentSample = buffer;
@@ -472,6 +486,15 @@ void ModControllableAudio::processFX(StereoSample* buffer, int32_t numSamples, M
 				currentSample->r = add_saturation(multiply_32x32_rshift32(currentSample->r, grainDryVol) << 1,
 				                                  multiply_32x32_rshift32(grains_r, grainVol) << 1);
 				modFXGrainBufferWriteIndex++;
+			}
+			else if (modFXType == ModFXType::GRISTLE) {
+				// Both channels share one shaped LFO value so they chop and sweep together,
+				// but each keeps its own filter state (see gristleMemory in the header).
+				int32_t shaped = deluge::dsp::gristle::shapeLFO(lfoOutput, gristleConfig);
+				currentSample->l =
+				    deluge::dsp::gristle::processSample(currentSample->l, shaped, gristleConfig, gristleMemory.l);
+				currentSample->r =
+				    deluge::dsp::gristle::processSample(currentSample->r, shaped, gristleConfig, gristleMemory.r);
 			}
 			else {
 
@@ -1738,6 +1761,9 @@ void ModControllableAudio::clearModFXMemory() {
 	else if (modFXType == ModFXType::PHASER) {
 		memset(allpassMemory, 0, sizeof(allpassMemory));
 		memset(&phaserMemory, 0, sizeof(phaserMemory));
+	}
+	else if (modFXType == ModFXType::GRISTLE) {
+		memset(&gristleMemory, 0, sizeof(gristleMemory));
 	}
 }
 

@@ -27,8 +27,9 @@ public:
 	using UnpatchedParam::UnpatchedParam;
 
 	bool isRelevant(ModControllableAudio* modControllable, int32_t whichThing) {
+		// GRISTLE uses this param as its VCA/VCF Mode blend.
 		return (util::one_of(modControllable->getModFXType(),
-		                     {ModFXType::CHORUS, ModFXType::CHORUS_STEREO, ModFXType::GRAIN}));
+		                     {ModFXType::CHORUS, ModFXType::CHORUS_STEREO, ModFXType::GRAIN, ModFXType::GRISTLE}));
 	}
 };
 

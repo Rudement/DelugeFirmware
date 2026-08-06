@@ -786,6 +786,7 @@ enum class String : size_t {
 	STRING_FOR_AUTOMATION_CLEARED,
 
 	STRING_FOR_GRAIN,
+	STRING_FOR_GRISTLE,
 	STRING_FOR_FILL,
 
 	/* Strings Specifically for Automation Instrument Clip View

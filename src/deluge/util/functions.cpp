@@ -888,6 +888,8 @@ char const* fxTypeToString(ModFXType fxType) {
 		return "StereoChorus";
 	case ModFXType::GRAIN:
 		return "grainFX";
+	case ModFXType::GRISTLE:
+		return "gristle";
 
 	case ModFXType::PHASER:
 		return "phaser";
@@ -909,6 +911,9 @@ ModFXType stringToFXType(char const* string) {
 	}
 	else if (!strcmp(string, "grainFX")) {
 		return ModFXType::GRAIN;
+	}
+	else if (!strcmp(string, "gristle")) {
+		return ModFXType::GRISTLE;
 	}
 	else if (!strcmp(string, "phaser")) {
 		return ModFXType::PHASER;

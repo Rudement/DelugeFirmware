@@ -720,6 +720,7 @@ PLACE_SDRAM_DATA Language english{
         {STRING_FOR_NOTES_CLEARED, "Notes cleared"},
         {STRING_FOR_AUTOMATION_CLEARED, "Automation cleared"},
         {STRING_FOR_GRAIN, "Grain"},
+        {STRING_FOR_GRISTLE, "Gristle"},
         {STRING_FOR_FILL, "Fill"},
         {STRING_FOR_AUTOMATION, "AUTOMATION"},
         {STRING_FOR_AUTOMATION_OVERVIEW, "Automation Overview"},

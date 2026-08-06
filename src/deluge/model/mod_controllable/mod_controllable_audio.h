@@ -101,6 +101,9 @@ public:
 	// Phaser
 	StereoSample phaserMemory;
 	StereoSample allpassMemory[kNumAllpassFiltersPhaser];
+	// Gristle's one-pole lowpass state. The two channels MUST keep separate state: running
+	// a single one-pole over an interleaved buffer combs instead of filtering.
+	StereoSample gristleMemory{};
 
 	// EQ
 	int32_t bassFreq; // These two should eventually not be variables like this
