@@ -1430,6 +1430,7 @@ int32_t getParamFromUserValue(uint8_t p, int8_t userValue) {
 
 	case params::UNPATCHED_START + params::UNPATCHED_BASS:
 	case params::UNPATCHED_START + params::UNPATCHED_TREBLE:
+	case params::UNPATCHED_START + params::UNPATCHED_MID:
 		if (userValue == -50) {
 			return -2147483648;
 		}

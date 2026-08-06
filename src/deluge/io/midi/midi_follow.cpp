@@ -273,6 +273,10 @@ void MidiFollow::initDefaultMappings() {
 	soundParamToCC[params::UNPATCHED_START + params::UNPATCHED_BASS] = 86;
 	ccToSoundParam[87] = params::UNPATCHED_START + params::UNPATCHED_TREBLE;
 	soundParamToCC[params::UNPATCHED_START + params::UNPATCHED_TREBLE] = 87;
+	ccToSoundParam[88] = params::UNPATCHED_START + params::UNPATCHED_MID;
+	soundParamToCC[params::UNPATCHED_START + params::UNPATCHED_MID] = 88;
+	ccToSoundParam[89] = params::UNPATCHED_START + params::UNPATCHED_MID_FREQ;
+	soundParamToCC[params::UNPATCHED_START + params::UNPATCHED_MID_FREQ] = 89;
 	ccToSoundParam[91] = params::GLOBAL_REVERB_AMOUNT;
 	soundParamToCC[params::GLOBAL_REVERB_AMOUNT] = 91;
 	ccToSoundParam[93] = params::GLOBAL_MOD_FX_DEPTH;
@@ -353,6 +357,10 @@ void MidiFollow::initDefaultMappings() {
 	globalParamToCC[params::UNPATCHED_BASS] = 71;
 	ccToGlobalParam[87] = params::UNPATCHED_TREBLE;
 	globalParamToCC[params::UNPATCHED_TREBLE] = 82;
+	ccToGlobalParam[88] = params::UNPATCHED_MID;
+	globalParamToCC[params::UNPATCHED_MID] = 88;
+	ccToGlobalParam[89] = params::UNPATCHED_MID_FREQ;
+	globalParamToCC[params::UNPATCHED_MID_FREQ] = 89;
 	ccToGlobalParam[91] = params::UNPATCHED_REVERB_SEND_AMOUNT;
 	globalParamToCC[params::UNPATCHED_REVERB_SEND_AMOUNT] = 91;
 	ccToGlobalParam[93] = params::UNPATCHED_MOD_FX_DEPTH;

@@ -479,6 +479,8 @@ eq::EqUnpatchedParam bassFreqMenu{STRING_FOR_BASS_FREQUENCY, STRING_FOR_BASS_FRE
                                   params::UNPATCHED_BASS_FREQ};
 eq::EqUnpatchedParam trebleFreqMenu{STRING_FOR_TREBLE_FREQUENCY, STRING_FOR_TREBLE_FREQUENCY_SHORT,
                                     params::UNPATCHED_TREBLE_FREQ};
+eq::EqUnpatchedParam midMenu{STRING_FOR_MID, params::UNPATCHED_MID};
+eq::EqUnpatchedParam midFreqMenu{STRING_FOR_MID_FREQUENCY, STRING_FOR_MID_FREQUENCY_SHORT, params::UNPATCHED_MID_FREQ};
 
 eq::EqMenu eqMenu{
     STRING_FOR_EQ,
@@ -487,6 +489,8 @@ eq::EqMenu eqMenu{
         &trebleMenu,
         &bassFreqMenu,
         &trebleFreqMenu,
+        &midMenu,
+        &midFreqMenu,
     },
 };
 
@@ -722,6 +726,8 @@ eq::EqMenu globalEQMenu{
         &trebleMenu,
         &bassFreqMenu,
         &trebleFreqMenu,
+        &midMenu,
+        &midFreqMenu,
     },
 };
 

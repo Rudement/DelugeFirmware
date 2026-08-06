@@ -29,8 +29,11 @@ class EqMenu final : public HorizontalMenu {
 public:
 	EqMenu(l10n::String newName, std::initializer_list<MenuItem*> newItems) : HorizontalMenu(newName, newItems) {}
 
-	void renderMenuItems(std::span<MenuItem*> items, const MenuItem* currentItem) override {
-		const auto [bass, treble, bass_freq, treble_freq, order_changed] = ensureCorrectItemsOrderAndGetValues();
+	void renderMenuItems(std::span<MenuItem*> /*visible_items*/, const MenuItem* currentItem) override {
+		// NOTE: with 6 items this menu paginates, so the span passed in is only the current page —
+		// never index it directly. The graph is always drawn from the full (reordered) item list.
+		const auto [bass, treble, bass_freq, treble_freq, mid, mid_freq, order_changed] =
+		    ensureCorrectItemsOrderAndGetValues();
 		if (order_changed) {
 			renderOLED();
 			return;
@@ -78,10 +81,30 @@ public:
 			treble_y2 = std::lerp(treble_y2, target_y, morph);
 		}
 
+		// Mid bell, drawn on the segment between the two shelf corners
+		uint8_t mid_x = std::lerp(static_cast<float>(bass_x2 + slope_width),
+		                          static_cast<float>(std::max<int32_t>(treble_x2 - slope_width, bass_x2 + slope_width)),
+		                          mid_freq);
+		mid_x = std::clamp<uint8_t>(mid_x, bass_x2, treble_x2);
+		uint8_t mid_xl = std::max<int32_t>(mid_x - slope_width, bass_x2);
+		uint8_t mid_xr = std::min<int32_t>(mid_x + slope_width, treble_x2);
+		uint8_t mid_y1 = std::lerp(end_y, end_y - height, mid);
+		auto y_on_center_segment = [&](uint8_t x) -> uint8_t {
+			if (treble_x2 <= bass_x2) {
+				return center_between(bass_y2, treble_y2);
+			}
+			return std::lerp(bass_y2, treble_y2, (x - bass_x2) / static_cast<float>(treble_x2 - bass_x2));
+		};
+		const uint8_t mid_yl = y_on_center_segment(mid_xl);
+		const uint8_t mid_yr = y_on_center_segment(mid_xr);
+
 		oled_canvas::Canvas& image = OLED::main;
 		image.drawLine(bass_x0, bass_y1, bass_x1, bass_y1);
 		image.drawLine(bass_x1, bass_y1, bass_x2, bass_y2);
-		image.drawLine(bass_x2, bass_y2, treble_x2, treble_y2);
+		image.drawLine(bass_x2, bass_y2, mid_xl, mid_yl);
+		image.drawLine(mid_xl, mid_yl, mid_x, mid_y1);
+		image.drawLine(mid_x, mid_y1, mid_xr, mid_yr);
+		image.drawLine(mid_xr, mid_yr, treble_x2, treble_y2);
 		image.drawLine(treble_x2, treble_y2, treble_x1, treble_y1);
 		image.drawLine(treble_x1, treble_y1, treble_x0, treble_y1);
 
@@ -105,30 +128,43 @@ public:
 			image.drawPixel(treble_x2, y);
 		}
 
-		// Draw control indicators
+		// Draw control indicators. Compare against the reordered full item list, never the page span.
 		selected_x_ = -1, selected_y_ = -1;
-		drawControlIndicator(center_between(bass_x0, bass_x1), bass_y1, currentItem == items[0]);
-		drawControlIndicator(bass_x2, bass_y2, currentItem == items[1]);
-		drawControlIndicator(treble_x2, treble_y2, currentItem == items[2]);
-		drawControlIndicator(center_between(treble_x1, treble_x0), treble_y1, currentItem == items[3]);
+		drawControlIndicator(center_between(bass_x0, bass_x1), bass_y1, currentItem == ordered_items_[0]);
+		drawControlIndicator(bass_x2, bass_y2, currentItem == ordered_items_[1]);
+		drawControlIndicator(treble_x2, treble_y2, currentItem == ordered_items_[2]);
+		drawControlIndicator(center_between(treble_x1, treble_x0), treble_y1, currentItem == ordered_items_[3]);
+		drawControlIndicator(mid_x, mid_y1, currentItem == ordered_items_[4]);
+		drawControlIndicator(mid_x, y_on_center_segment(mid_x), currentItem == ordered_items_[5]);
 	}
 
 private:
 	int32_t selected_x_, selected_y_;
+
+	static constexpr size_t kNumEqItems = 6;
 
 	struct EqualizerValues {
 		float bass{0.f};
 		float treble{0.f};
 		float bass_freq{0.f};
 		float treble_freq{0.f};
+		float mid{0.5f};
+		float mid_freq{0.5f};
 		bool order_changed{false};
 	};
+
+	// Items in display order: bass, bass freq, treble freq, treble (page 1 — same as before the mid
+	// band existed), then mid, mid freq (page 2). Filled by ensureCorrectItemsOrderAndGetValues().
+	UnpatchedParam* ordered_items_[kNumEqItems] = {};
 
 	EqualizerValues ensureCorrectItemsOrderAndGetValues() {
 		using namespace deluge::modulation;
 
 		const uint8_t current_item_pos = std::distance(items.begin(), current_item_);
-		UnpatchedParam* desired_order_items[4] = {nullptr, nullptr, nullptr, nullptr};
+		UnpatchedParam** desired_order_items = ordered_items_;
+		for (size_t idx = 0; idx < kNumEqItems; ++idx) {
+			desired_order_items[idx] = nullptr;
+		}
 		EqualizerValues result{};
 
 		for (auto* i : items) {
@@ -150,12 +186,20 @@ private:
 				desired_order_items[3] = as_unpatched;
 				result.treble = as_unpatched->getValue() / 50.f;
 				break;
+			case params::UNPATCHED_MID:
+				desired_order_items[4] = as_unpatched;
+				result.mid = as_unpatched->getValue() / 50.f;
+				break;
+			case params::UNPATCHED_MID_FREQ:
+				desired_order_items[5] = as_unpatched;
+				result.mid_freq = as_unpatched->getValue() / 50.f;
+				break;
 			default:
 				break;
 			}
 		}
 
-		for (int idx = 0; idx < items.size(); ++idx) {
+		for (size_t idx = 0; idx < items.size() && idx < kNumEqItems; ++idx) {
 			if (items[idx] != desired_order_items[idx] && desired_order_items[idx]) {
 				items[idx] = desired_order_items[idx];
 				result.order_changed = true;
