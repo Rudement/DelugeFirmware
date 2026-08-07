@@ -386,7 +386,8 @@ bool UnpatchedParamSet::shouldParamIndicateMiddleValue(ModelStackWithParamId con
 		       || isUIModeActive(UI_MODE_STUTTERING);
 	case params::UNPATCHED_BASS:
 	case params::UNPATCHED_TREBLE:
-	case params::UNPATCHED_MID:
+	case params::UNPATCHED_LOW_MID:
+	case params::UNPATCHED_HIGH_MID:
 	// The only two bipolar Gristleizer params. Bias is centred when it leaves the LFO
 	// symmetric, Freq when the filter sits at its neutral ~800 Hz. The other seven run from a
 	// minimum and would be wrong to show a centre detent on.

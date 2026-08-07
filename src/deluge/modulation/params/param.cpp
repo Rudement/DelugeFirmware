@@ -198,8 +198,10 @@ char const* getParamDisplayName(Kind kind, int32_t p) {
 		    [UNPATCHED_TREBLE] = STRING_FOR_TREBLE,
 		    [UNPATCHED_BASS_FREQ] = STRING_FOR_BASS_FREQUENCY,
 		    [UNPATCHED_TREBLE_FREQ] = STRING_FOR_TREBLE_FREQUENCY,
-		    [UNPATCHED_MID] = STRING_FOR_MID,
-		    [UNPATCHED_MID_FREQ] = STRING_FOR_MID_FREQUENCY,
+		    [UNPATCHED_LOW_MID] = STRING_FOR_LOW_MID,
+		    [UNPATCHED_LOW_MID_FREQ] = STRING_FOR_LOW_MID_FREQUENCY,
+		    [UNPATCHED_HIGH_MID] = STRING_FOR_HIGH_MID,
+		    [UNPATCHED_HIGH_MID_FREQ] = STRING_FOR_HIGH_MID_FREQUENCY,
 		    [UNPATCHED_SAMPLE_RATE_REDUCTION] = STRING_FOR_DECIMATION,
 		    [UNPATCHED_BITCRUSHING] = STRING_FOR_BITCRUSH,
 		    [UNPATCHED_MOD_FX_OFFSET] = STRING_FOR_MODFX_OFFSET,
@@ -388,11 +390,17 @@ constexpr char const* paramNameForFileConst(Kind const kind, ParamType const par
 		case UNPATCHED_TREBLE_FREQ:
 			return "trebleFreq";
 
-		case UNPATCHED_MID:
+		case UNPATCHED_LOW_MID:
 			return "mid";
 
-		case UNPATCHED_MID_FREQ:
+		case UNPATCHED_LOW_MID_FREQ:
 			return "midFreq";
+
+		case UNPATCHED_HIGH_MID:
+			return "highMid";
+
+		case UNPATCHED_HIGH_MID_FREQ:
+			return "highMidFreq";
 
 		// The Gristleizer. These strings are what makes inserting the params mid-enum safe:
 		// songs store params by name, so a saved song survives the sub-ranges shifting.

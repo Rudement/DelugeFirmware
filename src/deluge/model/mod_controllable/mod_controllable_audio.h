@@ -95,7 +95,8 @@ public:
 	bool isSRREnabled(ParamManager* paramManager);
 	bool hasBassAdjusted(ParamManager* paramManager);
 	bool hasTrebleAdjusted(ParamManager* paramManager);
-	bool hasMidAdjusted(ParamManager* paramManager);
+	bool hasLowMidAdjusted(ParamManager* paramManager);
+	bool hasHighMidAdjusted(ParamManager* paramManager);
 	ModelStackWithAutoParam* getParamFromMIDIKnob(MIDIKnob* knob, ModelStackWithThreeMainThings* modelStack);
 	ActionResult buttonAction(deluge::hid::Button b, bool on, ModelStackWithThreeMainThings* modelStack);
 
@@ -111,18 +112,24 @@ public:
 	int32_t bassFreq; // These two should eventually not be variables like this
 	int32_t trebleFreq;
 	// One-pole coefficients for the two lowpasses bracketing the mid bell (an octave below / above centre)
-	int32_t midFreqLo;
-	int32_t midFreqHi;
+	int32_t lowMidFreqLo;
+	int32_t lowMidFreqHi;
+	int32_t highMidFreqLo;
+	int32_t highMidFreqHi;
 
 	int32_t withoutTrebleL;
 	int32_t bassOnlyL;
 	int32_t withoutTrebleR;
 	int32_t bassOnlyR;
 	// Mid bell filter state. Stereo state must stay separate per channel — see HANDOFF.md.
-	int32_t midLowL;
-	int32_t midHighL;
-	int32_t midLowR;
-	int32_t midHighR;
+	int32_t lowMidLoL;
+	int32_t lowMidHiL;
+	int32_t lowMidLoR;
+	int32_t lowMidHiR;
+	int32_t highMidLoL;
+	int32_t highMidHiL;
+	int32_t highMidLoR;
+	int32_t highMidHiR;
 
 	// Delay
 	Delay delay;
@@ -202,8 +209,8 @@ protected:
 
 private:
 	void initializeSecondaryDelayBuffer(int32_t newNativeRate, bool makeNativeRatePreciseRelativeToOtherBuffer);
-	void doEQ(bool doBass, bool doTreble, bool doMid, int32_t* inputL, int32_t* inputR, int32_t bassAmount,
-	          int32_t trebleAmount, int32_t midAmount);
+	void doEQ(bool doBass, bool doTreble, bool doLowMid, bool doHighMid, int32_t* inputL, int32_t* inputR,
+	          int32_t bassAmount, int32_t trebleAmount, int32_t lowMidAmount, int32_t highMidAmount);
 	ModelStackWithThreeMainThings* addNoteRowIndexAndStuff(ModelStackWithTimelineCounter* modelStack,
 	                                                       int32_t noteRowIndex);
 	void switchHPFModeWithOff();
