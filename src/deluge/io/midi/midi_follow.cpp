@@ -288,10 +288,26 @@ void MidiFollow::initDefaultMappings() {
 	soundParamToCC[params::UNPATCHED_START + params::UNPATCHED_BASS] = 86;
 	ccToSoundParam[87] = params::UNPATCHED_START + params::UNPATCHED_TREBLE;
 	soundParamToCC[params::UNPATCHED_START + params::UNPATCHED_TREBLE] = 87;
-	ccToSoundParam[88] = params::UNPATCHED_START + params::UNPATCHED_MID;
-	soundParamToCC[params::UNPATCHED_START + params::UNPATCHED_MID] = 88;
-	ccToSoundParam[89] = params::UNPATCHED_START + params::UNPATCHED_MID_FREQ;
-	soundParamToCC[params::UNPATCHED_START + params::UNPATCHED_MID_FREQ] = 89;
+	ccToSoundParam[88] = params::UNPATCHED_START + params::UNPATCHED_LOW_MID;
+	soundParamToCC[params::UNPATCHED_START + params::UNPATCHED_LOW_MID] = 88;
+	// The four-band EQ's three extra controls. NOT 111/112 as on the 1.2.1 branch: upstream took
+	// 102-113 for the Env3/Env4/LFO3/LFO4 params after 1.2.1 shipped, so that whole block is gone.
+	//
+	// Low-Mid Freq also had to move OFF CC 89. MIDI_CC_MUTE is 89, and on a per-track follow
+	// channel midiCCReceivedForSpecificTrack() intercepts it as "toggle clip mute" and returns
+	// before any param lookup happens — so the knob worked on channels A/B/C and silently muted
+	// clips everywhere else.
+	//
+	// 33/34/35 are the LSB halves of the 14-bit pairs for mod wheel / breath / CC 3. The Deluge is
+	// 7-bit only and never sends or consumes them, so they are free in practice. Deliberately NOT
+	// 32 (Bank Select LSB, which DAWs really do send alongside program changes) and not 38 (Data
+	// Entry LSB, which rides along with the RPN traffic MPE uses).
+	ccToSoundParam[33] = params::UNPATCHED_START + params::UNPATCHED_LOW_MID_FREQ;
+	soundParamToCC[params::UNPATCHED_START + params::UNPATCHED_LOW_MID_FREQ] = 33;
+	ccToSoundParam[34] = params::UNPATCHED_START + params::UNPATCHED_HIGH_MID;
+	soundParamToCC[params::UNPATCHED_START + params::UNPATCHED_HIGH_MID] = 34;
+	ccToSoundParam[35] = params::UNPATCHED_START + params::UNPATCHED_HIGH_MID_FREQ;
+	soundParamToCC[params::UNPATCHED_START + params::UNPATCHED_HIGH_MID_FREQ] = 35;
 	ccToSoundParam[91] = params::GLOBAL_REVERB_AMOUNT;
 	soundParamToCC[params::GLOBAL_REVERB_AMOUNT] = 91;
 	ccToSoundParam[93] = params::GLOBAL_MOD_FX_DEPTH;
@@ -372,10 +388,15 @@ void MidiFollow::initDefaultMappings() {
 	globalParamToCC[params::UNPATCHED_BASS] = 71;
 	ccToGlobalParam[87] = params::UNPATCHED_TREBLE;
 	globalParamToCC[params::UNPATCHED_TREBLE] = 82;
-	ccToGlobalParam[88] = params::UNPATCHED_MID;
-	globalParamToCC[params::UNPATCHED_MID] = 88;
-	ccToGlobalParam[89] = params::UNPATCHED_MID_FREQ;
-	globalParamToCC[params::UNPATCHED_MID_FREQ] = 89;
+	ccToGlobalParam[88] = params::UNPATCHED_LOW_MID;
+	globalParamToCC[params::UNPATCHED_LOW_MID] = 88;
+	// See the comment on the sound-param side above for why these are 33/34/35 and not 89/111/112.
+	ccToGlobalParam[33] = params::UNPATCHED_LOW_MID_FREQ;
+	globalParamToCC[params::UNPATCHED_LOW_MID_FREQ] = 33;
+	ccToGlobalParam[34] = params::UNPATCHED_HIGH_MID;
+	globalParamToCC[params::UNPATCHED_HIGH_MID] = 34;
+	ccToGlobalParam[35] = params::UNPATCHED_HIGH_MID_FREQ;
+	globalParamToCC[params::UNPATCHED_HIGH_MID_FREQ] = 35;
 	ccToGlobalParam[91] = params::UNPATCHED_REVERB_SEND_AMOUNT;
 	globalParamToCC[params::UNPATCHED_REVERB_SEND_AMOUNT] = 91;
 	ccToGlobalParam[93] = params::UNPATCHED_MOD_FX_DEPTH;

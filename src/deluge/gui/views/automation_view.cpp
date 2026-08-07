@@ -123,8 +123,10 @@ const uint32_t mutePadActionUIModes[] = {UI_MODE_NOTES_PRESSED, UI_MODE_AUDITION
 
 const uint32_t verticalScrollUIModes[] = {UI_MODE_NOTES_PRESSED, UI_MODE_AUDITIONING, UI_MODE_RECORD_COUNT_IN, 0};
 
-constexpr int32_t kNumNonGlobalParamsForAutomation = 86; // 83 stock + LOCAL_HEAT + UNPATCHED_MID + UNPATCHED_MID_FREQ
-constexpr int32_t kNumGlobalParamsForAutomation = 41;    // 39 stock + UNPATCHED_MID + UNPATCHED_MID_FREQ
+// These are the FIXED SIZE of the two std::arrays below, not a hint — adding an entry without
+// bumping the count is "too many initializers", a hard compile error. Bumped from 86/41.
+constexpr int32_t kNumNonGlobalParamsForAutomation = 88; // 83 stock + LOCAL_HEAT + 4 EQ mid params
+constexpr int32_t kNumGlobalParamsForAutomation = 43;    // 39 stock + 4 EQ mid params
 
 // synth and kit rows FX - sorted in the order that Parameters are scrolled through on the display
 const std::array<std::pair<params::Kind, ParamType>, kNumNonGlobalParamsForAutomation> nonGlobalParamsForAutomation{{
@@ -147,8 +149,10 @@ const std::array<std::pair<params::Kind, ParamType>, kNumNonGlobalParamsForAutom
     {params::Kind::UNPATCHED_SOUND, params::UNPATCHED_TREBLE},
     {params::Kind::UNPATCHED_SOUND, params::UNPATCHED_TREBLE_FREQ},
     // Mid, Mid Freq
-    {params::Kind::UNPATCHED_SOUND, params::UNPATCHED_MID},
-    {params::Kind::UNPATCHED_SOUND, params::UNPATCHED_MID_FREQ},
+    {params::Kind::UNPATCHED_SOUND, params::UNPATCHED_LOW_MID},
+    {params::Kind::UNPATCHED_SOUND, params::UNPATCHED_LOW_MID_FREQ},
+    {params::Kind::UNPATCHED_SOUND, params::UNPATCHED_HIGH_MID},
+    {params::Kind::UNPATCHED_SOUND, params::UNPATCHED_HIGH_MID_FREQ},
     // Reverb Amount
     {params::Kind::PATCHED, params::GLOBAL_REVERB_AMOUNT},
     // Delay Rate, Amount
@@ -270,8 +274,10 @@ const std::array<std::pair<params::Kind, ParamType>, kNumGlobalParamsForAutomati
     {params::Kind::UNPATCHED_GLOBAL, params::UNPATCHED_TREBLE},
     {params::Kind::UNPATCHED_GLOBAL, params::UNPATCHED_TREBLE_FREQ},
     // Mid, Mid Freq
-    {params::Kind::UNPATCHED_GLOBAL, params::UNPATCHED_MID},
-    {params::Kind::UNPATCHED_GLOBAL, params::UNPATCHED_MID_FREQ},
+    {params::Kind::UNPATCHED_GLOBAL, params::UNPATCHED_LOW_MID},
+    {params::Kind::UNPATCHED_GLOBAL, params::UNPATCHED_LOW_MID_FREQ},
+    {params::Kind::UNPATCHED_GLOBAL, params::UNPATCHED_HIGH_MID},
+    {params::Kind::UNPATCHED_GLOBAL, params::UNPATCHED_HIGH_MID_FREQ},
     // Reverb Amount
     {params::Kind::UNPATCHED_GLOBAL, params::UNPATCHED_REVERB_SEND_AMOUNT},
     // Delay Rate, Amount

@@ -30,10 +30,10 @@ public:
 	EqMenu(l10n::String newName, std::initializer_list<MenuItem*> newItems) : HorizontalMenu(newName, newItems) {}
 
 	void renderMenuItems(std::span<MenuItem*> /*visible_items*/, const MenuItem* currentItem) override {
-		// NOTE: with 6 items this menu paginates, so the span passed in is only the current page —
+		// NOTE: with 8 items this menu paginates, so the span passed in is only the current page —
 		// never index it directly. The graph is always drawn from the full (reordered) item list.
-		const auto [bass, treble, bass_freq, treble_freq, mid, mid_freq, order_changed] =
-		    ensureCorrectItemsOrderAndGetValues();
+		const auto [bass, treble, bass_freq, treble_freq, low_mid, low_mid_freq, high_mid, high_mid_freq,
+		            order_changed] = ensureCorrectItemsOrderAndGetValues();
 		if (order_changed) {
 			renderOLED();
 			return;
@@ -48,6 +48,9 @@ public:
 		constexpr uint8_t start_x = padding_x - 1;
 		constexpr uint8_t end_x = OLED_MAIN_WIDTH_PIXELS - padding_x;
 		constexpr uint8_t slope_width = 12;
+		// Half as wide as the single-bell version used, so two bells fit side by side between the
+		// shelf corners without their skirts swallowing each other.
+		constexpr uint8_t bell_half_width = slope_width / 2;
 		constexpr uint8_t bass_band_travel_width = (end_x - start_x) / 2 - slope_width;
 		constexpr uint8_t treble_band_travel_width = (end_x - start_x) * 0.75f;
 
@@ -81,30 +84,55 @@ public:
 			treble_y2 = std::lerp(treble_y2, target_y, morph);
 		}
 
-		// Mid bell, drawn on the segment between the two shelf corners
-		uint8_t mid_x = std::lerp(static_cast<float>(bass_x2 + slope_width),
-		                          static_cast<float>(std::max<int32_t>(treble_x2 - slope_width, bass_x2 + slope_width)),
-		                          mid_freq);
-		mid_x = std::clamp<uint8_t>(mid_x, bass_x2, treble_x2);
-		uint8_t mid_xl = std::max<int32_t>(mid_x - slope_width, bass_x2);
-		uint8_t mid_xr = std::min<int32_t>(mid_x + slope_width, treble_x2);
-		uint8_t mid_y1 = std::lerp(end_y, end_y - height, mid);
 		auto y_on_center_segment = [&](uint8_t x) -> uint8_t {
 			if (treble_x2 <= bass_x2) {
 				return center_between(bass_y2, treble_y2);
 			}
 			return std::lerp(bass_y2, treble_y2, (x - bass_x2) / static_cast<float>(treble_x2 - bass_x2));
 		};
-		const uint8_t mid_yl = y_on_center_segment(mid_xl);
-		const uint8_t mid_yr = y_on_center_segment(mid_xr);
+
+		// The two mid bells, drawn on the segment between the two shelf corners. Their frequency
+		// sweeps overlap (the low mid reaches ~7.5 kHz, the high mid starts at ~900 Hz), so the
+		// high mid can legitimately end up to the LEFT of the low mid on screen. Everything below
+		// is therefore written in terms of "the left bell" and "the right bell" rather than
+		// low/high, and the polyline is walked in x order. Drawing them in param order instead
+		// would make the trace double back on itself whenever they cross.
+		auto bell_x = [&](float freq) {
+			uint8_t x = std::lerp(
+			    static_cast<float>(bass_x2 + bell_half_width),
+			    static_cast<float>(std::max<int32_t>(treble_x2 - bell_half_width, bass_x2 + bell_half_width)), freq);
+			return std::clamp<uint8_t>(x, bass_x2, treble_x2);
+		};
+		low_mid_x_ = bell_x(low_mid_freq);
+		high_mid_x_ = bell_x(high_mid_freq);
+		low_mid_y_ = std::lerp(end_y, end_y - height, low_mid);
+		high_mid_y_ = std::lerp(end_y, end_y - height, high_mid);
+
+		const bool low_is_left = low_mid_x_ <= high_mid_x_;
+		const uint8_t left_x = low_is_left ? low_mid_x_ : high_mid_x_;
+		const uint8_t right_x = low_is_left ? high_mid_x_ : low_mid_x_;
+		const uint8_t left_y = low_is_left ? low_mid_y_ : high_mid_y_;
+		const uint8_t right_y = low_is_left ? high_mid_y_ : low_mid_y_;
+
+		// Each bell's skirt is clipped at the midpoint between the two centres, so the skirts meet
+		// rather than overlapping. When the two centres coincide the midpoint collapses onto both
+		// and the shared edge degenerates to a point, which drawLine handles.
+		const uint8_t between = center_between(left_x, right_x);
+		const uint8_t left_xl = std::max<int32_t>(left_x - bell_half_width, bass_x2);
+		const uint8_t left_xr = std::clamp<int32_t>(left_x + bell_half_width, left_x, between);
+		const uint8_t right_xl = std::clamp<int32_t>(right_x - bell_half_width, between, right_x);
+		const uint8_t right_xr = std::min<int32_t>(right_x + bell_half_width, treble_x2);
 
 		oled_canvas::Canvas& image = OLED::main;
 		image.drawLine(bass_x0, bass_y1, bass_x1, bass_y1);
 		image.drawLine(bass_x1, bass_y1, bass_x2, bass_y2);
-		image.drawLine(bass_x2, bass_y2, mid_xl, mid_yl);
-		image.drawLine(mid_xl, mid_yl, mid_x, mid_y1);
-		image.drawLine(mid_x, mid_y1, mid_xr, mid_yr);
-		image.drawLine(mid_xr, mid_yr, treble_x2, treble_y2);
+		image.drawLine(bass_x2, bass_y2, left_xl, y_on_center_segment(left_xl));
+		image.drawLine(left_xl, y_on_center_segment(left_xl), left_x, left_y);
+		image.drawLine(left_x, left_y, left_xr, y_on_center_segment(left_xr));
+		image.drawLine(left_xr, y_on_center_segment(left_xr), right_xl, y_on_center_segment(right_xl));
+		image.drawLine(right_xl, y_on_center_segment(right_xl), right_x, right_y);
+		image.drawLine(right_x, right_y, right_xr, y_on_center_segment(right_xr));
+		image.drawLine(right_xr, y_on_center_segment(right_xr), treble_x2, treble_y2);
 		image.drawLine(treble_x2, treble_y2, treble_x1, treble_y1);
 		image.drawLine(treble_x1, treble_y1, treble_x0, treble_y1);
 
@@ -134,27 +162,35 @@ public:
 		drawControlIndicator(bass_x2, bass_y2, currentItem == ordered_items_[1]);
 		drawControlIndicator(treble_x2, treble_y2, currentItem == ordered_items_[2]);
 		drawControlIndicator(center_between(treble_x1, treble_x0), treble_y1, currentItem == ordered_items_[3]);
-		drawControlIndicator(mid_x, mid_y1, currentItem == ordered_items_[4]);
-		drawControlIndicator(mid_x, y_on_center_segment(mid_x), currentItem == ordered_items_[5]);
+		drawControlIndicator(low_mid_x_, low_mid_y_, currentItem == ordered_items_[4]);
+		drawControlIndicator(low_mid_x_, y_on_center_segment(low_mid_x_), currentItem == ordered_items_[5]);
+		drawControlIndicator(high_mid_x_, high_mid_y_, currentItem == ordered_items_[6]);
+		drawControlIndicator(high_mid_x_, y_on_center_segment(high_mid_x_), currentItem == ordered_items_[7]);
 	}
 
 private:
 	int32_t selected_x_, selected_y_;
+	// Bell positions, computed in renderMenuItems() and reused by the control indicators below it.
+	uint8_t low_mid_x_{}, low_mid_y_{}, high_mid_x_{}, high_mid_y_{};
 
-	static constexpr size_t kNumEqItems = 6;
+	static constexpr size_t kNumEqItems = 8;
 
 	struct EqualizerValues {
 		float bass{0.f};
 		float treble{0.f};
 		float bass_freq{0.f};
 		float treble_freq{0.f};
-		float mid{0.5f};
-		float mid_freq{0.5f};
+		float low_mid{0.5f};
+		float low_mid_freq{0.5f};
+		float high_mid{0.5f};
+		float high_mid_freq{0.5f};
 		bool order_changed{false};
 	};
 
-	// Items in display order: bass, bass freq, treble freq, treble (page 1 — same as before the mid
-	// band existed), then mid, mid freq (page 2). Filled by ensureCorrectItemsOrderAndGetValues().
+	// Items in display order: bass, bass freq, treble freq, treble (page 1 — same as before any mid
+	// band existed), then low mid, low mid freq, high mid, high mid freq (page 2). Filled by
+	// ensureCorrectItemsOrderAndGetValues(). Pagination is by slot count, 4 per page, so 8
+	// single-slot items give exactly two pages and page 1 still renders as stock.
 	UnpatchedParam* ordered_items_[kNumEqItems] = {};
 
 	EqualizerValues ensureCorrectItemsOrderAndGetValues() {
@@ -186,13 +222,21 @@ private:
 				desired_order_items[3] = as_unpatched;
 				result.treble = as_unpatched->getValue() / 50.f;
 				break;
-			case params::UNPATCHED_MID:
+			case params::UNPATCHED_LOW_MID:
 				desired_order_items[4] = as_unpatched;
-				result.mid = as_unpatched->getValue() / 50.f;
+				result.low_mid = as_unpatched->getValue() / 50.f;
 				break;
-			case params::UNPATCHED_MID_FREQ:
+			case params::UNPATCHED_LOW_MID_FREQ:
 				desired_order_items[5] = as_unpatched;
-				result.mid_freq = as_unpatched->getValue() / 50.f;
+				result.low_mid_freq = as_unpatched->getValue() / 50.f;
+				break;
+			case params::UNPATCHED_HIGH_MID:
+				desired_order_items[6] = as_unpatched;
+				result.high_mid = as_unpatched->getValue() / 50.f;
+				break;
+			case params::UNPATCHED_HIGH_MID_FREQ:
+				desired_order_items[7] = as_unpatched;
+				result.high_mid_freq = as_unpatched->getValue() / 50.f;
 				break;
 			default:
 				break;

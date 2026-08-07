@@ -186,8 +186,15 @@ enum UnpatchedShared : ParamType {
 	UNPATCHED_TREBLE,
 	UNPATCHED_BASS_FREQ,
 	UNPATCHED_TREBLE_FREQ,
-	UNPATCHED_MID,
-	UNPATCHED_MID_FREQ,
+	// Four-band EQ: bass shelf, two sweepable bells, treble shelf. The Low-Mid pair is the band
+	// that used to be called simply "Mid"; it keeps the song-file attribute names "mid" /
+	// "midFrequency" and its exact tuning, so songs saved before the EQ became four-band load and
+	// sound identical. Only the enum and the display strings were renamed. Do not "tidy" those
+	// attribute names — that would silently orphan every saved mid setting.
+	UNPATCHED_LOW_MID,
+	UNPATCHED_LOW_MID_FREQ,
+	UNPATCHED_HIGH_MID,
+	UNPATCHED_HIGH_MID_FREQ,
 	UNPATCHED_SAMPLE_RATE_REDUCTION,
 	UNPATCHED_BITCRUSHING,
 	UNPATCHED_MOD_FX_OFFSET,
@@ -368,8 +375,8 @@ const uint32_t unpatchedNonGlobalParamShortcuts[kDisplayWidth][kDisplayHeight] =
     {UNPATCHED_PORTAMENTO, kNoParamID, kNoParamID        , kNoParamID, kNoParamID                , UNPATCHED_COMPRESSOR_THRESHOLD , kNoParamID           , kNoParamID},
     {kNoParamID          , kNoParamID, kNoParamID        , kNoParamID, kNoParamID                , kNoParamID                     , kNoParamID           , kNoParamID},
     {kNoParamID          , kNoParamID, kNoParamID        , kNoParamID, kNoParamID                , kNoParamID                     , kNoParamID           , kNoParamID},
-    {kNoParamID          , kNoParamID, kNoParamID        , kNoParamID, UNPATCHED_SIDECHAIN_SHAPE , UNPATCHED_MID                  , UNPATCHED_BASS       , UNPATCHED_BASS_FREQ},
-    {kNoParamID          , kNoParamID, UNPATCHED_ARP_GATE, kNoParamID, kNoParamID                , UNPATCHED_MID_FREQ             , UNPATCHED_TREBLE     , UNPATCHED_TREBLE_FREQ},
+    {kNoParamID          , kNoParamID, kNoParamID        , UNPATCHED_HIGH_MID     , UNPATCHED_SIDECHAIN_SHAPE , UNPATCHED_LOW_MID              , UNPATCHED_BASS       , UNPATCHED_BASS_FREQ},
+    {kNoParamID          , kNoParamID, UNPATCHED_ARP_GATE, UNPATCHED_HIGH_MID_FREQ, kNoParamID                , UNPATCHED_LOW_MID_FREQ         , UNPATCHED_TREBLE     , UNPATCHED_TREBLE_FREQ},
     {kNoParamID          , kNoParamID, kNoParamID        , kNoParamID, UNPATCHED_MOD_FX_OFFSET   , UNPATCHED_MOD_FX_FEEDBACK      , kNoParamID           , kNoParamID},
     {kNoParamID          , kNoParamID, kNoParamID        , kNoParamID, kNoParamID                , kNoParamID                     , kNoParamID           , kNoParamID},
     {kNoParamID          , kNoParamID, kNoParamID        , kNoParamID, kNoParamID                , kNoParamID                     , kNoParamID           , kNoParamID},
@@ -391,8 +398,8 @@ const uint32_t unpatchedGlobalParamShortcuts[kDisplayWidth][kDisplayHeight] = {
     {kNoParamID          , kNoParamID            , kNoParamID                , kNoParamID                  , kNoParamID				   , UNPATCHED_COMPRESSOR_THRESHOLD	, kNoParamID            , kNoParamID},
     {kNoParamID          , kNoParamID            , kNoParamID                , kNoParamID                  , UNPATCHED_LPF_MORPH	   , kNoParamID						, UNPATCHED_LPF_RES     , UNPATCHED_LPF_FREQ},
     {kNoParamID          , kNoParamID            , kNoParamID                , kNoParamID                  , UNPATCHED_HPF_MORPH	   , kNoParamID						, UNPATCHED_HPF_RES     , UNPATCHED_HPF_FREQ},
-    {kNoParamID          , kNoParamID            , UNPATCHED_SIDECHAIN_VOLUME, kNoParamID                  , UNPATCHED_SIDECHAIN_SHAPE , UNPATCHED_MID			   		, UNPATCHED_BASS        , UNPATCHED_BASS_FREQ},
-    {UNPATCHED_ARP_RATE  , kNoParamID            , UNPATCHED_ARP_GATE        , kNoParamID                  , kNoParamID				   , UNPATCHED_MID_FREQ		   	 	, UNPATCHED_TREBLE      , UNPATCHED_TREBLE_FREQ},
+    {kNoParamID          , kNoParamID            , UNPATCHED_SIDECHAIN_VOLUME, UNPATCHED_HIGH_MID          , UNPATCHED_SIDECHAIN_SHAPE , UNPATCHED_LOW_MID			   	, UNPATCHED_BASS        , UNPATCHED_BASS_FREQ},
+    {UNPATCHED_ARP_RATE  , kNoParamID            , UNPATCHED_ARP_GATE        , UNPATCHED_HIGH_MID_FREQ     , kNoParamID				   , UNPATCHED_LOW_MID_FREQ	   	 	, UNPATCHED_TREBLE      , UNPATCHED_TREBLE_FREQ},
     {kNoParamID          , kNoParamID            , kNoParamID                , kNoParamID                  , UNPATCHED_MOD_FX_OFFSET   , UNPATCHED_MOD_FX_FEEDBACK		, UNPATCHED_MOD_FX_DEPTH, UNPATCHED_MOD_FX_RATE},
     {kNoParamID          , kNoParamID            , kNoParamID                , UNPATCHED_REVERB_SEND_AMOUNT, kNoParamID				   , kNoParamID			   		 	, kNoParamID            , kNoParamID},
     {UNPATCHED_DELAY_RATE, kNoParamID            , kNoParamID                , UNPATCHED_DELAY_AMOUNT      , kNoParamID				   , kNoParamID			  		 	, kNoParamID            , kNoParamID},

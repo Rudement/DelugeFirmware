@@ -56,10 +56,14 @@ ModControllableAudio::ModControllableAudio() {
 	bassOnlyL = 0;
 	withoutTrebleR = 0;
 	bassOnlyR = 0;
-	midLowL = 0;
-	midHighL = 0;
-	midLowR = 0;
-	midHighR = 0;
+	lowMidLoL = 0;
+	lowMidHiL = 0;
+	lowMidLoR = 0;
+	lowMidHiR = 0;
+	highMidLoL = 0;
+	highMidHiL = 0;
+	highMidLoR = 0;
+	highMidHiR = 0;
 
 	// Filters
 	lpfMode = FilterMode::TRANSISTOR_24DB;
@@ -98,8 +102,10 @@ void ModControllableAudio::cloneFrom(ModControllableAudio* other) {
 	modFXType_ = other->modFXType_;
 	bassFreq = other->bassFreq; // Eventually, these shouldn't be variables like this
 	trebleFreq = other->trebleFreq;
-	midFreqLo = other->midFreqLo;
-	midFreqHi = other->midFreqHi;
+	lowMidFreqLo = other->lowMidFreqLo;
+	lowMidFreqHi = other->lowMidFreqHi;
+	highMidFreqLo = other->highMidFreqLo;
+	highMidFreqHi = other->highMidFreqHi;
 	filterRoute = other->filterRoute;
 	sidechain.cloneFrom(&other->sidechain);
 	midi_knobs = other->midi_knobs; // Could fail if no RAM... not too big a concern
@@ -115,8 +121,11 @@ void ModControllableAudio::initParams(ParamManager* paramManager) {
 	unpatchedParams->params[params::UNPATCHED_TREBLE].setCurrentValueBasicForSetup(0);
 	unpatchedParams->params[params::UNPATCHED_BASS_FREQ].setCurrentValueBasicForSetup(0);
 	unpatchedParams->params[params::UNPATCHED_TREBLE_FREQ].setCurrentValueBasicForSetup(0);
-	unpatchedParams->params[params::UNPATCHED_MID].setCurrentValueBasicForSetup(0);
-	unpatchedParams->params[params::UNPATCHED_MID_FREQ].setCurrentValueBasicForSetup(0);
+	unpatchedParams->params[params::UNPATCHED_LOW_MID].setCurrentValueBasicForSetup(0);
+	unpatchedParams->params[params::UNPATCHED_LOW_MID_FREQ].setCurrentValueBasicForSetup(0);
+	// Both mids default to 0, which is centre, which the amount law treats as an exact bypass.
+	unpatchedParams->params[params::UNPATCHED_HIGH_MID].setCurrentValueBasicForSetup(0);
+	unpatchedParams->params[params::UNPATCHED_HIGH_MID_FREQ].setCurrentValueBasicForSetup(0);
 
 	unpatchedParams->params[params::UNPATCHED_ARP_GATE].setCurrentValueBasicForSetup(0);
 	unpatchedParams->params[params::UNPATCHED_NOTE_PROBABILITY].setCurrentValueBasicForSetup(2147483647);
@@ -160,9 +169,14 @@ bool ModControllableAudio::hasTrebleAdjusted(ParamManager* paramManager) {
 	return (unpatchedParams->getValue(params::UNPATCHED_TREBLE) != 0);
 }
 
-bool ModControllableAudio::hasMidAdjusted(ParamManager* paramManager) {
+bool ModControllableAudio::hasLowMidAdjusted(ParamManager* paramManager) {
 	UnpatchedParamSet* unpatchedParams = paramManager->getUnpatchedParamSet();
-	return (unpatchedParams->getValue(params::UNPATCHED_MID) != 0);
+	return (unpatchedParams->getValue(params::UNPATCHED_LOW_MID) != 0);
+}
+
+bool ModControllableAudio::hasHighMidAdjusted(ParamManager* paramManager) {
+	UnpatchedParamSet* unpatchedParams = paramManager->getUnpatchedParamSet();
+	return (unpatchedParams->getValue(params::UNPATCHED_HIGH_MID) != 0);
 }
 
 void ModControllableAudio::processFX(std::span<StereoSample> buffer, ModFXType modFXType, int32_t modFXRate,
@@ -183,7 +197,8 @@ void ModControllableAudio::processFX(std::span<StereoSample> buffer, ModFXType m
 	// EQ -------------------------------------------------------------------------------------
 	bool thisDoBass = hasBassAdjusted(paramManager);
 	bool thisDoTreble = hasTrebleAdjusted(paramManager);
-	bool thisDoMid = hasMidAdjusted(paramManager);
+	bool thisDoLowMid = hasLowMidAdjusted(paramManager);
+	bool thisDoHighMid = hasHighMidAdjusted(paramManager);
 
 	// Bass. No-change represented by 0. Off completely represented by -536870912
 	int32_t positive = (unpatchedParams->getValue(params::UNPATCHED_BASS) >> 1) + 1073741824;
@@ -193,11 +208,14 @@ void ModControllableAudio::processFX(std::span<StereoSample> buffer, ModFXType m
 	positive = (unpatchedParams->getValue(params::UNPATCHED_TREBLE) >> 1) + 1073741824;
 	int32_t trebleAmount = multiply_32x32_rshift32_rounded(positive, positive) << 1;
 
-	// Mid. Same law as bass: no-change represented by 0.
-	positive = (unpatchedParams->getValue(params::UNPATCHED_MID) >> 1) + 1073741824;
-	int32_t midAmount = (multiply_32x32_rshift32_rounded(positive, positive) << 1) - 536870912;
+	// Both mids. Same law as bass: no-change represented by 0.
+	positive = (unpatchedParams->getValue(params::UNPATCHED_LOW_MID) >> 1) + 1073741824;
+	int32_t lowMidAmount = (multiply_32x32_rshift32_rounded(positive, positive) << 1) - 536870912;
 
-	if (thisDoBass || thisDoTreble || thisDoMid) {
+	positive = (unpatchedParams->getValue(params::UNPATCHED_HIGH_MID) >> 1) + 1073741824;
+	int32_t highMidAmount = (multiply_32x32_rshift32_rounded(positive, positive) << 1) - 536870912;
+
+	if (thisDoBass || thisDoTreble || thisDoLowMid || thisDoHighMid) {
 
 		if (thisDoBass) {
 			bassFreq = getExp(120000000, (unpatchedParams->getValue(params::UNPATCHED_BASS_FREQ) >> 5) * 6);
@@ -207,7 +225,7 @@ void ModControllableAudio::processFX(std::span<StereoSample> buffer, ModFXType m
 			trebleFreq = getExp(700000000, (unpatchedParams->getValue(params::UNPATCHED_TREBLE_FREQ) >> 5) * 6);
 		}
 
-		if (thisDoMid) {
+		if (thisDoLowMid) {
 			// The bell is the difference of two one-pole lowpasses, an octave either side of the centre.
 			// Bases put the neutral centre at ~1kHz; the sweep is deliberately only +/-3 octaves
 			// (*3 rather than the *6 bass/treble use), i.e. ~120Hz to ~7.5kHz of centre travel.
@@ -217,13 +235,32 @@ void ModControllableAudio::processFX(std::span<StereoSample> buffer, ModFXType m
 			// NOTHING there — a dead knob zone, the same failure class as Heat's octaves==0 bug.
 			// At *3 only the upper lowpass ever saturates, and the band then degrades gracefully
 			// into a presence tilt instead of vanishing. Do not raise this multiplier.
-			int32_t midFreqAdjustment = (unpatchedParams->getValue(params::UNPATCHED_MID_FREQ) >> 5) * 3;
-			midFreqLo = getExp(145000000, midFreqAdjustment);
-			midFreqHi = getExp(580000000, midFreqAdjustment);
+			int32_t lowMidFreqAdjustment = (unpatchedParams->getValue(params::UNPATCHED_LOW_MID_FREQ) >> 5) * 3;
+			lowMidFreqLo = getExp(145000000, lowMidFreqAdjustment);
+			lowMidFreqHi = getExp(580000000, lowMidFreqAdjustment);
+		}
+
+		if (thisDoHighMid) {
+			// Second bell, same construction, neutral centre ~2 kHz. The sweep here is only +/-1
+			// octave, NOT the *3 the low mid uses, and the reason is the same saturation ceiling —
+			// but it bites much sooner up here. A one-pole coefficient approaches 1.0 as its corner
+			// rises, so this band's upper lowpass starts out already close to the rail: at *3 it and
+			// the lower one BOTH saturate near the top of the knob, the difference cancels, and the
+			// band dies exactly as the low mid did at *6.
+			//
+			// Swept numerically over centres 2-3.5 kHz and multipliers 1-3 before writing this:
+			// *3 is dead at the top for every centre tried, *2 keeps a bell but the upper coefficient
+			// pins over the last fifth, and 2 kHz at *1 is the only combination that stays a true
+			// bell across ALL 51 knob positions with no saturation anywhere. Peak travels ~900 Hz to
+			// ~6 kHz, worst peak magnitude 0.56 of input. Do not raise this multiplier either.
+			int32_t highMidFreqAdjustment = (unpatchedParams->getValue(params::UNPATCHED_HIGH_MID_FREQ) >> 5) * 1;
+			highMidFreqLo = getExp(285167594, highMidFreqAdjustment);
+			highMidFreqHi = getExp(932909729, highMidFreqAdjustment);
 		}
 
 		for (StereoSample& sample : buffer) {
-			doEQ(thisDoBass, thisDoTreble, thisDoMid, &sample.l, &sample.r, bassAmount, trebleAmount, midAmount);
+			doEQ(thisDoBass, thisDoTreble, thisDoLowMid, thisDoHighMid, &sample.l, &sample.r, bassAmount, trebleAmount,
+			     lowMidAmount, highMidAmount);
 		}
 	}
 
@@ -406,8 +443,9 @@ void ModControllableAudio::processSRRAndBitcrushing(std::span<StereoSample> buff
 	}
 }
 
-inline void ModControllableAudio::doEQ(bool doBass, bool doTreble, bool doMid, int32_t* inputL, int32_t* inputR,
-                                       int32_t bassAmount, int32_t trebleAmount, int32_t midAmount) {
+inline void ModControllableAudio::doEQ(bool doBass, bool doTreble, bool doLowMid, bool doHighMid, int32_t* inputL,
+                                       int32_t* inputR, int32_t bassAmount, int32_t trebleAmount,
+                                       int32_t lowMidAmount, int32_t highMidAmount) {
 	int32_t trebleOnlyL;
 	int32_t trebleOnlyR;
 
@@ -438,26 +476,54 @@ inline void ModControllableAudio::doEQ(bool doBass, bool doTreble, bool doMid, i
 		*inputR += (multiply_32x32_rshift32(bassOnlyR, bassAmount) << 3);
 	}
 
-	// Mid: a peaking bell in series after the shelves. The band is the difference of two one-pole
-	// lowpasses an octave either side of the centre; that difference is purely real (zero phase
-	// rotation) at the centre, where it reaches 0.6 of the input. midAmount uses the same law as
-	// bassAmount (no-change == 0), but is applied at 12x rather than 8x to compensate for the
-	// band's 0.6 peak — full cut still removes (a bit more than) the whole band.
-	if (doMid) {
-		int32_t distanceToGoL = *inputL - midLowL;
-		int32_t distanceToGoR = *inputR - midLowR;
-		midLowL += multiply_32x32_rshift32(distanceToGoL, midFreqLo) << 1;
-		midLowR += multiply_32x32_rshift32(distanceToGoR, midFreqLo) << 1;
-		distanceToGoL = *inputL - midHighL;
-		distanceToGoR = *inputR - midHighR;
-		midHighL += multiply_32x32_rshift32(distanceToGoL, midFreqHi) << 1;
-		midHighR += multiply_32x32_rshift32(distanceToGoR, midFreqHi) << 1;
-		int32_t midOnlyL = midHighL - midLowL;
-		int32_t midOnlyR = midHighR - midLowR;
-		int32_t midBoostL = multiply_32x32_rshift32(midOnlyL, midAmount) << 3;
-		int32_t midBoostR = multiply_32x32_rshift32(midOnlyR, midAmount) << 3;
-		*inputL += midBoostL + (midBoostL >> 1);
-		*inputR += midBoostR + (midBoostR >> 1);
+	// The two mid bells, in series after the shelves. Each band is the difference of two one-pole
+	// lowpasses an octave either side of its centre; that difference is purely real (zero phase
+	// rotation) at the centre, where it reaches ~0.6 of the input. Both amounts use the same law as
+	// bassAmount (no-change == 0), applied at 12x rather than 8x to compensate for the band's 0.6
+	// peak — full cut still removes (a bit more than) the whole band.
+	//
+	// They are genuinely independent: each keeps its own pair of one-pole states, so overlapping
+	// their sweeps does not make them interact beyond simple summing. Running one bell's output
+	// into the other's state would couple them.
+	if (doLowMid) {
+		int32_t distanceToGoL = *inputL - lowMidLoL;
+		int32_t distanceToGoR = *inputR - lowMidLoR;
+		lowMidLoL += multiply_32x32_rshift32(distanceToGoL, lowMidFreqLo) << 1;
+		lowMidLoR += multiply_32x32_rshift32(distanceToGoR, lowMidFreqLo) << 1;
+		distanceToGoL = *inputL - lowMidHiL;
+		distanceToGoR = *inputR - lowMidHiR;
+		lowMidHiL += multiply_32x32_rshift32(distanceToGoL, lowMidFreqHi) << 1;
+		lowMidHiR += multiply_32x32_rshift32(distanceToGoR, lowMidFreqHi) << 1;
+		int32_t lowMidOnlyL = lowMidHiL - lowMidLoL;
+		int32_t lowMidOnlyR = lowMidHiR - lowMidLoR;
+		int32_t lowMidBoostL = multiply_32x32_rshift32(lowMidOnlyL, lowMidAmount) << 3;
+		int32_t lowMidBoostR = multiply_32x32_rshift32(lowMidOnlyR, lowMidAmount) << 3;
+		// SATURATING, not a plain +=. One bell fully boosted reaches ~+12 dB; with the second bell
+		// added, two bells plus the two shelves can reach ~+18 dB (7.8x) on overlapping material,
+		// measured. A plain int32 += would WRAP there rather than clip — a loud crackle that would
+		// read as a broken filter rather than as "you boosted too much". qadd costs one instruction.
+		// The bass and treble shelves are deliberately left on stock += : they are lower-gain and it
+		// is not this change's business to alter them.
+		*inputL = add_saturate(*inputL, lowMidBoostL + (lowMidBoostL >> 1));
+		*inputR = add_saturate(*inputR, lowMidBoostR + (lowMidBoostR >> 1));
+	}
+
+	if (doHighMid) {
+		int32_t distanceToGoL = *inputL - highMidLoL;
+		int32_t distanceToGoR = *inputR - highMidLoR;
+		highMidLoL += multiply_32x32_rshift32(distanceToGoL, highMidFreqLo) << 1;
+		highMidLoR += multiply_32x32_rshift32(distanceToGoR, highMidFreqLo) << 1;
+		distanceToGoL = *inputL - highMidHiL;
+		distanceToGoR = *inputR - highMidHiR;
+		highMidHiL += multiply_32x32_rshift32(distanceToGoL, highMidFreqHi) << 1;
+		highMidHiR += multiply_32x32_rshift32(distanceToGoR, highMidFreqHi) << 1;
+		int32_t highMidOnlyL = highMidHiL - highMidLoL;
+		int32_t highMidOnlyR = highMidHiR - highMidLoR;
+		int32_t highMidBoostL = multiply_32x32_rshift32(highMidOnlyL, highMidAmount) << 3;
+		int32_t highMidBoostR = multiply_32x32_rshift32(highMidOnlyR, highMidAmount) << 3;
+		// Saturating for the same reason as the low mid above.
+		*inputL = add_saturate(*inputL, highMidBoostL + (highMidBoostL >> 1));
+		*inputR = add_saturate(*inputR, highMidBoostR + (highMidBoostR >> 1));
 	}
 }
 
@@ -606,10 +672,14 @@ void ModControllableAudio::writeParamTagsToFile(Serializer& writer, ParamManager
 	                                       valuesForOverride);
 	unpatchedParams->writeParamAsAttribute(writer, "trebleFrequency", params::UNPATCHED_TREBLE_FREQ, writeAutomation,
 	                                       false, valuesForOverride);
-	unpatchedParams->writeParamAsAttribute(writer, "mid", params::UNPATCHED_MID, writeAutomation, false,
+	unpatchedParams->writeParamAsAttribute(writer, "mid", params::UNPATCHED_LOW_MID, writeAutomation, false,
 	                                       valuesForOverride);
-	unpatchedParams->writeParamAsAttribute(writer, "midFrequency", params::UNPATCHED_MID_FREQ, writeAutomation, false,
+	unpatchedParams->writeParamAsAttribute(writer, "midFrequency", params::UNPATCHED_LOW_MID_FREQ, writeAutomation,
+	                                       false, valuesForOverride);
+	unpatchedParams->writeParamAsAttribute(writer, "highMid", params::UNPATCHED_HIGH_MID, writeAutomation, false,
 	                                       valuesForOverride);
+	unpatchedParams->writeParamAsAttribute(writer, "highMidFrequency", params::UNPATCHED_HIGH_MID_FREQ,
+	                                       writeAutomation, false, valuesForOverride);
 	writer.closeTag();
 }
 
@@ -642,14 +712,26 @@ bool ModControllableAudio::readParamTagFromFile(Deserializer& reader, char const
 				reader.exitTag("trebleFrequency");
 			}
 			else if (!strcmp(tagName, "mid")) {
-				unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_MID,
+				unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_LOW_MID,
 				                           readAutomationUpToPos);
 				reader.exitTag("mid");
 			}
 			else if (!strcmp(tagName, "midFrequency")) {
-				unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_MID_FREQ,
+				unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_LOW_MID_FREQ,
 				                           readAutomationUpToPos);
 				reader.exitTag("midFrequency");
+			}
+			// High mid. Absent from songs saved before the EQ became four-band, so those simply keep
+			// the flat default and sound unchanged.
+			else if (!strcmp(tagName, "highMid")) {
+				unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_HIGH_MID,
+				                           readAutomationUpToPos);
+				reader.exitTag("highMid");
+			}
+			else if (!strcmp(tagName, "highMidFrequency")) {
+				unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_HIGH_MID_FREQ,
+				                           readAutomationUpToPos);
+				reader.exitTag("highMidFrequency");
 			}
 		}
 		reader.exitTag("equalizer", true);
