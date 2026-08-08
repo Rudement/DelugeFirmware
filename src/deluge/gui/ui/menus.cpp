@@ -331,7 +331,7 @@ Submenu eqMenu{
 
 // Gristleizer -----------------------------------------------------------------------------
 // Nine shared unpatched params, so ONE set of menu items serves synths, kits, audio clips and
-// song FX alike — unlike Heat, which is per-voice and therefore cannot appear outside a synth.
+// song FX alike — unlike Sear, which is per-voice and therefore cannot appear outside a synth.
 // Ordered as the signal flows: LFO, then what the LFO drives, then the output stage.
 UnpatchedParam gristleRateMenu{STRING_FOR_RATE, STRING_FOR_GRISTLE_RATE, params::UNPATCHED_GRISTLE_RATE};
 UnpatchedParam gristleDepthMenu{STRING_FOR_DEPTH, STRING_FOR_GRISTLE_DEPTH, params::UNPATCHED_GRISTLE_DEPTH};
@@ -461,12 +461,9 @@ fx::Clipping clippingMenu{STRING_FOR_SATURATION};
 UnpatchedParam srrMenu{STRING_FOR_DECIMATION, params::UNPATCHED_SAMPLE_RATE_REDUCTION};
 UnpatchedParam bitcrushMenu{STRING_FOR_BITCRUSH, params::UNPATCHED_BITCRUSHING};
 patched_param::Integer foldMenu{STRING_FOR_WAVEFOLD, STRING_FOR_WAVEFOLD, params::LOCAL_FOLD};
-// Heat: patched drive (per voice) plus its unpatched tilt tone control.
-// Named HEAT rather than DRIVE or DISTORTION because both of those labels are already taken —
-// STRING_FOR_DRIVE is the ladder filter's morph and STRING_FOR_DISTORTION is this submenu's own
-// heading. HEAT is also exactly four characters, so it fits 7SEG unabbreviated.
-patched_param::Integer heatMenu{STRING_FOR_HEAT, STRING_FOR_HEAT, params::LOCAL_HEAT};
-UnpatchedParam heatToneMenu{STRING_FOR_HEAT_TONE, params::UNPATCHED_HEAT_TONE};
+// Sear: patched drive (per voice) plus its unpatched tilt tone control.
+patched_param::Integer searMenu{STRING_FOR_SEAR, STRING_FOR_SEAR, params::LOCAL_SEAR};
+UnpatchedParam searToneMenu{STRING_FOR_SEAR_TONE, params::UNPATCHED_SEAR_TONE};
 
 Submenu soundDistortionMenu{
     STRING_FOR_DISTORTION,
@@ -475,8 +472,8 @@ Submenu soundDistortionMenu{
         &srrMenu,
         &bitcrushMenu,
         &foldMenu,
-        &heatMenu,
-        &heatToneMenu,
+        &searMenu,
+        &searToneMenu,
     },
 };
 
@@ -1350,7 +1347,7 @@ MenuItem* paramShortcutsForSounds[][8] = {
     {&modulatorVolume,        &modulatorTransposeMenu, comingSoonMenu,                 comingSoonMenu,                 &modulatorPhaseMenu,  &modulatorFeedbackMenu, comingSoonMenu,           &sequenceDirectionMenu             },
     {&modulatorVolume,        &modulatorTransposeMenu, comingSoonMenu,                 comingSoonMenu,                 &modulatorPhaseMenu,  &modulatorFeedbackMenu, &modulatorDestMenu,       nullptr                            },
     {&volumeMenu,             &masterTransposeMenu,    &vibratoMenu,                   &panMenu,                       &synthModeMenu,       &srrMenu,               &bitcrushMenu,            &clippingMenu                      },
-    {&portaMenu,              &polyphonyMenu,          &priorityMenu,                  &unisonDetuneMenu,              &numUnisonToStereoSpreadMenu,       nullptr,  &heatMenu,                &foldMenu                          },
+    {&portaMenu,              &polyphonyMenu,          &priorityMenu,                  &unisonDetuneMenu,              &numUnisonToStereoSpreadMenu,       nullptr,  &searMenu,                &foldMenu                          },
     {&envReleaseMenu,         &envSustainMenu,         &envDecayMenu,                  &envAttackMenu,                 &lpfMorphMenu,        &lpfModeMenu,           &lpfResMenu,              &lpfFreqMenu                       },
     {&envReleaseMenu,         &envSustainMenu,         &envDecayMenu,                  &envAttackMenu,                 &hpfMorphMenu,        &hpfModeMenu,           &hpfResMenu,              &hpfFreqMenu                       },
     {&sidechainReleaseMenu,   &sidechainSyncMenu,      &sidechainVolumeShortcutMenu,   &sidechainAttackMenu,           &sidechainShapeMenu,  &sidechainSendMenu,     &bassMenu,                &bassFreqMenu                      },
