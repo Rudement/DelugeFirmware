@@ -4,6 +4,10 @@ on:
   push:
     branches:
       - 'synthstrom-official'
+      # This fork's working branch. Upstream's triggers only name upstream's branches, so
+      # pushes to chopin built nothing until this line existed. Add sibling branches here as
+      # needed - chopin-to-13, midi-fx - one entry each.
+      - 'chopin'
   pull_request:
     branches:
       - 'community'
