@@ -1,4 +1,6 @@
 #include "gui/l10n/strings.h"
+#include "gui/menu_item/eq/eq_freq_param.h"
+#include "gui/menu_item/eq/eq_gain_param.h"
 #include "gui/menu_item/active_scales.h"
 #include "gui/menu_item/arpeggiator/midi_cv/gate.h"
 #include "gui/menu_item/arpeggiator/midi_cv/ratchet_amount.h"
@@ -306,14 +308,17 @@ Submenu modFXMenu{
 };
 
 // EQ -------------------------------------------------------------------------------------
-UnpatchedParam bassMenu{STRING_FOR_BASS, params::UNPATCHED_BASS};
-UnpatchedParam trebleMenu{STRING_FOR_TREBLE, params::UNPATCHED_TREBLE};
-UnpatchedParam bassFreqMenu{STRING_FOR_BASS_FREQUENCY, params::UNPATCHED_BASS_FREQ};
-UnpatchedParam trebleFreqMenu{STRING_FOR_TREBLE_FREQUENCY, params::UNPATCHED_TREBLE_FREQ};
-UnpatchedParam lowMidMenu{STRING_FOR_LOW_MID, params::UNPATCHED_LOW_MID};
-UnpatchedParam lowMidFreqMenu{STRING_FOR_LOW_MID_FREQUENCY, params::UNPATCHED_LOW_MID_FREQ};
-UnpatchedParam highMidMenu{STRING_FOR_HIGH_MID, params::UNPATCHED_HIGH_MID};
-UnpatchedParam highMidFreqMenu{STRING_FOR_HIGH_MID_FREQUENCY, params::UNPATCHED_HIGH_MID_FREQ};
+// Amounts read out in dB and frequencies in Hz rather than a bare 0-50. The band each item
+// belongs to is passed through to the DSP, which owns the coefficients both the readout and the
+// filter are computed from - see dsp/eq_bands.hpp.
+eq::EqGainParam bassMenu{STRING_FOR_BASS, params::UNPATCHED_BASS, eq::Band::BASS};
+eq::EqGainParam trebleMenu{STRING_FOR_TREBLE, params::UNPATCHED_TREBLE, eq::Band::TREBLE};
+eq::EqFreqParam bassFreqMenu{STRING_FOR_BASS_FREQUENCY, params::UNPATCHED_BASS_FREQ, eq::Band::BASS};
+eq::EqFreqParam trebleFreqMenu{STRING_FOR_TREBLE_FREQUENCY, params::UNPATCHED_TREBLE_FREQ, eq::Band::TREBLE};
+eq::EqGainParam lowMidMenu{STRING_FOR_LOW_MID, params::UNPATCHED_LOW_MID, eq::Band::LOW_MID};
+eq::EqFreqParam lowMidFreqMenu{STRING_FOR_LOW_MID_FREQUENCY, params::UNPATCHED_LOW_MID_FREQ, eq::Band::LOW_MID};
+eq::EqGainParam highMidMenu{STRING_FOR_HIGH_MID, params::UNPATCHED_HIGH_MID, eq::Band::HIGH_MID};
+eq::EqFreqParam highMidFreqMenu{STRING_FOR_HIGH_MID_FREQUENCY, params::UNPATCHED_HIGH_MID_FREQ, eq::Band::HIGH_MID};
 
 Submenu eqMenu{
     STRING_FOR_EQ,
