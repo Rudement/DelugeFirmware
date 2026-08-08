@@ -144,6 +144,7 @@ PLACE_SDRAM_DATA Language english{
         {STRING_FOR_DIRT, "Dirt"},
         {STRING_FOR_LEVEL, "Level"},
         {STRING_FOR_GRISTLE, "Gristleizer"},
+        {STRING_FOR_GRISTLE_ON, "Gristle on"},
         {STRING_FOR_GRISTLE_RATE, "Gristle rate"},
         {STRING_FOR_GRISTLE_DEPTH, "Gristle depth"},
         {STRING_FOR_GRISTLE_SHAPE, "Gristle shape"},
