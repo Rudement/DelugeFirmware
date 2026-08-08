@@ -1586,20 +1586,31 @@ void Sound::noteOff(ModelStackWithThreeMainThings* modelStack, ArpeggiatorBase* 
 	ArpReturnInstruction instruction;
 	arpeggiator->noteOff(arpSettings, noteCode, &instruction);
 
+	// Unlike the other two callers, this one does not clear invertReversed on a note-off. Left as
+	// it was.
+	(void)dispatchArpNoteOffs(modelStackWithSoundFlags, instruction);
+
+	reassessRenderSkippingStatus(modelStackWithSoundFlags);
+}
+
+bool Sound::dispatchArpNoteOffs(ModelStackWithSoundFlags* modelStackWithSoundFlags,
+                                ArpReturnInstruction& instruction) {
+	bool atLeastOneOff = false;
 	for (int32_t n = 0; n < ARP_MAX_INSTRUCTION_NOTES; n++) {
 		if (instruction.glideNoteCodeOffPostArp[n] == ARP_NOTE_NONE) {
 			break;
 		}
+		atLeastOneOff = true;
 		noteOffPostArpeggiator(modelStackWithSoundFlags, instruction.glideNoteCodeOffPostArp[n]);
 	}
 	for (int32_t n = 0; n < ARP_MAX_INSTRUCTION_NOTES; n++) {
 		if (instruction.noteCodeOffPostArp[n] == ARP_NOTE_NONE) {
 			break;
 		}
+		atLeastOneOff = true;
 		noteOffPostArpeggiator(modelStackWithSoundFlags, instruction.noteCodeOffPostArp[n]);
 	}
-
-	reassessRenderSkippingStatus(modelStackWithSoundFlags);
+	return atLeastOneOff;
 }
 
 void Sound::noteOnPostArpeggiator(ModelStackWithSoundFlags* modelStack, int32_t noteCodePreArp, int32_t noteCodePostArp,
@@ -2468,22 +2479,7 @@ void Sound::render(ModelStackWithThreeMainThings* modelStack, std::span<StereoSa
 	else {
 		getArp()->handlePendingNotes(arpSettings, &instruction);
 	}
-	bool atLeastOneOff = false;
-	for (int32_t n = 0; n < ARP_MAX_INSTRUCTION_NOTES; n++) {
-		if (instruction.glideNoteCodeOffPostArp[n] == ARP_NOTE_NONE) {
-			break;
-		}
-		atLeastOneOff = true;
-		noteOffPostArpeggiator(modelStackWithSoundFlags, instruction.glideNoteCodeOffPostArp[n]);
-	}
-	for (int32_t n = 0; n < ARP_MAX_INSTRUCTION_NOTES; n++) {
-		if (instruction.noteCodeOffPostArp[n] == ARP_NOTE_NONE) {
-			break;
-		}
-		atLeastOneOff = true;
-		noteOffPostArpeggiator(modelStackWithSoundFlags, instruction.noteCodeOffPostArp[n]);
-	}
-	if (atLeastOneOff) {
+	if (dispatchArpNoteOffs(modelStackWithSoundFlags, instruction)) {
 		invertReversed = false;
 	}
 	process_postarp_notes(modelStackWithSoundFlags, arpSettings, instruction);

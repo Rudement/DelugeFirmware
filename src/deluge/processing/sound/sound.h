@@ -323,6 +323,21 @@ public:
 	void process_postarp_notes(ModelStackWithSoundFlags* modelStackWithSoundFlags, ArpeggiatorSettings* arpSettings,
 	                           ArpReturnInstruction instruction);
 
+	/// Fan the note-offs in an ArpReturnInstruction out to noteOffPostArpeggiator: glide note-offs
+	/// first, then plain ones, each stopping at the first ARP_NOTE_NONE. Returns true if any note
+	/// was switched off, which two of the three callers use to clear invertReversed.
+	///
+	/// The note-on half of this already had a shared home in process_postarp_notes; the note-offs
+	/// did not, and were repeated verbatim in Sound::noteOff, Sound::render and
+	/// SoundInstrument::doTickForwardForArp.
+	///
+	/// Note this is NOT the complete note-on seam for Sounds: Sound::noteOn switches notes on
+	/// inline rather than through process_postarp_notes, because it gates each one on
+	/// AudioEngine::allowedToStartVoice() and leaves the note PENDING when no voice is free. A MIDI
+	/// FX stage has to account for both paths.
+	[[nodiscard]] bool dispatchArpNoteOffs(ModelStackWithSoundFlags* modelStackWithSoundFlags,
+	                                       ArpReturnInstruction& instruction);
+
 	virtual const char* getName() { return nullptr; }
 
 private:
