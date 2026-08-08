@@ -171,6 +171,7 @@
 #include "gui/menu_item/unpatched_param/pan.h"
 #include "gui/menu_item/unpatched_param/sound_unpatched_param.h"
 #include "gui/menu_item/unpatched_param/updating_reverb_params.h"
+#include "gui/menu_item/unpatched_param_switch.h"
 #include "gui/menu_item/voice/polyphony.h"
 #include "gui/menu_item/voice/priority.h"
 #include "io/midi/midi_device_manager.h"
@@ -356,9 +357,19 @@ Submenu eqMenu{
 };
 
 // Gristleizer -----------------------------------------------------------------------------
-// Nine shared unpatched params, so ONE set of menu items serves synths, kits, audio clips and
+// Ten shared unpatched params, so ONE set of menu items serves synths, kits, audio clips and
 // song FX alike — unlike Sear, which is per-voice and therefore cannot appear outside a synth.
-// Ordered as the signal flows: LFO, then what the LFO drives, then the output stage.
+// The master switch first, then the rest ordered as the signal flows: LFO, then what the LFO
+// drives, then the output stage.
+//
+// ON IS FIRST DELIBERATELY. It is the only control that can make the other nine inaudible, so it
+// is the one you must be able to find without scrolling past what it switches.
+//
+// gristleOnMenu is gated the same as the other nine (rf::Gated<UnpatchedParamSwitch, ...>) so the
+// switch respects the Gristleizer community-feature toggle exactly like every other knob here -
+// a plain UnpatchedParamSwitch would show up even with the feature off.
+using GristleSwitch = rf::Gated<UnpatchedParamSwitch, RuntimeFeatureSettingType::EnableGristleizer>;
+GristleSwitch gristleOnMenu{STRING_FOR_ON, STRING_FOR_GRISTLE_ON, params::UNPATCHED_GRISTLE_ON};
 GristleParam gristleRateMenu{STRING_FOR_RATE, STRING_FOR_GRISTLE_RATE, params::UNPATCHED_GRISTLE_RATE};
 GristleParam gristleDepthMenu{STRING_FOR_DEPTH, STRING_FOR_GRISTLE_DEPTH, params::UNPATCHED_GRISTLE_DEPTH};
 GristleParam gristleShapeMenu{STRING_FOR_SHAPE, STRING_FOR_GRISTLE_SHAPE, params::UNPATCHED_GRISTLE_SHAPE};
@@ -369,12 +380,13 @@ GristleParam gristleResMenu{STRING_FOR_RESONANCE, STRING_FOR_GRISTLE_RES, params
 GristleParam gristleDirtMenu{STRING_FOR_DIRT, STRING_FOR_GRISTLE_DIRT, params::UNPATCHED_GRISTLE_DIRT};
 GristleParam gristleLevelMenu{STRING_FOR_LEVEL, STRING_FOR_GRISTLE_LEVEL, params::UNPATCHED_GRISTLE_LEVEL};
 
-// This is a plain Submenu backed by a std::vector, so nine entries need no pagination work.
+// This is a plain Submenu backed by a std::vector, so ten entries need no pagination work.
 // (On `main` the EQ submenu is a fixed-4 EqMenu and would have needed rewriting — 1.2.1 is
 // easier here. Worth knowing before porting this forward.)
 GristleMenu gristleMenu{
     STRING_FOR_GRISTLE,
     {
+        &gristleOnMenu,
         &gristleRateMenu,
         &gristleDepthMenu,
         &gristleShapeMenu,

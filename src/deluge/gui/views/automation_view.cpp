@@ -120,10 +120,12 @@ const uint32_t mutePadActionUIModes[] = {UI_MODE_NOTES_PRESSED, UI_MODE_AUDITION
 
 const uint32_t verticalScrollUIModes[] = {UI_MODE_NOTES_PRESSED, UI_MODE_AUDITIONING, UI_MODE_RECORD_COUNT_IN, 0};
 
+// These are the FIXED SIZE of the two std::arrays below, not a hint — adding an entry without
+// bumping the count is "too many initializers", a hard compile error.
 constexpr int32_t kNumNonGlobalParamsForAutomation =
-    76; // 60 stock + LOCAL_SEAR + 4 EQ mid params + 9 Gristleizer + 2 CV sends
+    77; // 60 stock + LOCAL_SEAR + 4 EQ mid params + 10 Gristleizer + 2 CV sends
 constexpr int32_t kNumGlobalParamsForAutomation =
-    43; // 26 stock + 4 EQ mid params + 9 Gristleizer + 2 CV sends + 2 CV masters
+    44; // 26 stock + 4 EQ mid params + 10 Gristleizer + 2 CV sends + 2 CV masters
 constexpr int32_t kParamNodeWidth = 3;
 
 // synth and kit rows FX - sorted in the order that Parameters are scrolled through on the display
@@ -217,7 +219,8 @@ const std::array<std::pair<params::Kind, ParamType>, kNumNonGlobalParamsForAutom
     {params::Kind::UNPATCHED_SOUND, params::UNPATCHED_STUTTER_RATE},
     // Compressor Threshold
     {params::Kind::UNPATCHED_SOUND, params::UNPATCHED_COMPRESSOR_THRESHOLD},
-    // Gristleizer: Rate, Depth, Shape, Bias, Mode, Level, Freq, Reso, Dirt
+    // Gristleizer: On, Rate, Depth, Shape, Bias, Mode, Level, Freq, Reso, Dirt
+    {params::Kind::UNPATCHED_SOUND, params::UNPATCHED_GRISTLE_ON},
     {params::Kind::UNPATCHED_SOUND, params::UNPATCHED_GRISTLE_RATE},
     {params::Kind::UNPATCHED_SOUND, params::UNPATCHED_GRISTLE_DEPTH},
     {params::Kind::UNPATCHED_SOUND, params::UNPATCHED_GRISTLE_SHAPE},
@@ -280,7 +283,8 @@ const std::array<std::pair<params::Kind, ParamType>, kNumGlobalParamsForAutomati
     {params::Kind::UNPATCHED_GLOBAL, params::UNPATCHED_STUTTER_RATE},
     // Compressor Threshold
     {params::Kind::UNPATCHED_GLOBAL, params::UNPATCHED_COMPRESSOR_THRESHOLD},
-    // Gristleizer: Rate, Depth, Shape, Bias, Mode, Level, Freq, Reso, Dirt
+    // Gristleizer: On, Rate, Depth, Shape, Bias, Mode, Level, Freq, Reso, Dirt
+    {params::Kind::UNPATCHED_GLOBAL, params::UNPATCHED_GRISTLE_ON},
     {params::Kind::UNPATCHED_GLOBAL, params::UNPATCHED_GRISTLE_RATE},
     {params::Kind::UNPATCHED_GLOBAL, params::UNPATCHED_GRISTLE_DEPTH},
     {params::Kind::UNPATCHED_GLOBAL, params::UNPATCHED_GRISTLE_SHAPE},

@@ -193,6 +193,20 @@ enum UnpatchedShared : ParamType {
 	// UnpatchedGlobal sub-ranges, which is safe: song files store params by NAME
 	// (paramNameForFile), and everything else that switches on these values is a switch, not an
 	// ordered table. The one ordered thing is the automation arrays, which are rebuilt below.
+	//
+	// ON IS THE MASTER SWITCH and it is a param rather than a bool on ModControllableAudio so
+	// that it can be automated and assigned to a gold knob — throwing the whole effect in and
+	// out is a performance gesture, not a setup option. It is thresholded, not blended: see
+	// gristle::isEnabled. It must stay first so the menu, the automation lists and the enum all
+	// tell the same story about what this block is.
+	//
+	// NO GRID SHORTCUT ON THIS BRANCH, and so no MIDI Follow CC. The 1.3 line gives On CC 89,
+	// which is free over there; here 89 is already Low Mid Freq. A CC on 1.2.1 is inseparable
+	// from a grid position, every CC-bearing position in all three shortcut tables is occupied,
+	// and the Gristleizer's own column is full at 8 params plus Dirt's slot next door. Adding
+	// On to a table would therefore have to evict a param that currently has a CC — it silently
+	// took Depth's CC 103 when first tried. Menu and automation reach it; MIDI Follow does not.
+	UNPATCHED_GRISTLE_ON,
 	UNPATCHED_GRISTLE_RATE,
 	UNPATCHED_GRISTLE_DEPTH,
 	UNPATCHED_GRISTLE_SHAPE,
