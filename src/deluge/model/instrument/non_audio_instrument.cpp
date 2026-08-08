@@ -45,31 +45,9 @@ void NonAudioInstrument::renderOutput(ModelStack* modelStack, std::span<StereoSa
 			arpeggiator.render(&activeInstrumentClip->arpSettings, &instruction, output.size(), gateThreshold,
 			                   phaseIncrement);
 
-			for (int32_t n = 0; n < ARP_MAX_INSTRUCTION_NOTES; n++) {
-				if (instruction.glideNoteCodeOffPostArp[n] == ARP_NOTE_NONE) {
-					break;
-				}
-				noteOffPostArp(instruction.glideNoteCodeOffPostArp[n], instruction.glideOutputMIDIChannelOff[n],
-				               kDefaultLiftValue, n); // Is there some better option than using the default lift
-				                                      // value? The lift event wouldn't have occurred yet...
-			}
-			for (int32_t n = 0; n < ARP_MAX_INSTRUCTION_NOTES; n++) {
-				if (instruction.noteCodeOffPostArp[n] == ARP_NOTE_NONE) {
-					break;
-				}
-				noteOffPostArp(instruction.noteCodeOffPostArp[n], instruction.outputMIDIChannelOff[n],
-				               kDefaultLiftValue, n); // Is there some better option than using the default lift
-				                                      // value? The lift event wouldn't have occurred yet...
-			}
-			if (instruction.arpNoteOn != nullptr) {
-				for (int32_t n = 0; n < ARP_MAX_INSTRUCTION_NOTES; n++) {
-					if (instruction.arpNoteOn->noteCodeOnPostArp[n] == ARP_NOTE_NONE) {
-						break;
-					}
-					instruction.arpNoteOn->noteStatus[n] = ArpNoteStatus::PLAYING;
-					noteOnPostArp(instruction.arpNoteOn->noteCodeOnPostArp[n], instruction.arpNoteOn, n);
-				}
-			}
+			// kDefaultLiftValue: is there some better option? The lift event wouldn't have occurred yet...
+			dispatchArpNoteOffs(instruction, kDefaultLiftValue);
+			dispatchArpNoteOns(instruction, ArpNoteStatusUpdate::BEFORE_NOTE_ON);
 		}
 	}
 }
@@ -91,15 +69,9 @@ void NonAudioInstrument::sendNote(ModelStackWithThreeMainThings* modelStack, boo
 		// Run everything by the Arp...
 		arpeggiator.noteOn(arpSettings, noteCodePreArp, velocity, &instruction, fromMIDIChannel, mpeValues);
 
-		if (instruction.arpNoteOn != nullptr) {
-			for (int32_t n = 0; n < ARP_MAX_INSTRUCTION_NOTES; n++) {
-				if (instruction.arpNoteOn->noteCodeOnPostArp[n] == ARP_NOTE_NONE) {
-					break;
-				}
-				noteOnPostArp(instruction.arpNoteOn->noteCodeOnPostArp[n], instruction.arpNoteOn, n);
-				instruction.arpNoteOn->noteStatus[n] = ArpNoteStatus::PLAYING;
-			}
-		}
+		// Deliberately no note-offs here: the original code processed only note-ons on this path,
+		// so any note-offs the arp returned alongside a note-on were dropped. Preserved as-is.
+		dispatchArpNoteOns(instruction, ArpNoteStatusUpdate::AFTER_NOTE_ON);
 	}
 
 	// Note off
@@ -108,29 +80,11 @@ void NonAudioInstrument::sendNote(ModelStackWithThreeMainThings* modelStack, boo
 		// Run everything by the Arp...
 		arpeggiator.noteOff(arpSettings, noteCodePreArp, &instruction);
 
-		for (int32_t n = 0; n < ARP_MAX_INSTRUCTION_NOTES; n++) {
-			if (instruction.glideNoteCodeOffPostArp[n] == ARP_NOTE_NONE) {
-				break;
-			}
-			noteOffPostArp(instruction.glideNoteCodeOffPostArp[n], instruction.glideOutputMIDIChannelOff[n], velocity,
-			               n);
-		}
-		for (int32_t n = 0; n < ARP_MAX_INSTRUCTION_NOTES; n++) {
-			if (instruction.noteCodeOffPostArp[n] == ARP_NOTE_NONE) {
-				break;
-			}
-			noteOffPostArp(instruction.noteCodeOffPostArp[n], instruction.outputMIDIChannelOff[n], velocity, n);
-		}
+		dispatchArpNoteOffs(instruction, velocity);
+
 		// CV instruments could switch on a note to do a glide
 		if (type == OutputType::CV) {
-			if (instruction.arpNoteOn != nullptr) {
-				for (int32_t n = 0; n < ARP_MAX_INSTRUCTION_NOTES; n++) {
-					if (instruction.arpNoteOn->noteCodeOnPostArp[n] == ARP_NOTE_NONE) {
-						break;
-					}
-					noteOnPostArp(instruction.arpNoteOn->noteCodeOnPostArp[n], instruction.arpNoteOn, n);
-				}
-			}
+			dispatchArpNoteOns(instruction, ArpNoteStatusUpdate::NONE);
 		}
 	}
 }
@@ -189,33 +143,44 @@ int32_t NonAudioInstrument::doTickForwardForArp(ModelStack* modelStack, int32_t 
 	int32_t ticksTilNextArpEvent = arpeggiator.doTickForward(&((InstrumentClip*)activeClip)->arpSettings, &instruction,
 	                                                         currentPos, activeClip->currentlyPlayingReversed);
 
+	// kDefaultLiftValue: is there some better option? The lift event wouldn't have occurred yet...
+	dispatchArpNoteOffs(instruction, kDefaultLiftValue);
+	dispatchArpNoteOns(instruction, ArpNoteStatusUpdate::NONE);
+
+	return ticksTilNextArpEvent;
+}
+
+void NonAudioInstrument::dispatchArpNoteOffs(ArpReturnInstruction& instruction, int32_t velocity) {
 	for (int32_t n = 0; n < ARP_MAX_INSTRUCTION_NOTES; n++) {
 		if (instruction.glideNoteCodeOffPostArp[n] == ARP_NOTE_NONE) {
 			break;
 		}
-		noteOffPostArp(instruction.glideNoteCodeOffPostArp[n], instruction.glideOutputMIDIChannelOff[n],
-		               kDefaultLiftValue,
-		               n); // Is there some better option than using the default lift value? The lift
-		                   // event wouldn't have occurred yet...
+		noteOffPostArp(instruction.glideNoteCodeOffPostArp[n], instruction.glideOutputMIDIChannelOff[n], velocity, n);
 	}
 	for (int32_t n = 0; n < ARP_MAX_INSTRUCTION_NOTES; n++) {
 		if (instruction.noteCodeOffPostArp[n] == ARP_NOTE_NONE) {
 			break;
 		}
-		noteOffPostArp(instruction.noteCodeOffPostArp[n], instruction.outputMIDIChannelOff[n], kDefaultLiftValue,
-		               n); // Is there some better option than using the default lift value? The lift
-		                   // event wouldn't have occurred yet...
+		noteOffPostArp(instruction.noteCodeOffPostArp[n], instruction.outputMIDIChannelOff[n], velocity, n);
 	}
-	if (instruction.arpNoteOn != nullptr) {
-		for (int32_t n = 0; n < ARP_MAX_INSTRUCTION_NOTES; n++) {
-			if (instruction.arpNoteOn->noteCodeOnPostArp[n] == ARP_NOTE_NONE) {
-				break;
-			}
-			noteOnPostArp(instruction.arpNoteOn->noteCodeOnPostArp[n], instruction.arpNoteOn, n);
+}
+
+void NonAudioInstrument::dispatchArpNoteOns(ArpReturnInstruction& instruction, ArpNoteStatusUpdate statusUpdate) {
+	if (instruction.arpNoteOn == nullptr) {
+		return;
+	}
+	for (int32_t n = 0; n < ARP_MAX_INSTRUCTION_NOTES; n++) {
+		if (instruction.arpNoteOn->noteCodeOnPostArp[n] == ARP_NOTE_NONE) {
+			break;
+		}
+		if (statusUpdate == ArpNoteStatusUpdate::BEFORE_NOTE_ON) {
+			instruction.arpNoteOn->noteStatus[n] = ArpNoteStatus::PLAYING;
+		}
+		noteOnPostArp(instruction.arpNoteOn->noteCodeOnPostArp[n], instruction.arpNoteOn, n);
+		if (statusUpdate == ArpNoteStatusUpdate::AFTER_NOTE_ON) {
+			instruction.arpNoteOn->noteStatus[n] = ArpNoteStatus::PLAYING;
 		}
 	}
-
-	return ticksTilNextArpEvent;
 }
 
 // Unlike other Outputs, these don't have ParamManagers backed up at the Song level
