@@ -18,6 +18,7 @@
 #pragma once
 
 #include "definitions_cxx.hpp"
+#include "dsp/sear.hpp"
 #include "model/mod_controllable/mod_controllable_audio.h"
 #include "model/sample/sample_recorder.h"
 #include "model/voiced.h"
@@ -324,6 +325,21 @@ public:
 	                           ArpReturnInstruction instruction);
 
 	virtual const char* getName() { return nullptr; }
+
+	/// Last known converged state of Sear's auto-level, kept here rather than on Voice because
+	/// Voices do not survive a note. Sound::acquireVoice() placement-constructs a Voice out of a
+	/// pool on every note-on, so anything held there starts cold every time — which for a
+	/// measuring stage means the first few ms of EVERY note run uncorrected, measured at +8 dB.
+	///
+	/// Each Voice seeds itself from this on construction and writes its own state back after
+	/// every block, so a new note starts from a correction another voice of the same patch has
+	/// already converged on. Only the very first note a Sound ever plays is cold.
+	///
+	/// Voices still keep their OWN copy while sounding — Sear's drive is a patched per-voice
+	/// param, so two voices of the same Sound can legitimately want different corrections, and
+	/// sharing one live instance between them would make them fight. This is a seed, not shared
+	/// state; last writer wins is fine and self-correcting.
+	deluge::dsp::SearLevel searLevelSeed;
 
 private:
 	uint32_t getGlobalLFOPhaseIncrement(LFO_ID lfoId, deluge::modulation::params::Global param);

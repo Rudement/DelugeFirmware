@@ -87,6 +87,10 @@ Sound::Sound() : patcher(kPatcherConfigForSound, globalSourceValues, paramFinalV
 
 	oscRetriggerPhase.fill(0xFFFFFFFF);
 
+	// Sear's auto-level seed. Voices copy this on construction and write it back, so it only
+	// starts from scratch here, once per Sound. See the declaration in sound.h.
+	dsp::searLevelReset(searLevelSeed);
+
 	modFXType_ = ModFXType::NONE;
 
 	lpfMode = FilterMode::TRANSISTOR_24DB; // Good for samples, I think
@@ -145,7 +149,7 @@ void Sound::initParams(ParamManager* paramManager) {
 	    getParamFromUserValue(params::GLOBAL_VOLUME_POST_FX, 40));
 	patchedParams->params[params::GLOBAL_VOLUME_POST_REVERB_SEND].setCurrentValueBasicForSetup(0);
 	patchedParams->params[params::LOCAL_FOLD].setCurrentValueBasicForSetup(-2147483648);
-	patchedParams->params[params::LOCAL_HEAT].setCurrentValueBasicForSetup(-2147483648);
+	patchedParams->params[params::LOCAL_SEAR].setCurrentValueBasicForSetup(-2147483648);
 	patchedParams->params[params::LOCAL_HPF_RESONANCE].setCurrentValueBasicForSetup(-2147483648);
 	patchedParams->params[params::LOCAL_HPF_FREQ].setCurrentValueBasicForSetup(-2147483648);
 	patchedParams->params[params::LOCAL_HPF_MORPH].setCurrentValueBasicForSetup(-2147483648);
@@ -1276,10 +1280,10 @@ Error Sound::readTagFromFileOrError(Deserializer& reader, char const* tagName, P
 		patchedParams->readParam(reader, patchedParamsSummary, params::LOCAL_FOLD, readAutomationUpToPos);
 		reader.exitTag("waveFold");
 	}
-	else if (!strcmp(tagName, "heat")) {
+	else if (!strcmp(tagName, "sear")) {
 		ENSURE_PARAM_MANAGER_EXISTS
-		patchedParams->readParam(reader, patchedParamsSummary, params::LOCAL_HEAT, readAutomationUpToPos);
-		reader.exitTag("heat");
+		patchedParams->readParam(reader, patchedParamsSummary, params::LOCAL_SEAR, readAutomationUpToPos);
+		reader.exitTag("sear");
 	}
 	else if (!strcmp(tagName, "midiOutput")) {
 		reader.match('{');
@@ -3829,9 +3833,9 @@ bool Sound::readParamTagFromFile(Deserializer& reader, char const* tagName, Para
 		patchedParams->readParam(reader, patchedParamsSummary, params::LOCAL_FOLD, readAutomationUpToPos);
 		reader.exitTag("waveFold");
 	}
-	else if (!strcmp(tagName, "heat")) {
-		patchedParams->readParam(reader, patchedParamsSummary, params::LOCAL_HEAT, readAutomationUpToPos);
-		reader.exitTag("heat");
+	else if (!strcmp(tagName, "sear")) {
+		patchedParams->readParam(reader, patchedParamsSummary, params::LOCAL_SEAR, readAutomationUpToPos);
+		reader.exitTag("sear");
 	}
 
 	else if (!strcmp(tagName, "envelope1")) {
@@ -4110,7 +4114,7 @@ void Sound::writeParamsToFile(Serializer& writer, ParamManager* paramManager, bo
 	patchedParams->writeParamAsAttribute(writer, "hpfMorph", params::LOCAL_HPF_MORPH, writeAutomation);
 
 	patchedParams->writeParamAsAttribute(writer, "waveFold", params::LOCAL_FOLD, writeAutomation);
-	patchedParams->writeParamAsAttribute(writer, "heat", params::LOCAL_HEAT, writeAutomation);
+	patchedParams->writeParamAsAttribute(writer, "sear", params::LOCAL_SEAR, writeAutomation);
 
 	writer.writeOpeningTagEnd();
 

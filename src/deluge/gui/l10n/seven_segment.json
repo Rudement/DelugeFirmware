@@ -331,8 +331,8 @@
         "STRING_FOR_REVERB_SIDECHAIN": "SIDE",
         "STRING_FOR_ROOM_SIZE": "SIZE",
         "STRING_FOR_BITCRUSH": "CRUSH",
-        "STRING_FOR_HEAT": "HEAT",
-        "STRING_FOR_HEAT_TONE": "HTon",
+        "STRING_FOR_SEAR": "SEAR",
+        "STRING_FOR_SEAR_TONE": "STon",
 
         "STRING_FOR_BIAS": "BIAS",
         "STRING_FOR_DIRT": "DIRT",
