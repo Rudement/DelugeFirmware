@@ -326,6 +326,7 @@ PLACE_SDRAM_DATA Language seven_segment{
         {STRING_FOR_DIRT, "DIRT"},
         {STRING_FOR_LEVEL, "LEVL"},
         {STRING_FOR_GRISTLE, "GRIS"},
+        {STRING_FOR_GRISTLE_ON, "GON"},
         {STRING_FOR_GRISTLE_RATE, "GRAT"},
         {STRING_FOR_GRISTLE_DEPTH, "GDEP"},
         {STRING_FOR_GRISTLE_SHAPE, "GSHP"},

@@ -318,6 +318,10 @@ void MidiFollow::initDefaultMappings() {
 	// keyboard really does send, 96-101 carry the data-entry and NRPN/RPN traffic MPE relies on,
 	// and 120-127 are channel mode messages that midi_engine.cpp never routes to a param at all
 	// (it gates on `data1 < 120`).
+	// 89 and 90 are the only two numbers left in the effects block (91-95 are already spoken for
+	// by reverb, mod-fx and the rest of the Gristleizer), which is where a bypass belongs.
+	ccToSoundParam[89] = params::UNPATCHED_START + params::UNPATCHED_GRISTLE_ON;
+	soundParamToCC[params::UNPATCHED_START + params::UNPATCHED_GRISTLE_ON] = 89;
 	ccToSoundParam[114] = params::UNPATCHED_START + params::UNPATCHED_GRISTLE_RATE;
 	soundParamToCC[params::UNPATCHED_START + params::UNPATCHED_GRISTLE_RATE] = 114;
 	ccToSoundParam[115] = params::UNPATCHED_START + params::UNPATCHED_GRISTLE_DEPTH;
@@ -427,6 +431,8 @@ void MidiFollow::initDefaultMappings() {
 	globalParamToCC[params::UNPATCHED_HIGH_MID_FREQ] = 35;
 
 	// See the comment on the sound-param side above for why these numbers.
+	ccToGlobalParam[89] = params::UNPATCHED_GRISTLE_ON;
+	globalParamToCC[params::UNPATCHED_GRISTLE_ON] = 89;
 	ccToGlobalParam[114] = params::UNPATCHED_GRISTLE_RATE;
 	globalParamToCC[params::UNPATCHED_GRISTLE_RATE] = 114;
 	ccToGlobalParam[115] = params::UNPATCHED_GRISTLE_DEPTH;
