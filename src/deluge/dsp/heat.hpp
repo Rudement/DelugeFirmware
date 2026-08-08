@@ -124,6 +124,19 @@ inline q31_t heatMakeup(q31_t level) {
  *     knob   0    3    5   10   15   20   25   30   35    40    45    50
  *     gain  1.0  1.5  1.8  3.2  5.6  9.6   16   29   51    90   154   256
  *
+ * Those figures are the ORIGINAL taper. Reported too tame on hardware 2026-08-08, so the curve
+ * is now scaled by 1.5 in exponent space (see kHeatDriveBoost in heatBuffer). Recomputed through
+ * the same fixed-point path, same knob positions:
+ *
+ *     knob   0    3    5   10   15   20   25   30   35    40    45    50
+ *     gain  1.6  2.1  2.8  4.7  7.9   14   25   44   76   127   228   406
+ *
+ * The realised ratio wobbles between 1.42x and 1.59x rather than sitting exactly on 1.5x, and
+ * the ceiling lands on ~406x rather than the nominal 384x. That is the pre-existing linear-
+ * interpolation-in-the-exponent approximation, not a new error: 2^s * (1 + f) overshoots 2^(s+f)
+ * by up to 6% mid-octave, and the offset changes where in each octave a given knob position
+ * falls. Correcting it would mean replacing the interpolation, which is not worth a cycle here.
+ *
  * Roughly a constant ratio per step, audible by knob 3-5, and no dead zone. Getting here needed
  * BOTH the >>26 above and moving LOCAL_HEAT out of the patcher's volume block (see param.h) —
  * the volume block's parabola alone held the entire bottom half between 1.0x and 2.0x.
@@ -137,17 +150,39 @@ inline void heatBuffer(q31_t* startSample, q31_t* endSample, q31_t level) {
 	}
 
 	const q31_t makeup = heatMakeup(level);
-	// Split `level` into integer octaves and a fraction. The cast matters: shifting a signed
+
+	// +50% drive, applied as a constant offset in exponent space so the taper SHAPE and the
+	// knob feel are untouched — every position gets ~1.5x the pre-gain it had before, and the
+	// top of the sweep goes 256x -> ~406x (see the table above for why not exactly 384x).
+	//
+	// The offset is log2(1.5) expressed in `level`'s units, where one octave is 2^26 (see the
+	// shift note below). Offsetting the exponent rather than multiplying the sample keeps the
+	// octave/fraction split exact and costs one add per buffer, not per sample.
+	//
+	// KNOWN STEP AT THE BOTTOM OF THE KNOB: gain now starts at ~1.5x the instant Heat comes off
+	// its stop, where it used to start at 1.0x, because the offset applies at level 1 as much as
+	// at full scale. That is inherent to a uniform boost and is audible as a small jump, on top
+	// of the small-signal lift heatMakeup() already documents. If the jump ever needs removing,
+	// scale `level` by 1.073 instead of adding this constant: same 384x ceiling, no step, but
+	// mid-knob positions then get less than the full 1.5x.
+	//
+	// Headroom: `level` tops out just under 2^29, so `boosted` stays well inside int32 and
+	// `octaves` reaches 8 rather than 7 at full drive. lshiftAndSaturateUnknown() handles 8
+	// fine; softClipCubic() absorbs the rest, which is the intent — more drive, not more level.
+	constexpr q31_t kHeatDriveBoost = 39258415; // round(log2(1.5) * (1 << 26))
+	const q31_t boosted = level + kHeatDriveBoost;
+
+	// Split `boosted` into integer octaves and a fraction. The cast matters: shifting a signed
 	// q31_t left would overflow into the sign bit.
 	//
 	// THE SHIFT IS TIED TO THE PARAM PIPELINE, not to q31. `level` is
 	// paramFinalValues[LOCAL_HEAT], which does NOT span the full q31 range: with neutral value
 	// 25*10737418 and getFinalParameterValueLinear's `<<3`, it tops out just under 2^29. So >>26
-	// is what yields 0..7 octaves. An earlier version used >>28 on the assumption that level was
-	// full-scale q31 — that capped the whole control at 16x instead of 256x. If the neutral value
+	// is what yields 0..7 octaves before the boost above, 0..8 after it. An earlier version
+	// used >>28 on the assumption that level was full-scale q31 — that capped the whole control at 16x instead of 256x. If the neutral value
 	// or the param's patcher block ever changes, recompute this.
-	const int32_t octaves = level >> 26;                                        // 0..7
-	const q31_t frac = static_cast<q31_t>((static_cast<uint32_t>(level) << 5) & 0x7FFFFFFF);
+	const int32_t octaves = boosted >> 26;                                      // 0..8
+	const q31_t frac = static_cast<q31_t>((static_cast<uint32_t>(boosted) << 5) & 0x7FFFFFFF);
 	q31_t* currentSample = startSample;
 
 	do {
@@ -168,7 +203,9 @@ inline void heatBuffer(q31_t* startSample, q31_t* endSample, q31_t level) {
 		// sample to TWELVE BITS and shifts by nothing: about 120 dB of attenuation, i.e.
 		// silence, not merely a level drop.
 		//
-		// `octaves` is zero across the bottom of the knob (level < 2^26, so k < 6.25 of 50),
+		// `octaves` is zero across the bottom of the knob — with kHeatDriveBoost applied that
+		// means boosted < 2^26, i.e. level < 27.8M, i.e. roughly k < 2.6 of 50 (it was k < 6.25
+		// before the boost narrowed the window) —
 		// which is precisely the range that was reported as muting on hardware — twice, at two
 		// different widths, because earlier param laws put the octaves==0 boundary in a
 		// different place. It was misdiagnosed as insufficient drive and then as makeup gain
