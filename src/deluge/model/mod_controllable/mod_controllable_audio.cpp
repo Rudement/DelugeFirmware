@@ -157,11 +157,21 @@ void ModControllableAudio::initParams(ParamManager* paramManager) {
 	// Sear Tone defaults to centre, which the tilt filter treats as a true bypass.
 	unpatchedParams->params[params::UNPATCHED_SEAR_TONE].setCurrentValueBasicForSetup(0);
 
-	// The Gristleizer. Every one of these is the INACTIVE value, so a song that has never
-	// touched the effect loads with isEnabled() false and sounds exactly as it did before the
-	// feature existed. Depth, Mode, Reso and Dirt sit at minimum; Level sits at maximum, which
-	// is unity gain; Shape at minimum is a plain triangle; Bias and Freq are bipolar and sit
-	// at centre. Changing any of these defaults would retroactively alter saved songs.
+	// The Gristleizer. ON is the only one of these that decides whether the effect is heard — it
+	// is the master switch, and isEnabled() reads nothing else — so a song that has never touched
+	// the effect loads bypassed and sounds exactly as it did before the feature existed. It starts
+	// at kOnUnset rather than at the minimum: both read as OFF, but the sentinel additionally
+	// marks the param as never explicitly written, which is what the legacy migration keys off.
+	// See the comment on gristle::kOnUnset.
+	//
+	// The other nine are still set to their inactive values, but for a different reason now: they
+	// are what you get when you switch the effect ON for the first time, and landing on a neutral
+	// patch rather than an arbitrary one is the difference between "switch it on and hear the
+	// source" and "switch it on and get a surprise". Depth, Mode, Reso and Dirt sit at minimum;
+	// Level sits at maximum, which is unity gain; Shape at minimum is a plain triangle; Bias and
+	// Freq are bipolar and sit at centre. Changing any of these defaults would retroactively alter
+	// saved songs.
+	unpatchedParams->params[params::UNPATCHED_GRISTLE_ON].setCurrentValueBasicForSetup(deluge::dsp::gristle::kOnUnset);
 	unpatchedParams->params[params::UNPATCHED_GRISTLE_RATE].setCurrentValueBasicForSetup(0);
 	unpatchedParams->params[params::UNPATCHED_GRISTLE_DEPTH].setCurrentValueBasicForSetup(-2147483648);
 	unpatchedParams->params[params::UNPATCHED_GRISTLE_SHAPE].setCurrentValueBasicForSetup(-2147483648);
@@ -553,17 +563,25 @@ void ModControllableAudio::processFX(StereoSample* buffer, int32_t numSamples, M
 	// Placed after ModFX and before EQ so the shelves can tame the chop's edges, and so the
 	// delay hears the chopped signal rather than the other way round.
 	//
-	// The enable test is a single comparison chain done once per buffer; when it is false the
-	// sample loop never runs, which is what makes the default state a true bypass at no CPU
-	// cost. Do NOT reduce it to "Depth is zero" — see the comment on isEnabled(); the filter
-	// is in circuit whenever Mode is up, even with no modulation at all.
+	// The enable test is one comparison against one param, done once per buffer; when it is false
+	// nothing else is even read and the sample loop never runs, which is what makes the default
+	// state a true bypass at no CPU cost. See isEnabled() for why the switch replaced the old
+	// rule that inferred enablement from Depth / Mode / Level / Dirt, and for why nothing about
+	// the other nine params belongs in that test.
+	//
+	// This is a standalone effect with its own params, NOT a ModFX type. On the 1.2.1 branch it
+	// was first built as one and did nothing on song / kit / audio-clip FX, because
+	// GlobalEffectable::getActiveModFXType() forces the type to NONE whenever the selected
+	// gold-knob param sits at its minimum — and it borrowed FEEDBACK, whose minimum is both a
+	// legitimate setting and where an untouched knob rests. Owning its params removes that gate
+	// and the four-knob ceiling. Do not "simplify" this back into a ModFX type.
 	{
-		q31_t gristleDepth = unpatchedParams->getValue(params::UNPATCHED_GRISTLE_DEPTH);
-		q31_t gristleMode = unpatchedParams->getValue(params::UNPATCHED_GRISTLE_MODE);
-		q31_t gristleLevel = unpatchedParams->getValue(params::UNPATCHED_GRISTLE_LEVEL);
-		q31_t gristleDirt = unpatchedParams->getValue(params::UNPATCHED_GRISTLE_DIRT);
+		if (deluge::dsp::gristle::isEnabled(unpatchedParams->getValue(params::UNPATCHED_GRISTLE_ON))) {
+			q31_t gristleDepth = unpatchedParams->getValue(params::UNPATCHED_GRISTLE_DEPTH);
+			q31_t gristleMode = unpatchedParams->getValue(params::UNPATCHED_GRISTLE_MODE);
+			q31_t gristleLevel = unpatchedParams->getValue(params::UNPATCHED_GRISTLE_LEVEL);
+			q31_t gristleDirt = unpatchedParams->getValue(params::UNPATCHED_GRISTLE_DIRT);
 
-		if (deluge::dsp::gristle::isEnabled(gristleDepth, gristleMode, gristleLevel, gristleDirt)) {
 			deluge::dsp::gristle::Config gristleConfig = deluge::dsp::gristle::setup(
 			    unpatchedParams->getValue(params::UNPATCHED_GRISTLE_SHAPE),
 			    unpatchedParams->getValue(params::UNPATCHED_GRISTLE_BIAS), gristleDepth, gristleMode, gristleLevel,
@@ -592,6 +610,20 @@ void ModControllableAudio::processFX(StereoSample* buffer, int32_t numSamples, M
 				currentSample->r =
 				    deluge::dsp::gristle::processSample(currentSample->r, shaped, gristleConfig, gristleMemory.r);
 			} while (++currentSample != bufferEnd);
+		}
+		else {
+			// Park the filter at rest while bypassed. This matters now that the switch is a param
+			// and can be automated: the SVF's low/band words hold whatever the signal left in them,
+			// and resuming from a stale non-zero state steps the output on the first sample back,
+			// which is an audible tick every time the effect is thrown back in. Zero is silence, so
+			// starting from zero is the only click-free resumption.
+			//
+			// lfoPhase is deliberately NOT reset. Letting it free-run keeps the chop locked to the
+			// timeline across a bypass, so switching out for a bar and back in lands where the
+			// pattern expects rather than restarting the cycle. That is also what the hardware does
+			// — the LFO in the box does not stop when you unpatch the output.
+			gristleMemory.l = {};
+			gristleMemory.r = {};
 		}
 	}
 
@@ -1027,8 +1059,14 @@ void ModControllableAudio::writeParamAttributesToFile(Serializer& writer, ParamM
 	unpatchedParams->writeParamAsAttribute(writer, "compressorThreshold", params::UNPATCHED_COMPRESSOR_THRESHOLD,
 	                                       writeAutomation, false, valuesForOverride);
 
-	// The Gristleizer. Attribute names match paramNameForFile() so that a song written here
-	// reads back on any build carrying the effect.
+	// The Gristleizer. Attribute names match paramNameForFile() so that a song written here reads
+	// back on any build carrying the effect.
+	//
+	// gristleOn is written FIRST, before the params it gates. The reader does not depend on that
+	// — it tracks whether the tag was seen and lets the explicit value win whenever it arrives —
+	// but a file is also read by people, and the switch is the first thing you want to know.
+	unpatchedParams->writeParamAsAttribute(writer, "gristleOn", params::UNPATCHED_GRISTLE_ON, writeAutomation, false,
+	                                       valuesForOverride);
 	unpatchedParams->writeParamAsAttribute(writer, "gristleRate", params::UNPATCHED_GRISTLE_RATE, writeAutomation,
 	                                       false, valuesForOverride);
 	unpatchedParams->writeParamAsAttribute(writer, "gristleDepth", params::UNPATCHED_GRISTLE_DEPTH, writeAutomation,
@@ -1071,6 +1109,52 @@ void ModControllableAudio::writeParamTagsToFile(Serializer& writer, ParamManager
 	unpatchedParams->writeParamAsAttribute(writer, "midFrequency", params::UNPATCHED_LOW_MID_FREQ, writeAutomation, false,
 	                                       valuesForOverride);
 	writer.closeTag();
+}
+
+/*
+ * Reconstruct the Gristleizer's master switch for songs written before it existed.
+ *
+ * THE PROBLEM. Enablement used to be inferred from the params themselves: the effect ran if any
+ * of Depth, Mode or Dirt was off its minimum, or Level off its maximum (the old
+ * gristle::isEnabled). Those songs carry the nine param tags and no gristleOn tag, so if the new
+ * switch simply took its initParams() default they would all load bypassed — the effect would
+ * vanish from work that was already made with it. Defaulting the switch ON instead is worse: it
+ * would enable the effect on every song that has ever merely touched a gristle knob, and on every
+ * song that has none of these tags at all.
+ *
+ * THE RULE. Apply the old test, one param at a time as the tags arrive, and switch ON the first
+ * time any of the four is found away from its inactive value. A song that predates the effect
+ * entirely has no tags, so nothing calls this and the switch stays off. A song that has the tags
+ * but never enabled anything also stays off, correctly — under the old rule it was silent too.
+ *
+ * WHY THIS CARRIES NO STATE. The obvious implementation is a "have I seen a gristleOn tag yet"
+ * flag on the object. It cannot be done that way: readParamTagFromFile is STATIC, so there is no
+ * instance to hang a flag on, and a file-scope static would be shared across every object in the
+ * song with no reliable point to reset it between them. Instead the sentinel value in the ON
+ * param IS the flag — gristle::kOnUnset means "no gristleOn tag has been seen", and the tag
+ * reader stamps a definite value over it the moment one is.
+ *
+ * That makes the result independent of the order the tags arrive in, which matters because file
+ * order is not something this code should have to trust. Tag first: the sentinel is gone before
+ * any of the four is read, so nothing here fires. Tag last: these may have set ON, and the tag
+ * then overwrites it with the truth. Either way the explicit value wins.
+ *
+ * KNOWN EDGE. If a legacy param is automated but happens to sit at its inactive value at the
+ * point getValue() samples it, this will not see it, and the switch stays off until the user
+ * flips it. Rare enough, and recoverable in one button press, that detecting it is not worth
+ * reaching into the automation nodes.
+ *
+ * DELETING THIS. It stops being reachable once no file in the wild lacks a gristleOn tag, which
+ * is not a date anyone can name. It is a dozen lines; leave it.
+ */
+static void inferLegacyGristleOn(UnpatchedParamSet* unpatchedParams, int32_t param, int32_t inactiveValue) {
+	if (unpatchedParams->getValue(params::UNPATCHED_GRISTLE_ON) != deluge::dsp::gristle::kOnUnset) {
+		return; // a gristleOn tag has already spoken for this song
+	}
+	if (unpatchedParams->getValue(param) == inactiveValue) {
+		return;
+	}
+	unpatchedParams->params[params::UNPATCHED_GRISTLE_ON].setCurrentValueBasicForSetup(2147483647);
 }
 
 bool ModControllableAudio::readParamTagFromFile(Deserializer& reader, char const* tagName,
@@ -1167,8 +1251,23 @@ bool ModControllableAudio::readParamTagFromFile(Deserializer& reader, char const
 		reader.exitTag("compressorThreshold");
 	}
 
-	// The Gristleizer. A song saved before the effect existed simply has none of these tags, so
-	// the params keep the inactive defaults set in initParams() and the song is unchanged.
+	// The Gristleizer. A song saved before the effect existed simply has none of these tags, so the
+	// params keep the inactive defaults set in initParams() and the song is unchanged.
+	//
+	// A song saved after the effect existed but before the master switch has the other nine tags
+	// and no gristleOn, and must NOT load silent — see inferLegacyGristleOn(), which the four
+	// gating params call to reconstruct the switch position from the old rule.
+	else if (!strcmp(tagName, "gristleOn")) {
+		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_GRISTLE_ON, readAutomationUpToPos);
+		// Stamp a definite value over the sentinel. A file that stores centre here means the switch
+		// was never touched, i.e. off — and writing the OFF rail instead says so unambiguously, so
+		// the four gating params below cannot mistake this song for a legacy one. Behaviourally
+		// invisible: centre and the OFF rail both read as off through isEnabled().
+		if (unpatchedParams->getValue(params::UNPATCHED_GRISTLE_ON) == deluge::dsp::gristle::kOnUnset) {
+			unpatchedParams->params[params::UNPATCHED_GRISTLE_ON].setCurrentValueBasicForSetup(-2147483648);
+		}
+		reader.exitTag("gristleOn");
+	}
 	else if (!strcmp(tagName, "gristleRate")) {
 		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_GRISTLE_RATE,
 		                           readAutomationUpToPos);
@@ -1177,6 +1276,7 @@ bool ModControllableAudio::readParamTagFromFile(Deserializer& reader, char const
 	else if (!strcmp(tagName, "gristleDepth")) {
 		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_GRISTLE_DEPTH,
 		                           readAutomationUpToPos);
+		inferLegacyGristleOn(unpatchedParams, params::UNPATCHED_GRISTLE_DEPTH, -2147483648);
 		reader.exitTag("gristleDepth");
 	}
 	else if (!strcmp(tagName, "gristleShape")) {
@@ -1192,11 +1292,14 @@ bool ModControllableAudio::readParamTagFromFile(Deserializer& reader, char const
 	else if (!strcmp(tagName, "gristleMode")) {
 		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_GRISTLE_MODE,
 		                           readAutomationUpToPos);
+		inferLegacyGristleOn(unpatchedParams, params::UNPATCHED_GRISTLE_MODE, -2147483648);
 		reader.exitTag("gristleMode");
 	}
 	else if (!strcmp(tagName, "gristleLevel")) {
 		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_GRISTLE_LEVEL,
 		                           readAutomationUpToPos);
+		// Level is the one whose inactive value is the MAXIMUM, not the minimum: unity gain.
+		inferLegacyGristleOn(unpatchedParams, params::UNPATCHED_GRISTLE_LEVEL, 2147483647);
 		reader.exitTag("gristleLevel");
 	}
 	else if (!strcmp(tagName, "gristleFreq")) {
@@ -1212,6 +1315,7 @@ bool ModControllableAudio::readParamTagFromFile(Deserializer& reader, char const
 	else if (!strcmp(tagName, "gristleDirt")) {
 		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_GRISTLE_DIRT,
 		                           readAutomationUpToPos);
+		inferLegacyGristleOn(unpatchedParams, params::UNPATCHED_GRISTLE_DIRT, -2147483648);
 		reader.exitTag("gristleDirt");
 	}
 

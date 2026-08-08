@@ -722,6 +722,7 @@ PLACE_SDRAM_DATA Language english{
         {STRING_FOR_GRISTLE_SHAPE, "Gristle shape"},
         {STRING_FOR_GRISTLE_BIAS, "Gristle bias"},
         {STRING_FOR_GRISTLE_MODE, "Gristle mode"},
+        {STRING_FOR_GRISTLE_ON, "Gristle on"},
         {STRING_FOR_GRISTLE_LEVEL, "Gristle level"},
         {STRING_FOR_GRISTLE_FREQ, "Gristle freq"},
         {STRING_FOR_GRISTLE_RES, "Gristle reso"},

@@ -33,8 +33,11 @@ namespace deluge::dsp::gristle {
  *
  * The original front panel was Speed, Depth, Waveform, Bias and Level, over a VCA/VCF
  * switch. The Eurorack redesign (FSS TG3/TG4, Gwinn + Carter, 2017) added Register and
- * Resonance to the filter and Dirt to the VCA. This implements all nine.
+ * Resonance to the filter and Dirt to the VCA. This implements all nine, plus a master
+ * switch the hardware did not have and does not need — a rack unit is bypassed by not
+ * patching it.
  *
+ *   On      UNPATCHED_GRISTLE_ON     master switch. Thresholded at centre; see isEnabled
  *   Rate    UNPATCHED_GRISTLE_RATE   LFO speed, LFO rates through to audio rate
  *   Depth   UNPATCHED_GRISTLE_DEPTH  how far the LFO pulls the stage down. 0 = bypass
  *   Shape   UNPATCHED_GRISTLE_SHAPE  triangle -> trapezoid -> square, continuous
@@ -203,23 +206,60 @@ inline Config setup(q31_t shapeParam, q31_t biasParam, q31_t depthParam, q31_t m
 }
 
 /*
- * Whether the effect needs to run at all. Call once per buffer; when this is false the caller
- * must skip the sample loop entirely, which is what makes the default state a true bypass and
- * costs nothing on the overwhelming majority of sounds that never enable it.
+ * Whether the effect runs at all. Call once per buffer; when this is false the caller must skip
+ * the sample loop entirely, which is what makes the default state a true bypass and costs
+ * nothing on the overwhelming majority of sounds that never enable it.
  *
- * NOTE THE MODE TERM. It is tempting to gate on Depth alone, but the filter is in circuit
- * whenever Mode is up even with Depth at zero — that is a static lowpass at the Freq setting,
- * exactly as on the original, where the VCF does not leave the signal path just because the
- * LFO is turned down. Gating on Depth alone would silently bypass a filter the user can hear
- * themselves setting. Likewise Dirt and Level do audible work with no modulation at all.
+ * ONE PARAM DECIDES THIS, AND IT IS THE ONLY THING THAT DOES. UNPATCHED_GRISTLE_ON defaults to
+ * minimum, so a fresh sound and a song that predates the effect both load bypassed.
  *
- * Every default is the inactive value (Depth, Dirt, Mode at minimum; Level at maximum), so
- * existing songs load bypassed and unchanged.
+ * WHAT THIS REPLACED, AND WHY. Until the master switch existed this function inferred enablement
+ * from the param values:
+ *
+ *     depth != min || mode != min || dirt != min || level != max
+ *
+ * which was correct in the narrow sense — those are exactly the four params that do audible work
+ * — but it made the effect impossible to switch off without also throwing away the patch. Every
+ * one of the nine knobs has a musically valid setting that happens not to be its default, so
+ * "return everything to default" was the only bypass, and it was not reversible. Worse, the rule
+ * was surprising in the other direction too: turning Depth to zero looks like an off switch and
+ * is not one, because Mode up leaves a static lowpass in circuit at the Freq setting, exactly as
+ * on the original, where the VCF does not leave the signal path just because the LFO is turned
+ * down. Users hit that repeatedly. The switch removes both problems at once: the nine knobs now
+ * only describe the sound, and one param decides whether you hear it.
+ *
+ * DO NOT REINTRODUCE A VALUE-DERIVED TERM HERE, in either direction. Not "...&& depth != min",
+ * which would resurrect the old confusion inside the new switch, and not "|| dirt != min", which
+ * would make the switch unable to switch anything off. If it is on, it runs; the knobs decide
+ * what that sounds like, including the settings that sound like nothing.
+ *
+ * THRESHOLDED, NOT BLENDED. `> 0` is the whole test — the param is bipolar-ranged like every
+ * other unpatched param, so centre is the switching point. Automating a ramp across it therefore
+ * flips the effect once, cleanly, at the halfway point. Do not be tempted to fade the wet signal
+ * with this value instead: that turns the bypass into a second, redundant depth control, and the
+ * skip-the-loop optimisation above stops being possible. UnpatchedParamSwitch::readCurrentValue
+ * duplicates this comparison so the menu agrees with what you hear; the two must stay in step.
  */
-[[gnu::always_inline]] inline bool isEnabled(q31_t depthParam, q31_t modeParam, q31_t levelParam, q31_t dirtParam) {
-	return depthParam != NEGATIVE_ONE_Q31 || modeParam != NEGATIVE_ONE_Q31 || dirtParam != NEGATIVE_ONE_Q31
-	       || levelParam != ONE_Q31;
+[[gnu::always_inline]] inline bool isEnabled(q31_t onParam) {
+	return onParam > 0;
 }
+
+/*
+ * The value UNPATCHED_GRISTLE_ON holds until something sets it explicitly.
+ *
+ * It is centre, so isEnabled() reads it as OFF and it behaves as an off switch in every way the
+ * user can observe. Its second job is invisible: it tells the song loader that this param has
+ * never been written, which is what lets inferLegacyGristleOn() reconstruct the switch for songs
+ * saved before it existed WITHOUT keeping any read-time state. ModControllableAudio's file
+ * readers are static, so there is nowhere to keep such state anyway.
+ *
+ * The menu writes only the two rails, and the tag reader stamps a definite value over this
+ * sentinel the moment a gristleOn tag is seen, so a file written by this build never loads with
+ * it still set. Normalising centre to the OFF rail there is behaviourally invisible - both read
+ * as off - which is precisely why the sentinel can be an ordinary in-range value rather than
+ * something that would need special-casing everywhere the param is touched.
+ */
+constexpr q31_t kOnUnset = 0;
 
 /*
  * Shape the triangle. Returns a q31 waveform spanning the full range whatever the shape.
