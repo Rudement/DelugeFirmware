@@ -408,14 +408,21 @@ void MidiFollow::initDefaultMappings() {
 	globalParamToCC[params::UNPATCHED_HPF_RES] = 82;
 	ccToGlobalParam[83] = params::UNPATCHED_HPF_MORPH;
 	globalParamToCC[params::UNPATCHED_HPF_MORPH] = 83;
+	// The reverse entries below must echo the CC on the line above them. They previously read
+	// 74/81/71/82 — the LPF and HPF numbers — because this block was copied from the filter block
+	// above and only the forward half was updated. The forward map decided which CC moved the
+	// param, so Bass and Treble responded correctly and the bug was inaudible from the controller;
+	// it showed up only in the other direction, where the Deluge transmitted EQ feedback on the
+	// filter CCs. On a bidirectional surface that lights up the wrong knob and, worse, feeds LPF
+	// and HPF positions back from EQ moves.
 	ccToGlobalParam[84] = params::UNPATCHED_BASS_FREQ;
-	globalParamToCC[params::UNPATCHED_BASS_FREQ] = 74;
+	globalParamToCC[params::UNPATCHED_BASS_FREQ] = 84;
 	ccToGlobalParam[85] = params::UNPATCHED_TREBLE_FREQ;
-	globalParamToCC[params::UNPATCHED_TREBLE_FREQ] = 81;
+	globalParamToCC[params::UNPATCHED_TREBLE_FREQ] = 85;
 	ccToGlobalParam[86] = params::UNPATCHED_BASS;
-	globalParamToCC[params::UNPATCHED_BASS] = 71;
+	globalParamToCC[params::UNPATCHED_BASS] = 86;
 	ccToGlobalParam[87] = params::UNPATCHED_TREBLE;
-	globalParamToCC[params::UNPATCHED_TREBLE] = 82;
+	globalParamToCC[params::UNPATCHED_TREBLE] = 87;
 	ccToGlobalParam[88] = params::UNPATCHED_LOW_MID;
 	globalParamToCC[params::UNPATCHED_LOW_MID] = 88;
 	// See the comment on the sound-param side above for why these are 33/34/35 and not 89/111/112.

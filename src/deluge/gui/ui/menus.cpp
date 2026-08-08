@@ -67,6 +67,8 @@
 #include "gui/menu_item/edit_name.h"
 #include "gui/menu_item/envelope/envelope_menu.h"
 #include "gui/menu_item/envelope/segment.h"
+#include "gui/menu_item/eq/eq_freq_param.h"
+#include "gui/menu_item/eq/eq_gain_param.h"
 #include "gui/menu_item/eq/eq_menu.h"
 #include "gui/menu_item/eq/eq_unpatched_param.h"
 #include "gui/menu_item/file_selector.h"
@@ -473,18 +475,21 @@ submenu::ModFxHorizontalMenu modFXMenu{
 };
 
 // EQ -------------------------------------------------------------------------------------
-eq::EqUnpatchedParam bassMenu{STRING_FOR_BASS, params::UNPATCHED_BASS};
-eq::EqUnpatchedParam trebleMenu{STRING_FOR_TREBLE, params::UNPATCHED_TREBLE};
-eq::EqUnpatchedParam bassFreqMenu{STRING_FOR_BASS_FREQUENCY, STRING_FOR_BASS_FREQUENCY_SHORT,
-                                  params::UNPATCHED_BASS_FREQ};
-eq::EqUnpatchedParam trebleFreqMenu{STRING_FOR_TREBLE_FREQUENCY, STRING_FOR_TREBLE_FREQUENCY_SHORT,
-                                    params::UNPATCHED_TREBLE_FREQ};
-eq::EqUnpatchedParam lowMidMenu{STRING_FOR_LOW_MID, params::UNPATCHED_LOW_MID};
-eq::EqUnpatchedParam lowMidFreqMenu{STRING_FOR_LOW_MID_FREQUENCY, STRING_FOR_LOW_MID_FREQUENCY_SHORT,
-                                    params::UNPATCHED_LOW_MID_FREQ};
-eq::EqUnpatchedParam highMidMenu{STRING_FOR_HIGH_MID, params::UNPATCHED_HIGH_MID};
-eq::EqUnpatchedParam highMidFreqMenu{STRING_FOR_HIGH_MID_FREQUENCY, STRING_FOR_HIGH_MID_FREQUENCY_SHORT,
-                                     params::UNPATCHED_HIGH_MID_FREQ};
+// The amount controls read out in dB and the frequency controls in Hz, rather than both showing a
+// bare 0-50. Which band each item belongs to is spelled out here so the mapping is visible where
+// the menu is built. See eq_gain_param.h and eq_freq_param.h.
+eq::EqGainParam bassMenu{STRING_FOR_BASS, params::UNPATCHED_BASS, eq::Band::BASS};
+eq::EqGainParam trebleMenu{STRING_FOR_TREBLE, params::UNPATCHED_TREBLE, eq::Band::TREBLE};
+eq::EqFreqParam bassFreqMenu{STRING_FOR_BASS_FREQUENCY, STRING_FOR_BASS_FREQUENCY_SHORT, params::UNPATCHED_BASS_FREQ,
+                             eq::Band::BASS};
+eq::EqFreqParam trebleFreqMenu{STRING_FOR_TREBLE_FREQUENCY, STRING_FOR_TREBLE_FREQUENCY_SHORT,
+                               params::UNPATCHED_TREBLE_FREQ, eq::Band::TREBLE};
+eq::EqGainParam lowMidMenu{STRING_FOR_LOW_MID, params::UNPATCHED_LOW_MID, eq::Band::LOW_MID};
+eq::EqFreqParam lowMidFreqMenu{STRING_FOR_LOW_MID_FREQUENCY, STRING_FOR_LOW_MID_FREQUENCY_SHORT,
+                               params::UNPATCHED_LOW_MID_FREQ, eq::Band::LOW_MID};
+eq::EqGainParam highMidMenu{STRING_FOR_HIGH_MID, params::UNPATCHED_HIGH_MID, eq::Band::HIGH_MID};
+eq::EqFreqParam highMidFreqMenu{STRING_FOR_HIGH_MID_FREQUENCY, STRING_FOR_HIGH_MID_FREQUENCY_SHORT,
+                                params::UNPATCHED_HIGH_MID_FREQ, eq::Band::HIGH_MID};
 
 eq::EqMenu eqMenu{
     STRING_FOR_EQ,
