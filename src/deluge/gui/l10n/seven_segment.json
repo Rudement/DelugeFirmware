@@ -402,8 +402,8 @@
         "STRING_FOR_TARGET_FULL": "FULL",
 
         "STRING_FOR_WAVEFOLD": "FOLD",
-        "STRING_FOR_HEAT": "HEAT",
-        "STRING_FOR_HEAT_TONE": "HTon",
+        "STRING_FOR_SEAR": "SEAR",
+        "STRING_FOR_SEAR_TONE": "STon",
 
         "STRING_FOR_BIAS": "BIAS",
         "STRING_FOR_DIRT": "DIRT",

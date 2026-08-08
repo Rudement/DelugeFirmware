@@ -19,6 +19,7 @@
 
 #include "definitions_cxx.hpp"
 #include "dsp/filter/filter_set.h"
+#include "dsp/sear.hpp"
 #include "model/voice/voice_sample_playback_guide.h"
 #include "model/voice/voice_unison_part.h"
 #include "modulation/envelope.h"
@@ -66,9 +67,13 @@ public:
 	int32_t portaEnvelopeMaxAmplitude;
 
 	uint32_t lastSaturationTanHWorkingValue[2];
-	/// One-pole tone-filter memory for Heat, one per channel. Stateful, so it must be
+	/// One-pole tone-filter memory for Sear, one per channel. Stateful, so it must be
 	/// zeroed on note-on beside lastSaturationTanHWorkingValue.
-	q31_t heatToneState[2];
+	q31_t searToneState[2];
+	/// Sear's auto-level detectors and applied gain. ONE instance, shared by both channels
+	/// on purpose — see the note on SearLevel in sear.hpp. Reset on note-on so the first
+	/// block of the note primes the detectors instead of inheriting the last note's gain.
+	deluge::dsp::SearLevel searLevelState;
 
 	int32_t overallOscAmplitudeLastTime;
 	int32_t sourceAmplitudesLastTime[kNumSources];

@@ -80,12 +80,12 @@ enum Local : ParamType {
 	LOCAL_CARRIER_1_FEEDBACK,
 	LOCAL_LPF_RESONANCE,
 	LOCAL_HPF_RESONANCE,
-	// Heat is deliberately NOT in the volume block above. Volume params get a parabola applied in
-	// getFinalParameterValueVolume(), which squashed the bottom half of the knob flat — Heat did
+	// Sear is deliberately NOT in the volume block above. Volume params get a parabola applied in
+	// getFinalParameterValueVolume(), which squashed the bottom half of the knob flat — Sear did
 	// nothing until 26/50. Here it uses getFinalParameterValueLinear() instead, so the final value
-	// rises linearly with knob position and heatBuffer()'s exponential taper spreads evenly.
+	// rises linearly with knob position and searBuffer()'s exponential taper spreads evenly.
 	// Its neutral value (25 * 10737418) is shared with the resonance/morph params either side.
-	LOCAL_HEAT,
+	LOCAL_SEAR,
 	LOCAL_ENV_0_SUSTAIN,
 	LOCAL_ENV_1_SUSTAIN,
 	LOCAL_LPF_MORPH,
@@ -186,7 +186,7 @@ enum UnpatchedShared : ParamType {
 	UNPATCHED_MOD_FX_FEEDBACK,
 	UNPATCHED_SIDECHAIN_SHAPE,
 	UNPATCHED_COMPRESSOR_THRESHOLD,
-	UNPATCHED_HEAT_TONE,
+	UNPATCHED_SEAR_TONE,
 	// The Gristleizer. Shared rather than sound-only so it reaches synths, kits, audio clips and
 	// song FX alike — it runs in ModControllableAudio::processFX, which every ModControllable
 	// calls. Appending these before UNPATCHED_NUM_SHARED shifts the UnpatchedSound and
@@ -304,7 +304,7 @@ const uint32_t patchedParamShortcuts[kDisplayWidth][kDisplayHeight] = {
     {LOCAL_MODULATOR_0_VOLUME, LOCAL_MODULATOR_0_PITCH_ADJUST, kNoParamID                    , kNoParamID             , kNoParamID     , LOCAL_MODULATOR_0_FEEDBACK, kNoParamID            , kNoParamID},
     {LOCAL_MODULATOR_1_VOLUME, LOCAL_MODULATOR_1_PITCH_ADJUST, kNoParamID                    , kNoParamID             , kNoParamID     , LOCAL_MODULATOR_1_FEEDBACK, kNoParamID            , kNoParamID},
     {GLOBAL_VOLUME_POST_FX   , LOCAL_PITCH_ADJUST            , kNoParamID                    , LOCAL_PAN              , kNoParamID     , kNoParamID                , kNoParamID            , kNoParamID},
-    {kNoParamID              , kNoParamID                    , kNoParamID                    , kNoParamID             , kNoParamID     , kNoParamID                , LOCAL_HEAT            , LOCAL_FOLD},
+    {kNoParamID              , kNoParamID                    , kNoParamID                    , kNoParamID             , kNoParamID     , kNoParamID                , LOCAL_SEAR            , LOCAL_FOLD},
     {LOCAL_ENV_0_RELEASE     , LOCAL_ENV_0_SUSTAIN           , LOCAL_ENV_0_DECAY             , LOCAL_ENV_0_ATTACK     , LOCAL_LPF_MORPH, kNoParamID                , LOCAL_LPF_RESONANCE   , LOCAL_LPF_FREQ},
     {LOCAL_ENV_1_RELEASE     , LOCAL_ENV_1_SUSTAIN           , LOCAL_ENV_1_DECAY             , LOCAL_ENV_1_ATTACK     , LOCAL_HPF_MORPH, kNoParamID                , LOCAL_HPF_RESONANCE   , LOCAL_HPF_FREQ},
     {kNoParamID              , kNoParamID                    , kNoParamID					 , kNoParamID             , kNoParamID     , kNoParamID                , kNoParamID            , kNoParamID},

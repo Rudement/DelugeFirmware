@@ -774,8 +774,8 @@ enum class String : size_t {
 	STRING_FOR_LOOP_DOUBLED,
 
 	STRING_FOR_WAVEFOLD,
-	STRING_FOR_HEAT,
-	STRING_FOR_HEAT_TONE,
+	STRING_FOR_SEAR,
+	STRING_FOR_SEAR_TONE,
 
 	// The Gristleizer. Names are qualified ("Gristle rate", not "Rate") because these are the
 	// strings automation view and MIDI Follow display, where an unqualified "Rate" would be

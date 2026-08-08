@@ -79,7 +79,7 @@ char const* getPatchedParamShortName(ParamType type) {
 	    [LOCAL_CARRIER_1_FEEDBACK]       = "Osc2 feed",
 	    [LOCAL_LPF_RESONANCE]            = "LPF reso",
 	    [LOCAL_HPF_RESONANCE]            = "HPF reso",
-	    [LOCAL_HEAT]                     = "Heat",
+	    [LOCAL_SEAR]                     = "Sear",
 	    [LOCAL_ENV_0_SUSTAIN]            = "Env1 sus",
 	    [LOCAL_ENV_1_SUSTAIN]            = "Env2 sus",
 	    [LOCAL_LPF_MORPH]                = "LPF Morph",
@@ -141,7 +141,7 @@ char const* getPatchedParamDisplayName(int32_t p) {
 	    [LOCAL_CARRIER_1_FEEDBACK] = STRING_FOR_PARAM_LOCAL_CARRIER_1_FEEDBACK,
 	    [LOCAL_LPF_RESONANCE] = STRING_FOR_PARAM_LOCAL_LPF_RESONANCE,
 	    [LOCAL_HPF_RESONANCE] = STRING_FOR_PARAM_LOCAL_HPF_RESONANCE,
-	    [LOCAL_HEAT] = STRING_FOR_HEAT,
+	    [LOCAL_SEAR] = STRING_FOR_SEAR,
 	    [LOCAL_ENV_0_SUSTAIN] = STRING_FOR_PARAM_LOCAL_ENV_0_SUSTAIN,
 	    [LOCAL_ENV_1_SUSTAIN] = STRING_FOR_PARAM_LOCAL_ENV_1_SUSTAIN,
 	    [LOCAL_LPF_MORPH] = STRING_FOR_PARAM_LOCAL_LPF_MORPH,
@@ -208,7 +208,7 @@ char const* getParamDisplayName(Kind kind, int32_t p) {
 		    [UNPATCHED_MOD_FX_FEEDBACK] = STRING_FOR_MODFX_FEEDBACK,
 		    [UNPATCHED_SIDECHAIN_SHAPE] = STRING_FOR_SIDECHAIN_SHAPE,
 		    [UNPATCHED_COMPRESSOR_THRESHOLD] = STRING_FOR_THRESHOLD,
-		    [UNPATCHED_HEAT_TONE] = STRING_FOR_HEAT_TONE,
+		    [UNPATCHED_SEAR_TONE] = STRING_FOR_SEAR_TONE,
 		    [UNPATCHED_GRISTLE_RATE] = STRING_FOR_GRISTLE_RATE,
 		    [UNPATCHED_GRISTLE_DEPTH] = STRING_FOR_GRISTLE_DEPTH,
 		    [UNPATCHED_GRISTLE_SHAPE] = STRING_FOR_GRISTLE_SHAPE,
@@ -451,8 +451,8 @@ constexpr char const* paramNameForFileConst(Kind const kind, ParamType const par
 		case UNPATCHED_COMPRESSOR_THRESHOLD:
 			return "compressorThreshold";
 
-		case UNPATCHED_HEAT_TONE:
-			return "heatTone";
+		case UNPATCHED_SEAR_TONE:
+			return "searTone";
 
 		case UNPATCHED_NUM_SHARED:
 		    // Intentionally not handled
@@ -606,8 +606,8 @@ constexpr char const* paramNameForFileConst(Kind const kind, ParamType const par
 		case LOCAL_FOLD:
 			return "waveFold";
 
-		case LOCAL_HEAT:
-			return "heat";
+		case LOCAL_SEAR:
+			return "sear";
 
 		case LOCAL_LAST:
 		    // Intentionally not handled
