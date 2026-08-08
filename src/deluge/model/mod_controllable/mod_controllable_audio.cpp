@@ -18,6 +18,7 @@
 #include "model/mod_controllable/mod_controllable_audio.h"
 #include "definitions_cxx.hpp"
 #include "deluge/model/settings/runtime_feature_settings.h"
+#include "dsp/eq_bands.hpp"
 #include "dsp/gristle.hpp"
 #include "dsp/stereo_sample.h"
 #include "gui/l10n/l10n.h"
@@ -615,14 +616,19 @@ void ModControllableAudio::processFX(StereoSample* buffer, int32_t numSamples, M
 	positive = (unpatchedParams->getValue(params::UNPATCHED_HIGH_MID) >> 1) + 1073741824;
 	int32_t highMidAmount = (multiply_32x32_rshift32_rounded(positive, positive) << 1) - 536870912;
 
+	// The preset bases and octave multipliers used to be spelled out inline here. They live in
+	// dsp/eq_bands.hpp now so the FX > EQ menu readout is computed from the very same coefficients
+	// this filter runs with, rather than from a second copy that could drift. The values are
+	// unchanged; only their home moved. The commentary on WHY each multiplier is what it is stayed
+	// behind with the call sites below, since that is where it is read.
 	if (thisDoBass || thisDoTreble || thisDoLowMid || thisDoHighMid) {
 
 		if (thisDoBass) {
-			bassFreq = getExp(120000000, (unpatchedParams->getValue(params::UNPATCHED_BASS_FREQ) >> 5) * 6);
+			bassFreq = dsp::eq::bassCoefficient(unpatchedParams->getValue(params::UNPATCHED_BASS_FREQ));
 		}
 
 		if (thisDoTreble) {
-			trebleFreq = getExp(700000000, (unpatchedParams->getValue(params::UNPATCHED_TREBLE_FREQ) >> 5) * 6);
+			trebleFreq = dsp::eq::trebleCoefficient(unpatchedParams->getValue(params::UNPATCHED_TREBLE_FREQ));
 		}
 
 		if (thisDoLowMid) {
@@ -635,9 +641,9 @@ void ModControllableAudio::processFX(StereoSample* buffer, int32_t numSamples, M
 			// NOTHING there — a dead knob zone, the same failure class as Sear's octaves==0 bug.
 			// At *3 only the upper lowpass ever saturates, and the band then degrades gracefully
 			// into a presence tilt instead of vanishing. Do not raise this multiplier.
-			int32_t lowMidFreqAdjustment = (unpatchedParams->getValue(params::UNPATCHED_LOW_MID_FREQ) >> 5) * 3;
-			lowMidFreqLo = getExp(145000000, lowMidFreqAdjustment);
-			lowMidFreqHi = getExp(580000000, lowMidFreqAdjustment);
+			const int32_t lowMidFreqParam = unpatchedParams->getValue(params::UNPATCHED_LOW_MID_FREQ);
+			lowMidFreqLo = dsp::eq::lowMidLoCoefficient(lowMidFreqParam);
+			lowMidFreqHi = dsp::eq::lowMidHiCoefficient(lowMidFreqParam);
 		}
 
 		if (thisDoHighMid) {
@@ -653,9 +659,9 @@ void ModControllableAudio::processFX(StereoSample* buffer, int32_t numSamples, M
 			// pins over the last fifth, and 2 kHz at *1 is the only combination that stays a true
 			// bell across ALL 51 knob positions with no saturation anywhere. Peak travels ~900 Hz to
 			// ~6 kHz, worst peak magnitude 0.56 of input. Do not raise this multiplier either.
-			int32_t highMidFreqAdjustment = (unpatchedParams->getValue(params::UNPATCHED_HIGH_MID_FREQ) >> 5) * 1;
-			highMidFreqLo = getExp(285167594, highMidFreqAdjustment);
-			highMidFreqHi = getExp(932909729, highMidFreqAdjustment);
+			const int32_t highMidFreqParam = unpatchedParams->getValue(params::UNPATCHED_HIGH_MID_FREQ);
+			highMidFreqLo = dsp::eq::highMidLoCoefficient(highMidFreqParam);
+			highMidFreqHi = dsp::eq::highMidHiCoefficient(highMidFreqParam);
 		}
 
 		StereoSample* currentSample = buffer;
