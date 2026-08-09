@@ -500,6 +500,48 @@ eq::EqMenu eqMenu{
     },
 };
 
+// Gristleizer -----------------------------------------------------------------------------
+// Nine shared unpatched params, so ONE set of menu items serves synths, kits, audio clips and
+// song FX alike — unlike Sear, which is per-voice and therefore cannot appear outside a synth.
+// Ordered as the signal flows: LFO, then what the LFO drives, then the output stage.
+//
+// A HorizontalMenu paginates by slot count, four per page, so nine single-slot items give three
+// pages with no fixed-size array to overrun. (The 1.2.1 branch uses a plain vector-backed Submenu
+// here; either works, this matches how the rest of this branch renders param groups.)
+UnpatchedParam gristleRateMenu{STRING_FOR_RATE, STRING_FOR_GRISTLE_RATE, params::UNPATCHED_GRISTLE_RATE,
+                               RenderingStyle::BAR};
+UnpatchedParam gristleDepthMenu{STRING_FOR_DEPTH, STRING_FOR_GRISTLE_DEPTH, params::UNPATCHED_GRISTLE_DEPTH,
+                                RenderingStyle::BAR};
+UnpatchedParam gristleShapeMenu{STRING_FOR_SHAPE, STRING_FOR_GRISTLE_SHAPE, params::UNPATCHED_GRISTLE_SHAPE,
+                                RenderingStyle::BAR};
+UnpatchedParam gristleBiasMenu{STRING_FOR_BIAS, STRING_FOR_GRISTLE_BIAS, params::UNPATCHED_GRISTLE_BIAS,
+                               RenderingStyle::BAR};
+UnpatchedParam gristleModeMenu{STRING_FOR_MODE, STRING_FOR_GRISTLE_MODE, params::UNPATCHED_GRISTLE_MODE,
+                               RenderingStyle::BAR};
+UnpatchedParam gristleFreqMenu{STRING_FOR_FREQUENCY, STRING_FOR_GRISTLE_FREQ, params::UNPATCHED_GRISTLE_FREQ,
+                               RenderingStyle::BAR};
+UnpatchedParam gristleResMenu{STRING_FOR_RESONANCE, STRING_FOR_GRISTLE_RES, params::UNPATCHED_GRISTLE_RES,
+                              RenderingStyle::BAR};
+UnpatchedParam gristleDirtMenu{STRING_FOR_DIRT, STRING_FOR_GRISTLE_DIRT, params::UNPATCHED_GRISTLE_DIRT,
+                               RenderingStyle::BAR};
+UnpatchedParam gristleLevelMenu{STRING_FOR_LEVEL, STRING_FOR_GRISTLE_LEVEL, params::UNPATCHED_GRISTLE_LEVEL,
+                                RenderingStyle::BAR};
+
+HorizontalMenu gristleMenu{
+    STRING_FOR_GRISTLE,
+    {
+        &gristleRateMenu,
+        &gristleDepthMenu,
+        &gristleShapeMenu,
+        &gristleBiasMenu,
+        &gristleModeMenu,
+        &gristleFreqMenu,
+        &gristleResMenu,
+        &gristleDirtMenu,
+        &gristleLevelMenu,
+    },
+};
+
 // Delay ---------------------------------------------------------------------------------
 delay::Amount delayFeedbackMenu{STRING_FOR_AMOUNT, STRING_FOR_DELAY_AMOUNT, params::GLOBAL_DELAY_FEEDBACK};
 patched_param::Integer delayRateMenu{STRING_FOR_RATE, STRING_FOR_DELAY_RATE, params::GLOBAL_DELAY_RATE};
@@ -621,9 +663,9 @@ fx::Clipping clippingMenu{STRING_FOR_SATURATION};
 UnpatchedParam srrMenu{STRING_FOR_DECIMATION, params::UNPATCHED_SAMPLE_RATE_REDUCTION, RenderingStyle::BAR};
 UnpatchedParam bitcrushMenu{STRING_FOR_BITCRUSH, params::UNPATCHED_BITCRUSHING, RenderingStyle::BAR};
 patched_param::Integer foldMenu{STRING_FOR_WAVEFOLD, STRING_FOR_WAVEFOLD, params::LOCAL_FOLD, RenderingStyle::BAR};
-// Heat: patched drive (per voice) plus its unpatched tilt tone control.
-patched_param::Integer heatMenu{STRING_FOR_HEAT, STRING_FOR_HEAT, params::LOCAL_HEAT, RenderingStyle::BAR};
-UnpatchedParam heatToneMenu{STRING_FOR_HEAT_TONE, params::UNPATCHED_HEAT_TONE, RenderingStyle::BAR};
+// Sear: patched drive (per voice) plus its unpatched tilt tone control.
+patched_param::Integer searMenu{STRING_FOR_SEAR, STRING_FOR_SEAR, params::LOCAL_SEAR, RenderingStyle::BAR};
+UnpatchedParam searToneMenu{STRING_FOR_SEAR_TONE, params::UNPATCHED_SEAR_TONE, RenderingStyle::BAR};
 
 HorizontalMenu soundDistortionMenu{
     STRING_FOR_DISTORTION,
@@ -632,8 +674,8 @@ HorizontalMenu soundDistortionMenu{
         &bitcrushMenu,
         &srrMenu,
         &foldMenu,
-        &heatMenu,
-        &heatToneMenu,
+        &searMenu,
+        &searToneMenu,
     },
 };
 
@@ -831,6 +873,7 @@ Submenu globalFXMenu{
         &stutterMenu,
         &globalModFXMenu,
         &globalDistortionMenu,
+        &gristleMenu,
     },
 };
 
@@ -900,6 +943,7 @@ Submenu audioClipFXMenu{
         &stutterMenu,
         &globalModFXMenu,
         &audioClipDistortionMenu,
+        &gristleMenu,
     },
 };
 
@@ -1460,6 +1504,7 @@ Submenu soundFXMenu{
         &stutterMenu,
         &modFXMenu,
         &soundDistortionMenu,
+        &gristleMenu,
         &noiseMenu,
     },
 };
@@ -1851,7 +1896,7 @@ PLACE_SDRAM_DATA MenuItem* paramShortcutsForSounds[][kDisplayHeight] = {
     {&modulator0Volume,		&modulator0TransposeMenu,	comingSoonMenu,                 comingSoonMenu,                 &modulator0PhaseMenu,	&modulator0FeedbackMenu,	comingSoonMenu,					&sequenceDirectionMenu             },
     {&modulator1Volume,		&modulator1TransposeMenu,	comingSoonMenu,                 comingSoonMenu,                 &modulator1PhaseMenu,	&modulator1FeedbackMenu,	&modulatorDestMenu,				&stutterRateMenu                   },
     {&volumeMenu,			&masterTransposeMenu,		&vibratoMenu,                   &panMenu,                       &synthModeMenu,			&srrMenu,					&bitcrushMenu,					&clippingMenu                      },
-    {&portaMenu,				&polyphonyMenu,				&priorityMenu,                  &unisonDetuneMenu,              &numUnisonMenu,			&threshold,					&heatMenu,						&foldMenu                          },
+    {&portaMenu,				&polyphonyMenu,				&priorityMenu,                  &unisonDetuneMenu,              &numUnisonMenu,			&threshold,					&searMenu,						&foldMenu                          },
     {&env1ReleaseMenu,		&env1SustainMenu,			&env1DecayMenu,                 &env1AttackMenu,                &lpfMorphMenu,			&lpfModeMenu,				&lpfResMenu,					&lpfFreqMenu                       },
     {&env2ReleaseMenu,		&env2SustainMenu,			&env2DecayMenu,                 &env2AttackMenu,                &hpfMorphMenu,			&hpfModeMenu,				&hpfResMenu,					&hpfFreqMenu                       },
     {&sidechainReleaseMenu,	&sidechainSyncMenu,			&sidechainVolumeShortcutMenu,   &sidechainAttackMenu,           &sidechainShapeMenu,	&sidechainSendMenu,			&bassMenu,						&bassFreqMenu                      },

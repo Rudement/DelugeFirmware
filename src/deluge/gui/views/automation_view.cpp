@@ -125,8 +125,9 @@ const uint32_t verticalScrollUIModes[] = {UI_MODE_NOTES_PRESSED, UI_MODE_AUDITIO
 
 // These are the FIXED SIZE of the two std::arrays below, not a hint — adding an entry without
 // bumping the count is "too many initializers", a hard compile error. Bumped from 86/41.
-constexpr int32_t kNumNonGlobalParamsForAutomation = 88; // 83 stock + LOCAL_HEAT + 4 EQ mid params
-constexpr int32_t kNumGlobalParamsForAutomation = 43;    // 39 stock + 4 EQ mid params
+constexpr int32_t kNumNonGlobalParamsForAutomation =
+    97; // 83 stock + LOCAL_SEAR + 4 EQ mid params + 9 Gristleizer
+constexpr int32_t kNumGlobalParamsForAutomation = 52; // 39 stock + 4 EQ mid params + 9 Gristleizer
 
 // synth and kit rows FX - sorted in the order that Parameters are scrolled through on the display
 const std::array<std::pair<params::Kind, ParamType>, kNumNonGlobalParamsForAutomation> nonGlobalParamsForAutomation{{
@@ -164,7 +165,7 @@ const std::array<std::pair<params::Kind, ParamType>, kNumNonGlobalParamsForAutom
     {params::Kind::UNPATCHED_SOUND, params::UNPATCHED_SAMPLE_RATE_REDUCTION},
     {params::Kind::UNPATCHED_SOUND, params::UNPATCHED_BITCRUSHING},
     {params::Kind::PATCHED, params::LOCAL_FOLD},
-    {params::Kind::PATCHED, params::LOCAL_HEAT},
+    {params::Kind::PATCHED, params::LOCAL_SEAR},
     // OSC 1 Volume, Pitch, Pulse Width, Carrier Feedback, Wave Index
     {params::Kind::PATCHED, params::LOCAL_OSC_A_VOLUME},
     {params::Kind::PATCHED, params::LOCAL_OSC_A_PITCH_ADJUST},
@@ -250,6 +251,16 @@ const std::array<std::pair<params::Kind, ParamType>, kNumNonGlobalParamsForAutom
     {params::Kind::EXPRESSION, Expression::Y_SLIDE_TIMBRE},
     // Mono Expression: Z - Channel Pressure
     {params::Kind::EXPRESSION, Expression::Z_PRESSURE},
+    // Gristleizer: Rate, Depth, Shape, Bias, Mode, Level, Freq, Reso, Dirt
+    {params::Kind::UNPATCHED_SOUND, params::UNPATCHED_GRISTLE_RATE},
+    {params::Kind::UNPATCHED_SOUND, params::UNPATCHED_GRISTLE_DEPTH},
+    {params::Kind::UNPATCHED_SOUND, params::UNPATCHED_GRISTLE_SHAPE},
+    {params::Kind::UNPATCHED_SOUND, params::UNPATCHED_GRISTLE_BIAS},
+    {params::Kind::UNPATCHED_SOUND, params::UNPATCHED_GRISTLE_MODE},
+    {params::Kind::UNPATCHED_SOUND, params::UNPATCHED_GRISTLE_LEVEL},
+    {params::Kind::UNPATCHED_SOUND, params::UNPATCHED_GRISTLE_FREQ},
+    {params::Kind::UNPATCHED_SOUND, params::UNPATCHED_GRISTLE_RES},
+    {params::Kind::UNPATCHED_SOUND, params::UNPATCHED_GRISTLE_DIRT},
 }};
 
 // global FX - sorted in the order that Parameters are scrolled through on the display
@@ -313,6 +324,16 @@ const std::array<std::pair<params::Kind, ParamType>, kNumGlobalParamsForAutomati
     {params::Kind::UNPATCHED_GLOBAL, params::UNPATCHED_REVERSE_PROBABILITY},
     {params::Kind::UNPATCHED_GLOBAL, params::UNPATCHED_ARP_RHYTHM},
     {params::Kind::UNPATCHED_GLOBAL, params::UNPATCHED_ARP_SEQUENCE_LENGTH},
+    // Gristleizer: Rate, Depth, Shape, Bias, Mode, Level, Freq, Reso, Dirt
+    {params::Kind::UNPATCHED_GLOBAL, params::UNPATCHED_GRISTLE_RATE},
+    {params::Kind::UNPATCHED_GLOBAL, params::UNPATCHED_GRISTLE_DEPTH},
+    {params::Kind::UNPATCHED_GLOBAL, params::UNPATCHED_GRISTLE_SHAPE},
+    {params::Kind::UNPATCHED_GLOBAL, params::UNPATCHED_GRISTLE_BIAS},
+    {params::Kind::UNPATCHED_GLOBAL, params::UNPATCHED_GRISTLE_MODE},
+    {params::Kind::UNPATCHED_GLOBAL, params::UNPATCHED_GRISTLE_LEVEL},
+    {params::Kind::UNPATCHED_GLOBAL, params::UNPATCHED_GRISTLE_FREQ},
+    {params::Kind::UNPATCHED_GLOBAL, params::UNPATCHED_GRISTLE_RES},
+    {params::Kind::UNPATCHED_GLOBAL, params::UNPATCHED_GRISTLE_DIRT},
 }};
 
 // shortcuts for toggling interpolation and pad selection mode

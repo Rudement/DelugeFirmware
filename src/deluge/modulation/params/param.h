@@ -83,12 +83,12 @@ enum Local : ParamType {
 	LOCAL_CARRIER_1_FEEDBACK,
 	LOCAL_LPF_RESONANCE,
 	LOCAL_HPF_RESONANCE,
-	// Heat is deliberately NOT in the volume block above. Volume params get a parabola applied in
-	// getFinalParameterValueVolume(), which squashed the bottom half of the knob flat — Heat did
+	// Sear is deliberately NOT in the volume block above. Volume params get a parabola applied in
+	// getFinalParameterValueVolume(), which squashed the bottom half of the knob flat — Sear did
 	// nothing until 26/50. Here it uses getFinalParameterValueLinear() instead, so the final value
-	// rises linearly with knob position and heatBuffer()'s exponential taper spreads evenly.
+	// rises linearly with knob position and searBuffer()'s exponential taper spreads evenly.
 	// Its neutral value (25 * 10737418) is shared with the resonance/morph params either side.
-	LOCAL_HEAT,
+	LOCAL_SEAR,
 	LOCAL_ENV_0_SUSTAIN,
 	LOCAL_ENV_1_SUSTAIN,
 	LOCAL_ENV_2_SUSTAIN,
@@ -201,7 +201,27 @@ enum UnpatchedShared : ParamType {
 	UNPATCHED_MOD_FX_FEEDBACK,
 	UNPATCHED_SIDECHAIN_SHAPE,
 	UNPATCHED_COMPRESSOR_THRESHOLD,
-	UNPATCHED_HEAT_TONE,
+	UNPATCHED_SEAR_TONE,
+	// The Gristleizer. Shared rather than sound-only so it reaches synths, kits, audio clips and
+	// song FX alike — it runs in ModControllableAudio::processFX, which every ModControllable
+	// calls.
+	//
+	// These go HERE, before UNPATCHED_FIRST_ARP_PARAM, and not at the end of the enum: the arp
+	// params are a delimited contiguous range and UNPATCHED_NUM_SHARED is defined as
+	// UNPATCHED_LAST_ARP_PARAM, so appending after it would break both. Inserting here just
+	// shifts the arp block (and the UnpatchedSound / UnpatchedGlobal sub-ranges) up by nine,
+	// which is safe: song files store params by NAME via paramNameForFile, and everything else
+	// that switches on these values is a switch rather than an ordered table. The one ordered
+	// thing is the automation arrays, which are updated to match.
+	UNPATCHED_GRISTLE_RATE,
+	UNPATCHED_GRISTLE_DEPTH,
+	UNPATCHED_GRISTLE_SHAPE,
+	UNPATCHED_GRISTLE_BIAS,
+	UNPATCHED_GRISTLE_MODE,
+	UNPATCHED_GRISTLE_LEVEL,
+	UNPATCHED_GRISTLE_FREQ,
+	UNPATCHED_GRISTLE_RES,
+	UNPATCHED_GRISTLE_DIRT,
 	// Arp
 	UNPATCHED_FIRST_ARP_PARAM,
 	UNPATCHED_ARP_GATE = UNPATCHED_FIRST_ARP_PARAM,
@@ -330,7 +350,7 @@ const uint32_t patchedParamShortcuts[kDisplayWidth][kDisplayHeight] = {
     {LOCAL_MODULATOR_0_VOLUME, LOCAL_MODULATOR_0_PITCH_ADJUST, kNoParamID                    , kNoParamID             , kNoParamID     , LOCAL_MODULATOR_0_FEEDBACK, kNoParamID            , kNoParamID},
     {LOCAL_MODULATOR_1_VOLUME, LOCAL_MODULATOR_1_PITCH_ADJUST, kNoParamID                    , kNoParamID             , kNoParamID     , LOCAL_MODULATOR_1_FEEDBACK, kNoParamID            , kNoParamID},
     {GLOBAL_VOLUME_POST_FX   , LOCAL_PITCH_ADJUST            , kNoParamID                    , LOCAL_PAN              , kNoParamID     , kNoParamID                , kNoParamID            , kNoParamID},
-    {kNoParamID              , kNoParamID                    , kNoParamID                    , kNoParamID             , kNoParamID     , kNoParamID                , LOCAL_HEAT            , LOCAL_FOLD},
+    {kNoParamID              , kNoParamID                    , kNoParamID                    , kNoParamID             , kNoParamID     , kNoParamID                , LOCAL_SEAR            , LOCAL_FOLD},
     {LOCAL_ENV_0_RELEASE     , LOCAL_ENV_0_SUSTAIN           , LOCAL_ENV_0_DECAY             , LOCAL_ENV_0_ATTACK     , LOCAL_LPF_MORPH, kNoParamID                , LOCAL_LPF_RESONANCE   , LOCAL_LPF_FREQ},
     {LOCAL_ENV_1_RELEASE     , LOCAL_ENV_1_SUSTAIN           , LOCAL_ENV_1_DECAY             , LOCAL_ENV_1_ATTACK     , LOCAL_HPF_MORPH, kNoParamID                , LOCAL_HPF_RESONANCE   , LOCAL_HPF_FREQ},
     {kNoParamID              , kNoParamID                    , kNoParamID					 , kNoParamID             , kNoParamID     , kNoParamID                , kNoParamID            , kNoParamID},
@@ -379,8 +399,8 @@ const uint32_t unpatchedNonGlobalParamShortcuts[kDisplayWidth][kDisplayHeight] =
     {kNoParamID          , kNoParamID, UNPATCHED_ARP_GATE, UNPATCHED_HIGH_MID_FREQ, kNoParamID                , UNPATCHED_LOW_MID_FREQ         , UNPATCHED_TREBLE     , UNPATCHED_TREBLE_FREQ},
     {kNoParamID          , kNoParamID, kNoParamID        , kNoParamID, UNPATCHED_MOD_FX_OFFSET   , UNPATCHED_MOD_FX_FEEDBACK      , kNoParamID           , kNoParamID},
     {kNoParamID          , kNoParamID, kNoParamID        , kNoParamID, kNoParamID                , kNoParamID                     , kNoParamID           , kNoParamID},
-    {kNoParamID          , kNoParamID, kNoParamID        , kNoParamID, kNoParamID                , kNoParamID                     , kNoParamID           , kNoParamID},
-    {kNoParamID          , UNPATCHED_SPREAD_VELOCITY, kNoParamID        , kNoParamID, kNoParamID                , kNoParamID                     , kNoParamID           , kNoParamID}
+    {kNoParamID            , kNoParamID               , kNoParamID             , kNoParamID            , kNoParamID            , kNoParamID            , UNPATCHED_GRISTLE_DEPTH, UNPATCHED_GRISTLE_DIRT},
+    {UNPATCHED_GRISTLE_RATE, UNPATCHED_SPREAD_VELOCITY, UNPATCHED_GRISTLE_SHAPE, UNPATCHED_GRISTLE_BIAS, UNPATCHED_GRISTLE_MODE, UNPATCHED_GRISTLE_FREQ, UNPATCHED_GRISTLE_RES  , UNPATCHED_GRISTLE_LEVEL}
 };
 // clang-format on
 
@@ -402,8 +422,8 @@ const uint32_t unpatchedGlobalParamShortcuts[kDisplayWidth][kDisplayHeight] = {
     {UNPATCHED_ARP_RATE  , kNoParamID            , UNPATCHED_ARP_GATE        , UNPATCHED_HIGH_MID_FREQ     , kNoParamID				   , UNPATCHED_LOW_MID_FREQ	   	 	, UNPATCHED_TREBLE      , UNPATCHED_TREBLE_FREQ},
     {kNoParamID          , kNoParamID            , kNoParamID                , kNoParamID                  , UNPATCHED_MOD_FX_OFFSET   , UNPATCHED_MOD_FX_FEEDBACK		, UNPATCHED_MOD_FX_DEPTH, UNPATCHED_MOD_FX_RATE},
     {kNoParamID          , kNoParamID            , kNoParamID                , UNPATCHED_REVERB_SEND_AMOUNT, kNoParamID				   , kNoParamID			   		 	, kNoParamID            , kNoParamID},
-    {UNPATCHED_DELAY_RATE, kNoParamID            , kNoParamID                , UNPATCHED_DELAY_AMOUNT      , kNoParamID				   , kNoParamID			  		 	, kNoParamID            , kNoParamID},
-    {kNoParamID          , kNoParamID            , kNoParamID                , kNoParamID                  , kNoParamID				   , kNoParamID			   		 	, kNoParamID            , kNoParamID}};
+    {UNPATCHED_DELAY_RATE  , kNoParamID               , kNoParamID             , UNPATCHED_DELAY_AMOUNT, kNoParamID            , kNoParamID            , UNPATCHED_GRISTLE_DEPTH, UNPATCHED_GRISTLE_DIRT},
+    {UNPATCHED_GRISTLE_RATE, kNoParamID               , UNPATCHED_GRISTLE_SHAPE, UNPATCHED_GRISTLE_BIAS, UNPATCHED_GRISTLE_MODE, UNPATCHED_GRISTLE_FREQ, UNPATCHED_GRISTLE_RES  , UNPATCHED_GRISTLE_LEVEL}};
 // clang-format on
 
 uint32_t expressionParamFromShortcut(int x, int y);

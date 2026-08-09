@@ -381,7 +381,10 @@ void ParamManagerForTimeline::processCurrentPos(ModelStackWithThreeMainThings* m
 		summary->paramCollection->processCurrentPos(modelStackWithParamCollection, ticksSkipped, reversed, didPingpong,
 		                                            true);
 		// if we can't interpolate by samples then we'll interpolate by ticks here instead
-		if (!mayInterpolate && (summary->whichParamsAreInterpolating[0] != 0u)) {
+		// Reads BOTH words, not just [0]. The unpatched shared block is 40 params now, so for a
+		// Sound (41 total) the arp probability and spread params live in word 1; word 0 alone
+		// would silently stop tick-interpolating them.
+		if (!mayInterpolate && summary->containsInterpolation()) {
 			summary->paramCollection->tickTicks(ticksSkipped, modelStackWithParamCollection);
 			ticksTilNextEvent = 0;
 		}

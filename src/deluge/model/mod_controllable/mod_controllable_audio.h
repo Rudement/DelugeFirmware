@@ -21,6 +21,7 @@
 #include "deluge/dsp/granular/GranularProcessor.h"
 #include "dsp/compressor/rms_feedback.h"
 #include "dsp/delay/delay.h"
+#include "dsp/gristle.hpp"
 #include "dsp/stereo_sample.h"
 #include "hid/button.h"
 #include "model/fx/stutterer.h"
@@ -91,6 +92,11 @@ public:
 	bool hasLowMidAdjusted(ParamManager* paramManager);
 	bool hasHighMidAdjusted(ParamManager* paramManager);
 	ModelStackWithAutoParam* getParamFromMIDIKnob(MIDIKnob& knob, ModelStackWithThreeMainThings* modelStack) override;
+
+	// The Gristleizer's LFO phase plus its state-variable filter memory. The two channels MUST
+	// keep separate filter state: running one filter over an interleaved buffer combs instead
+	// of filtering. The LFO phase is deliberately shared so both sides chop together.
+	deluge::dsp::gristle::Memory gristleMemory{};
 
 	// EQ
 	int32_t bassFreq{}; // These two should eventually not be variables like this
