@@ -20,6 +20,7 @@
 #include "definitions_cxx.hpp"
 #include "deluge/dsp/granular/GranularProcessor.h"
 #include "deluge/model/settings/runtime_feature_settings.h"
+#include "dsp/gristle.hpp"
 #include "dsp/stereo_sample.h"
 #include "gui/l10n/l10n.h"
 #include "gui/ui/ui.h"
@@ -155,6 +156,21 @@ void ModControllableAudio::initParams(ParamManager* paramManager) {
 	// Heat Tone defaults to centre, which the tilt filter treats as a true bypass.
 	unpatchedParams->params[params::UNPATCHED_HEAT_TONE].setCurrentValueBasicForSetup(0);
 
+	// The Gristleizer. Every one of these is the INACTIVE value, so a song that has never touched
+	// the effect loads with isEnabled() false and sounds exactly as it did before the feature
+	// existed. Depth, Mode, Reso and Dirt sit at minimum; Level sits at maximum, which is unity
+	// gain; Shape at minimum is a plain triangle; Bias and Freq are bipolar and sit at centre.
+	// Changing any of these defaults would retroactively alter saved songs.
+	unpatchedParams->params[params::UNPATCHED_GRISTLE_RATE].setCurrentValueBasicForSetup(0);
+	unpatchedParams->params[params::UNPATCHED_GRISTLE_DEPTH].setCurrentValueBasicForSetup(-2147483648);
+	unpatchedParams->params[params::UNPATCHED_GRISTLE_SHAPE].setCurrentValueBasicForSetup(-2147483648);
+	unpatchedParams->params[params::UNPATCHED_GRISTLE_BIAS].setCurrentValueBasicForSetup(0);
+	unpatchedParams->params[params::UNPATCHED_GRISTLE_MODE].setCurrentValueBasicForSetup(-2147483648);
+	unpatchedParams->params[params::UNPATCHED_GRISTLE_LEVEL].setCurrentValueBasicForSetup(2147483647);
+	unpatchedParams->params[params::UNPATCHED_GRISTLE_FREQ].setCurrentValueBasicForSetup(0);
+	unpatchedParams->params[params::UNPATCHED_GRISTLE_RES].setCurrentValueBasicForSetup(-2147483648);
+	unpatchedParams->params[params::UNPATCHED_GRISTLE_DIRT].setCurrentValueBasicForSetup(-2147483648);
+
 	unpatchedParams->params[params::UNPATCHED_SIDECHAIN_SHAPE].setCurrentValueBasicForSetup(-601295438);
 	unpatchedParams->params[params::UNPATCHED_COMPRESSOR_THRESHOLD].setCurrentValueBasicForSetup(0);
 }
@@ -192,6 +208,55 @@ void ModControllableAudio::processFX(std::span<StereoSample> buffer, ModFXType m
 	}
 	else {
 		modfx.processModFX(buffer, modFXType, modFXRate, modFXDepth, postFXVolume, unpatchedParams, anySoundComingIn);
+	}
+
+	// Gristleizer ----------------------------------------------------------------------------
+	// Placed after ModFX and before EQ so the shelves can tame the chop's edges, and so the delay
+	// hears the chopped signal rather than the other way round.
+	//
+	// The enable test is a single comparison chain done once per buffer; when it is false the
+	// sample loop never runs, which is what makes the default state a true bypass at no CPU cost.
+	// Do NOT reduce it to "Depth is zero" — see the comment on isEnabled(); the filter is in
+	// circuit whenever Mode is up, even with no modulation at all.
+	//
+	// This is a standalone effect with its own params, NOT a ModFX type. On the 1.2.1 branch it
+	// was first built as one and did nothing on song / kit / audio-clip FX, because
+	// GlobalEffectable::getActiveModFXType() forces the type to NONE whenever the selected
+	// gold-knob param sits at its minimum — and it borrowed FEEDBACK, whose minimum is both a
+	// legitimate setting and where an untouched knob rests. Owning its params removes that gate
+	// and the four-knob ceiling. Do not "simplify" this back into a ModFX type.
+	{
+		q31_t gristleDepth = unpatchedParams->getValue(params::UNPATCHED_GRISTLE_DEPTH);
+		q31_t gristleMode = unpatchedParams->getValue(params::UNPATCHED_GRISTLE_MODE);
+		q31_t gristleLevel = unpatchedParams->getValue(params::UNPATCHED_GRISTLE_LEVEL);
+		q31_t gristleDirt = unpatchedParams->getValue(params::UNPATCHED_GRISTLE_DIRT);
+
+		if (deluge::dsp::gristle::isEnabled(gristleDepth, gristleMode, gristleLevel, gristleDirt)) {
+			deluge::dsp::gristle::Config gristleConfig = deluge::dsp::gristle::setup(
+			    unpatchedParams->getValue(params::UNPATCHED_GRISTLE_SHAPE),
+			    unpatchedParams->getValue(params::UNPATCHED_GRISTLE_BIAS), gristleDepth, gristleMode, gristleLevel,
+			    unpatchedParams->getValue(params::UNPATCHED_GRISTLE_FREQ),
+			    unpatchedParams->getValue(params::UNPATCHED_GRISTLE_RES), gristleDirt);
+
+			// Rate rides the same exponential law the ModFX LFO uses, reusing GLOBAL_MOD_FX_RATE's
+			// neutral value. That means the top of the knob reaches audio rate (~1.3 kHz) and buzzes
+			// rather than chops. That is DELIBERATE and faithful — the original box went audio-rate,
+			// which is where its "pseudo ring modulation" came from. If it ever needs more resolution
+			// in the chop window, shift the phase increment right here, inside the Gristleizer; never
+			// touch the shared law, which flanger and chorus also use.
+			uint32_t phaseIncrement = getFinalParameterValueExp(
+			    paramNeutralValues[params::GLOBAL_MOD_FX_RATE],
+			    cableToExpParamShortcut(unpatchedParams->getValue(params::UNPATCHED_GRISTLE_RATE)));
+
+			for (StereoSample& sample : buffer) {
+				// One LFO value per frame, shared by both channels so the two sides chop together;
+				// separate filter state per channel so they do not comb.
+				gristleMemory.lfoPhase += phaseIncrement;
+				q31_t shaped = deluge::dsp::gristle::shapeLFO(getTriangle(gristleMemory.lfoPhase), gristleConfig);
+				sample.l = deluge::dsp::gristle::processSample(sample.l, shaped, gristleConfig, gristleMemory.l);
+				sample.r = deluge::dsp::gristle::processSample(sample.r, shaped, gristleConfig, gristleMemory.r);
+			}
+		}
 	}
 
 	// EQ -------------------------------------------------------------------------------------
@@ -630,6 +695,27 @@ void ModControllableAudio::writeParamAttributesToFile(Serializer& writer, ParamM
 	unpatchedParams->writeParamAsAttribute(writer, "compressorThreshold", params::UNPATCHED_COMPRESSOR_THRESHOLD,
 	                                       writeAutomation, false, valuesForOverride);
 
+	// The Gristleizer. Attribute names match paramNameForFile() so that a song written here reads
+	// back on any build carrying the effect.
+	unpatchedParams->writeParamAsAttribute(writer, "gristleRate", params::UNPATCHED_GRISTLE_RATE, writeAutomation,
+	                                       false, valuesForOverride);
+	unpatchedParams->writeParamAsAttribute(writer, "gristleDepth", params::UNPATCHED_GRISTLE_DEPTH, writeAutomation,
+	                                       false, valuesForOverride);
+	unpatchedParams->writeParamAsAttribute(writer, "gristleShape", params::UNPATCHED_GRISTLE_SHAPE, writeAutomation,
+	                                       false, valuesForOverride);
+	unpatchedParams->writeParamAsAttribute(writer, "gristleBias", params::UNPATCHED_GRISTLE_BIAS, writeAutomation,
+	                                       false, valuesForOverride);
+	unpatchedParams->writeParamAsAttribute(writer, "gristleMode", params::UNPATCHED_GRISTLE_MODE, writeAutomation,
+	                                       false, valuesForOverride);
+	unpatchedParams->writeParamAsAttribute(writer, "gristleLevel", params::UNPATCHED_GRISTLE_LEVEL, writeAutomation,
+	                                       false, valuesForOverride);
+	unpatchedParams->writeParamAsAttribute(writer, "gristleFreq", params::UNPATCHED_GRISTLE_FREQ, writeAutomation,
+	                                       false, valuesForOverride);
+	unpatchedParams->writeParamAsAttribute(writer, "gristleRes", params::UNPATCHED_GRISTLE_RES, writeAutomation,
+	                                       false, valuesForOverride);
+	unpatchedParams->writeParamAsAttribute(writer, "gristleDirt", params::UNPATCHED_GRISTLE_DIRT, writeAutomation,
+	                                       false, valuesForOverride);
+
 	unpatchedParams->writeParamAsAttribute(writer, "arpeggiatorGate", params::UNPATCHED_ARP_GATE, writeAutomation);
 	unpatchedParams->writeParamAsAttribute(writer, "noteProbability", params::UNPATCHED_NOTE_PROBABILITY,
 	                                       writeAutomation);
@@ -775,6 +861,54 @@ bool ModControllableAudio::readParamTagFromFile(Deserializer& reader, char const
 		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_COMPRESSOR_THRESHOLD,
 		                           readAutomationUpToPos);
 		reader.exitTag("compressorThreshold");
+	}
+
+	// The Gristleizer. A song saved before the effect existed simply has none of these tags, so the
+	// params keep the inactive defaults set in initParams() and the song is unchanged.
+	else if (!strcmp(tagName, "gristleRate")) {
+		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_GRISTLE_RATE,
+		                           readAutomationUpToPos);
+		reader.exitTag("gristleRate");
+	}
+	else if (!strcmp(tagName, "gristleDepth")) {
+		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_GRISTLE_DEPTH,
+		                           readAutomationUpToPos);
+		reader.exitTag("gristleDepth");
+	}
+	else if (!strcmp(tagName, "gristleShape")) {
+		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_GRISTLE_SHAPE,
+		                           readAutomationUpToPos);
+		reader.exitTag("gristleShape");
+	}
+	else if (!strcmp(tagName, "gristleBias")) {
+		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_GRISTLE_BIAS,
+		                           readAutomationUpToPos);
+		reader.exitTag("gristleBias");
+	}
+	else if (!strcmp(tagName, "gristleMode")) {
+		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_GRISTLE_MODE,
+		                           readAutomationUpToPos);
+		reader.exitTag("gristleMode");
+	}
+	else if (!strcmp(tagName, "gristleLevel")) {
+		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_GRISTLE_LEVEL,
+		                           readAutomationUpToPos);
+		reader.exitTag("gristleLevel");
+	}
+	else if (!strcmp(tagName, "gristleFreq")) {
+		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_GRISTLE_FREQ,
+		                           readAutomationUpToPos);
+		reader.exitTag("gristleFreq");
+	}
+	else if (!strcmp(tagName, "gristleRes")) {
+		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_GRISTLE_RES,
+		                           readAutomationUpToPos);
+		reader.exitTag("gristleRes");
+	}
+	else if (!strcmp(tagName, "gristleDirt")) {
+		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_GRISTLE_DIRT,
+		                           readAutomationUpToPos);
+		reader.exitTag("gristleDirt");
 	}
 
 	// Arpeggiator stuff
