@@ -1,26 +1,28 @@
 # HANDOFF
 
-Thin index. Last updated 2026-08-08.
+Thin index. Last updated 2026-08-09.
 
 This file used to carry everything. Most of it now lives somewhere it can be found:
 
 | Was in here | Now |
 |---|---|
-| Environment hazards, build/toolchain traps | [`docs/DEVELOPMENT-NOTES.md`](docs/DEVELOPMENT-NOTES.md) — committed, versioned |
+| Environment hazards, build/toolchain traps | [`docs/DEVELOPMENT-NOTES.md`](docs/DEVELOPMENT-NOTES.md) |
 | Branch map, "what landed and why" | The ten draft PRs — rationale sits with the diff |
-| Open questions needing hardware | GitHub Issues, label `needs-hardware-test` |
-| Upstream submission plan | GitHub Issue, label `upstream` |
+| Open questions needing hardware | Issues #1–#3, label `needs-hardware-test` |
+| Upstream submission plan | Issue #4, label `upstream` |
 
 ---
 
-## State as of 2026-08-08
+## State
 
-**Everything is pushed.** Nothing is single-copy on this machine any more.
+**Everything is pushed.** Nothing is single-copy on this machine.
 
-Both binaries built and copied to `Desktop\Rude Claude`:
+Both binaries in `Desktop\Rude Claude`:
 
 - `deluge-v1_2_1-rudement+2026_08_08-4d68a0b1.bin` — 1.2.1 line, toolchain v16, 468 objects
 - `deluge-v1_3_0-rudement+2026_08_08-a99b641b.bin` — 1.3 beta, toolchain v22, 502 objects
+
+Older builds sit alongside them; those two are current.
 
 ### Branches
 
@@ -28,6 +30,9 @@ Both binaries built and copied to `Desktop\Rude Claude`:
 |---|---|---|---|
 | `chopin-rudement` | `4d68a0b1` | 1.2.1 | Release branch, all features integrated. **Push here, not `chopin`.** |
 | `beta-1.3` | `a99b641b` | 1.3 | Everything including the arp work. Built as the 1.3 beta. |
+| `base-12` | `a2e333b9` | 1.2.1 | Split point. PR target only — no work on it. |
+| `base-13` | `134d000f` | 1.3 | Split point. PR target only — no work on it. |
+| `midi-fx` | `a99b641b` | 1.3 | Same commit as `beta-1.3`. The name that survived the force-syncs. |
 | `feat/sear-12` | `df7cb689` | 1.2.1 | ┐ |
 | `feat/eq-readout-12` | `7befe053` | 1.2.1 | │ all four independent, |
 | `feat/gristle-on-12` | `7f6c3896` | 1.2.1 | │ rooted at `a2e333b9` |
@@ -39,34 +44,114 @@ Both binaries built and copied to `Desktop\Rude Claude`:
 | `feat/midi-fx-13` | `e3402639` | 1.3 | independent — most upstream-ready of the set |
 | `feat/version-label-13` | `5d4d0d22` | 1.3 | independent |
 
-The split was verified lossless: re-stacking reproduces tree `a54fbe45` (= `chopin` `33c4e258`)
-and tree `e203afbc` (= `chopin-to-13` `5cf8edeb`) exactly.
+Split verified lossless: re-stacking reproduces tree `a54fbe45` (= `chopin` `33c4e258`) and
+tree `e203afbc` (= `chopin-to-13` `5cf8edeb`) exactly.
+
+### GitHub
+
+Issues #1–#4, PRs #5–#14 on `Rudement/DelugeFirmware`.
+
+| # | What |
+|---|---|
+| #1 | Sear: does `kSearDriveBoost` actually fix "too tame"? |
+| #2 | Gristleizer: verify bypass behaviour (LFO timeline lock) |
+| #3 | EQ: verify Hz/dB readout, Treble especially |
+| #4 | Upstream submission: dependency order and prerequisites |
+| #5–#8 | `feat/sear-12`, `feat/eq-readout-12`, `feat/gristle-on-12`, `feat/version-label-13` |
+| #9–#11 | `feat/eq-readout-13`, `feat/gristle-on-13`, `feat/midi-fx-13` |
+| #12–#14 | `feat/gristle-13`, `feat/sear-13`, `feat/ci-chopin-12` |
 
 ### Do not trust these branches
 
-`chopin` and `chopin-to-13` on the **remote** have both been force-synced to upstream commits at
-least once, taking the work with them. See `docs/DEVELOPMENT-NOTES.md`. Work under names
-upstream does not use has survived; keep using those.
+`chopin` and `chopin-to-13` on the **remote** have both been force-synced to upstream commits
+at least once, taking the work with them. Local copies still exist and diverge from their
+remotes. Work under names upstream does not use has survived; keep using those.
 
 ---
 
+## Done
+
+- Ten feature branches split from the integrated lines, verified lossless, pushed.
+- Both binaries built and collected.
+- Four issues and ten draft PRs created.
+- `docs/DEVELOPMENT-NOTES.md` written and committed **on `chopin-rudement` only**.
+
 ## Open
 
-- [ ] Run `rudement-split\gh\create-trail.cmd` — creates the 4 issues and 10 draft PRs.
-- [ ] Commit `docs/DEVELOPMENT-NOTES.md` (currently untracked).
-- [ ] Flash both binaries and work through the three `needs-hardware-test` issues.
-- [ ] Consider `dbt configure -DENABLE_SYSEX_LOAD=YES` then flash once via SD, so later builds
+- [ ] **Run `rudement-split\tidy-up.cmd`.** Carries the docs onto `beta-1.3` (they are not
+      there yet), untracks `rudement-split.bundle` and `HANDOFF.local.md`, backs up then
+      clears the GitHub Desktop stashes, deletes `chopin-backport` and the `.stranded` files.
+- [ ] Optional: `rudement-split\gh\retarget-prs.cmd` — point all ten PRs at `base-12`/`base-13`
+      so each shows exactly its own feature diff. Targets are currently inconsistent.
+- [ ] Flash both binaries and work through issues #1–#3. **This is the real remaining work**
+      and nothing else can substitute for it.
+- [ ] Upstream: see issue #4. Nothing has ever been format-checked — run `dbt format` first.
+      `feat/midi-fx-13` is the only branch with no prerequisites; lead with it.
+- [ ] Decide whether to delete local `chopin` / `chopin-to-13`. Both are preserved elsewhere,
+      but `feat/ci-chopin-12`'s workflow keys off the name `chopin`.
+- [ ] Optional: `dbt configure -DENABLE_SYSEX_LOAD=YES` then flash once via SD, so later builds
       can go over USB with `dbt loadfw release` instead of shuttling the card.
-- [ ] Upstream: see the `upstream` issue. Nothing has been format-checked; `feat/midi-fx-13` is
-      the only branch with no prerequisites.
+
+### The upstream finding, in one paragraph
+
+The 1.3 base `134d000f` is **not upstream** — it is this fork's own stack. Underneath it sit
+the four-band EQ, the Mid band EQ, and three Heat commits, none of which Synthstrom has seen.
+So `feat/sear-13` needs Heat (Sear is a rename of it), `feat/eq-readout-13` needs both EQ
+commits, and `feat/gristle-on-13` needs the Gristleizer port which needs Heat's
+`softClipCubic`. Order is forced. Full detail in issue #4.
+
+---
 
 ## Tooling in `rudement-split/`
 
+**Windows**
+
 ```
-0-cleanup-locks.cmd     unjam git after a sandbox session
-1-import-branches.cmd   import the ten branches from the bundle (already run)
-2-build-chopin.cmd      1.2.1-rudement, v16
-3-build-beta13.cmd      1.3.0-rudement beta, v22
-collect-binaries.cmd    copy build/Release/*.bin to Desktop\Rude Claude
-gh\create-trail.cmd     create the GitHub issues and draft PRs
+0-cleanup-locks.cmd       unjam git after a sandbox session          [run]
+1-import-branches.cmd     import the ten branches from the bundle    [run]
+2-build-chopin.cmd        1.2.1-rudement, v16                        [run]
+3-build-beta13.cmd        1.3.0-rudement beta, v22                   [run]
+collect-binaries.cmd      copy build/Release/*.bin to Rude Claude    [run]
+tidy-up.cmd               loose-end cleanup                          [NOT YET RUN]
+gh\create-trail.cmd       create the issues and draft PRs            [run]
+gh\fix-remaining-prs.cmd  base-12 / base-13 and three retries        [run]
+gh\retarget-prs.cmd       point every PR at its line's base          [NOT YET RUN]
 ```
+
+**macOS / Linux** — same behaviour, platform detected at runtime
+
+```
+sh/cleanup-locks.sh
+sh/build-chopin.sh
+sh/build-beta13.sh
+sh/collect-binaries.sh
+```
+
+The shell versions resolve the Desktop per platform (`xdg-user-dir` on Linux, `~/Desktop` on
+macOS) and call `./dbt` rather than `dbt.cmd`. `dbt` itself is already cross-platform and
+downloads the toolchain matching the host. If they arrive without the executable bit:
+`chmod +x rudement-split/sh/*.sh`
+
+No shell equivalent of `1-import-branches` or the `gh` scripts — those were one-shot and have
+already done their job.
+
+### gh setup gotchas, if you start on a fresh machine
+
+- **Two remotes.** `origin` is the fork, `upstream` is SynthstromAudible. `gh` refuses to
+  guess. Run `gh repo set-default Rudement/DelugeFirmware` — pointing it at `upstream` would
+  file issues and PRs on Synthstrom's repository.
+- **Issues are disabled on forks by default.** `gh repo edit --enable-issues`.
+- **PATH is stale** in any shell open when `gh` was installed, and Windows Terminal hands new
+  tabs the environment it started with. Restart the terminal or refresh `$env:Path`.
+
+---
+
+## MIDI FX — status
+
+`feat/midi-fx-13` is **groundwork, not a feature**. Two commits collapse the arpeggiator note
+dispatch into single seams (`dispatchArpNoteOffs` / `dispatchArpNoteOns` on both the
+`NonAudioInstrument` and `Sound` sides). There is no menu entry, no param, no CC, and nothing
+to access on the device.
+
+The point is to create one place to stand between the arpeggiator and the output — the seam a
+MIDI FX stage would plug into. **That stage has not been written.**
