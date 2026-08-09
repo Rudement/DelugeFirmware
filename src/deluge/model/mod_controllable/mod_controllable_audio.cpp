@@ -20,6 +20,7 @@
 #include "definitions_cxx.hpp"
 #include "deluge/dsp/granular/GranularProcessor.h"
 #include "deluge/model/settings/runtime_feature_settings.h"
+#include "dsp/eq_bands.hpp"
 #include "dsp/stereo_sample.h"
 #include "gui/l10n/l10n.h"
 #include "gui/ui/ui.h"
@@ -217,12 +218,16 @@ void ModControllableAudio::processFX(std::span<StereoSample> buffer, ModFXType m
 
 	if (thisDoBass || thisDoTreble || thisDoLowMid || thisDoHighMid) {
 
+		// The preset bases and octave multipliers all four bands use now live in dsp/eq_bands.hpp, so
+		// that the Hz readout in FX > EQ is computed from the very same coefficients this loop is
+		// about to filter with. The values are unchanged; only their home moved. The reasoning that
+		// pins each of them is still below, next to the band it constrains.
 		if (thisDoBass) {
-			bassFreq = getExp(120000000, (unpatchedParams->getValue(params::UNPATCHED_BASS_FREQ) >> 5) * 6);
+			bassFreq = deluge::dsp::eq::bassCoefficient(unpatchedParams->getValue(params::UNPATCHED_BASS_FREQ));
 		}
 
 		if (thisDoTreble) {
-			trebleFreq = getExp(700000000, (unpatchedParams->getValue(params::UNPATCHED_TREBLE_FREQ) >> 5) * 6);
+			trebleFreq = deluge::dsp::eq::trebleCoefficient(unpatchedParams->getValue(params::UNPATCHED_TREBLE_FREQ));
 		}
 
 		if (thisDoLowMid) {
@@ -235,9 +240,9 @@ void ModControllableAudio::processFX(std::span<StereoSample> buffer, ModFXType m
 			// NOTHING there — a dead knob zone, the same failure class as Heat's octaves==0 bug.
 			// At *3 only the upper lowpass ever saturates, and the band then degrades gracefully
 			// into a presence tilt instead of vanishing. Do not raise this multiplier.
-			int32_t lowMidFreqAdjustment = (unpatchedParams->getValue(params::UNPATCHED_LOW_MID_FREQ) >> 5) * 3;
-			lowMidFreqLo = getExp(145000000, lowMidFreqAdjustment);
-			lowMidFreqHi = getExp(580000000, lowMidFreqAdjustment);
+			int32_t lowMidFreqParam = unpatchedParams->getValue(params::UNPATCHED_LOW_MID_FREQ);
+			lowMidFreqLo = deluge::dsp::eq::lowMidLoCoefficient(lowMidFreqParam);
+			lowMidFreqHi = deluge::dsp::eq::lowMidHiCoefficient(lowMidFreqParam);
 		}
 
 		if (thisDoHighMid) {
@@ -253,9 +258,9 @@ void ModControllableAudio::processFX(std::span<StereoSample> buffer, ModFXType m
 			// pins over the last fifth, and 2 kHz at *1 is the only combination that stays a true
 			// bell across ALL 51 knob positions with no saturation anywhere. Peak travels ~900 Hz to
 			// ~6 kHz, worst peak magnitude 0.56 of input. Do not raise this multiplier either.
-			int32_t highMidFreqAdjustment = (unpatchedParams->getValue(params::UNPATCHED_HIGH_MID_FREQ) >> 5) * 1;
-			highMidFreqLo = getExp(285167594, highMidFreqAdjustment);
-			highMidFreqHi = getExp(932909729, highMidFreqAdjustment);
+			int32_t highMidFreqParam = unpatchedParams->getValue(params::UNPATCHED_HIGH_MID_FREQ);
+			highMidFreqLo = deluge::dsp::eq::highMidLoCoefficient(highMidFreqParam);
+			highMidFreqHi = deluge::dsp::eq::highMidHiCoefficient(highMidFreqParam);
 		}
 
 		for (StereoSample& sample : buffer) {
@@ -444,8 +449,8 @@ void ModControllableAudio::processSRRAndBitcrushing(std::span<StereoSample> buff
 }
 
 inline void ModControllableAudio::doEQ(bool doBass, bool doTreble, bool doLowMid, bool doHighMid, int32_t* inputL,
-                                       int32_t* inputR, int32_t bassAmount, int32_t trebleAmount,
-                                       int32_t lowMidAmount, int32_t highMidAmount) {
+                                       int32_t* inputR, int32_t bassAmount, int32_t trebleAmount, int32_t lowMidAmount,
+                                       int32_t highMidAmount) {
 	int32_t trebleOnlyL;
 	int32_t trebleOnlyR;
 
@@ -678,8 +683,8 @@ void ModControllableAudio::writeParamTagsToFile(Serializer& writer, ParamManager
 	                                       false, valuesForOverride);
 	unpatchedParams->writeParamAsAttribute(writer, "highMid", params::UNPATCHED_HIGH_MID, writeAutomation, false,
 	                                       valuesForOverride);
-	unpatchedParams->writeParamAsAttribute(writer, "highMidFrequency", params::UNPATCHED_HIGH_MID_FREQ,
-	                                       writeAutomation, false, valuesForOverride);
+	unpatchedParams->writeParamAsAttribute(writer, "highMidFrequency", params::UNPATCHED_HIGH_MID_FREQ, writeAutomation,
+	                                       false, valuesForOverride);
 	writer.closeTag();
 }
 

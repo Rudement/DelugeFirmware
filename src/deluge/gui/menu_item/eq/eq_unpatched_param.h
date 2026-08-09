@@ -15,9 +15,14 @@
  * If not, see <https://www.gnu.org/licenses/>.
  */
 #pragma once
+#include "dsp/eq_bands.hpp"
 #include "gui/menu_item/unpatched_param.h"
 
 namespace deluge::gui::menu_item::eq {
+
+/// Which of the four EQ bands a menu item belongs to. Borrowed from the DSP rather than redeclared
+/// so the readouts and the filter can never drift apart on what "low mid" means.
+using deluge::dsp::eq::Band;
 
 class EqUnpatchedParam : public UnpatchedParam {
 public:
