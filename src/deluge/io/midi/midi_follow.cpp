@@ -308,6 +308,38 @@ void MidiFollow::initDefaultMappings() {
 	soundParamToCC[params::UNPATCHED_START + params::UNPATCHED_HIGH_MID] = 34;
 	ccToSoundParam[35] = params::UNPATCHED_START + params::UNPATCHED_HIGH_MID_FREQ;
 	soundParamToCC[params::UNPATCHED_START + params::UNPATCHED_HIGH_MID_FREQ] = 35;
+
+	// The Gristleizer. NOT the 102-110 the 1.2.1 branch uses: upstream claimed 102-113 for the
+	// Env3/Env4/LFO3/LFO4 params after 1.2.1 shipped, so none of that block is available here.
+	//
+	// 114-119 are undefined in the MIDI spec and free in this map. 92, 94 and 95 are the legacy
+	// tremolo / detune / phaser depth controllers, which nothing in this decade transmits. The
+	// remaining free numbers were deliberately passed over: 64-69 are pedals and switches a
+	// keyboard really does send, 96-101 carry the data-entry and NRPN/RPN traffic MPE relies on,
+	// and 120-127 are channel mode messages that midi_engine.cpp never routes to a param at all
+	// (it gates on `data1 < 120`).
+	// 89 and 90 are the only two numbers left in the effects block (91-95 are already spoken for
+	// by reverb, mod-fx and the rest of the Gristleizer), which is where a bypass belongs.
+	ccToSoundParam[89] = params::UNPATCHED_START + params::UNPATCHED_GRISTLE_ON;
+	soundParamToCC[params::UNPATCHED_START + params::UNPATCHED_GRISTLE_ON] = 89;
+	ccToSoundParam[114] = params::UNPATCHED_START + params::UNPATCHED_GRISTLE_RATE;
+	soundParamToCC[params::UNPATCHED_START + params::UNPATCHED_GRISTLE_RATE] = 114;
+	ccToSoundParam[115] = params::UNPATCHED_START + params::UNPATCHED_GRISTLE_DEPTH;
+	soundParamToCC[params::UNPATCHED_START + params::UNPATCHED_GRISTLE_DEPTH] = 115;
+	ccToSoundParam[116] = params::UNPATCHED_START + params::UNPATCHED_GRISTLE_SHAPE;
+	soundParamToCC[params::UNPATCHED_START + params::UNPATCHED_GRISTLE_SHAPE] = 116;
+	ccToSoundParam[117] = params::UNPATCHED_START + params::UNPATCHED_GRISTLE_BIAS;
+	soundParamToCC[params::UNPATCHED_START + params::UNPATCHED_GRISTLE_BIAS] = 117;
+	ccToSoundParam[118] = params::UNPATCHED_START + params::UNPATCHED_GRISTLE_MODE;
+	soundParamToCC[params::UNPATCHED_START + params::UNPATCHED_GRISTLE_MODE] = 118;
+	ccToSoundParam[119] = params::UNPATCHED_START + params::UNPATCHED_GRISTLE_FREQ;
+	soundParamToCC[params::UNPATCHED_START + params::UNPATCHED_GRISTLE_FREQ] = 119;
+	ccToSoundParam[92] = params::UNPATCHED_START + params::UNPATCHED_GRISTLE_RES;
+	soundParamToCC[params::UNPATCHED_START + params::UNPATCHED_GRISTLE_RES] = 92;
+	ccToSoundParam[94] = params::UNPATCHED_START + params::UNPATCHED_GRISTLE_LEVEL;
+	soundParamToCC[params::UNPATCHED_START + params::UNPATCHED_GRISTLE_LEVEL] = 94;
+	ccToSoundParam[95] = params::UNPATCHED_START + params::UNPATCHED_GRISTLE_DIRT;
+	soundParamToCC[params::UNPATCHED_START + params::UNPATCHED_GRISTLE_DIRT] = 95;
 	ccToSoundParam[91] = params::GLOBAL_REVERB_AMOUNT;
 	soundParamToCC[params::GLOBAL_REVERB_AMOUNT] = 91;
 	ccToSoundParam[93] = params::GLOBAL_MOD_FX_DEPTH;
@@ -397,6 +429,28 @@ void MidiFollow::initDefaultMappings() {
 	globalParamToCC[params::UNPATCHED_HIGH_MID] = 34;
 	ccToGlobalParam[35] = params::UNPATCHED_HIGH_MID_FREQ;
 	globalParamToCC[params::UNPATCHED_HIGH_MID_FREQ] = 35;
+
+	// See the comment on the sound-param side above for why these numbers.
+	ccToGlobalParam[89] = params::UNPATCHED_GRISTLE_ON;
+	globalParamToCC[params::UNPATCHED_GRISTLE_ON] = 89;
+	ccToGlobalParam[114] = params::UNPATCHED_GRISTLE_RATE;
+	globalParamToCC[params::UNPATCHED_GRISTLE_RATE] = 114;
+	ccToGlobalParam[115] = params::UNPATCHED_GRISTLE_DEPTH;
+	globalParamToCC[params::UNPATCHED_GRISTLE_DEPTH] = 115;
+	ccToGlobalParam[116] = params::UNPATCHED_GRISTLE_SHAPE;
+	globalParamToCC[params::UNPATCHED_GRISTLE_SHAPE] = 116;
+	ccToGlobalParam[117] = params::UNPATCHED_GRISTLE_BIAS;
+	globalParamToCC[params::UNPATCHED_GRISTLE_BIAS] = 117;
+	ccToGlobalParam[118] = params::UNPATCHED_GRISTLE_MODE;
+	globalParamToCC[params::UNPATCHED_GRISTLE_MODE] = 118;
+	ccToGlobalParam[119] = params::UNPATCHED_GRISTLE_FREQ;
+	globalParamToCC[params::UNPATCHED_GRISTLE_FREQ] = 119;
+	ccToGlobalParam[92] = params::UNPATCHED_GRISTLE_RES;
+	globalParamToCC[params::UNPATCHED_GRISTLE_RES] = 92;
+	ccToGlobalParam[94] = params::UNPATCHED_GRISTLE_LEVEL;
+	globalParamToCC[params::UNPATCHED_GRISTLE_LEVEL] = 94;
+	ccToGlobalParam[95] = params::UNPATCHED_GRISTLE_DIRT;
+	globalParamToCC[params::UNPATCHED_GRISTLE_DIRT] = 95;
 	ccToGlobalParam[91] = params::UNPATCHED_REVERB_SEND_AMOUNT;
 	globalParamToCC[params::UNPATCHED_REVERB_SEND_AMOUNT] = 91;
 	ccToGlobalParam[93] = params::UNPATCHED_MOD_FX_DEPTH;

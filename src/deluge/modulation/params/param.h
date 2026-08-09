@@ -202,6 +202,33 @@ enum UnpatchedShared : ParamType {
 	UNPATCHED_SIDECHAIN_SHAPE,
 	UNPATCHED_COMPRESSOR_THRESHOLD,
 	UNPATCHED_HEAT_TONE,
+	// The Gristleizer. Shared rather than sound-only so it reaches synths, kits, audio clips and
+	// song FX alike — it runs in ModControllableAudio::processFX, which every ModControllable
+	// calls.
+	//
+	// These go HERE, before UNPATCHED_FIRST_ARP_PARAM, and not at the end of the enum: the arp
+	// params are a delimited contiguous range and UNPATCHED_NUM_SHARED is defined as
+	// UNPATCHED_LAST_ARP_PARAM, so appending after it would break both. Inserting here just
+	// shifts the arp block (and the UnpatchedSound / UnpatchedGlobal sub-ranges) up by ten,
+	// which is safe: song files store params by NAME via paramNameForFile, and everything else
+	// that switches on these values is a switch rather than an ordered table. The one ordered
+	// thing is the automation arrays, which are updated to match.
+	//
+	// ON IS THE MASTER SWITCH and it is a param rather than a bool on ModControllableAudio so
+	// that it can be automated and assigned to a gold knob — throwing the whole effect in and
+	// out is a performance gesture, not a setup option. It is thresholded, not blended: see
+	// gristle::isEnabled. It must stay first so the menu, the automation lists and the enum all
+	// tell the same story about what this block is.
+	UNPATCHED_GRISTLE_ON,
+	UNPATCHED_GRISTLE_RATE,
+	UNPATCHED_GRISTLE_DEPTH,
+	UNPATCHED_GRISTLE_SHAPE,
+	UNPATCHED_GRISTLE_BIAS,
+	UNPATCHED_GRISTLE_MODE,
+	UNPATCHED_GRISTLE_LEVEL,
+	UNPATCHED_GRISTLE_FREQ,
+	UNPATCHED_GRISTLE_RES,
+	UNPATCHED_GRISTLE_DIRT,
 	// Arp
 	UNPATCHED_FIRST_ARP_PARAM,
 	UNPATCHED_ARP_GATE = UNPATCHED_FIRST_ARP_PARAM,
@@ -379,8 +406,8 @@ const uint32_t unpatchedNonGlobalParamShortcuts[kDisplayWidth][kDisplayHeight] =
     {kNoParamID          , kNoParamID, UNPATCHED_ARP_GATE, UNPATCHED_HIGH_MID_FREQ, kNoParamID                , UNPATCHED_LOW_MID_FREQ         , UNPATCHED_TREBLE     , UNPATCHED_TREBLE_FREQ},
     {kNoParamID          , kNoParamID, kNoParamID        , kNoParamID, UNPATCHED_MOD_FX_OFFSET   , UNPATCHED_MOD_FX_FEEDBACK      , kNoParamID           , kNoParamID},
     {kNoParamID          , kNoParamID, kNoParamID        , kNoParamID, kNoParamID                , kNoParamID                     , kNoParamID           , kNoParamID},
-    {kNoParamID          , kNoParamID, kNoParamID        , kNoParamID, kNoParamID                , kNoParamID                     , kNoParamID           , kNoParamID},
-    {kNoParamID          , UNPATCHED_SPREAD_VELOCITY, kNoParamID        , kNoParamID, kNoParamID                , kNoParamID                     , kNoParamID           , kNoParamID}
+    {kNoParamID            , kNoParamID               , kNoParamID             , kNoParamID            , kNoParamID            , UNPATCHED_GRISTLE_ON  , UNPATCHED_GRISTLE_DEPTH, UNPATCHED_GRISTLE_DIRT},
+    {UNPATCHED_GRISTLE_RATE, UNPATCHED_SPREAD_VELOCITY, UNPATCHED_GRISTLE_SHAPE, UNPATCHED_GRISTLE_BIAS, UNPATCHED_GRISTLE_MODE, UNPATCHED_GRISTLE_FREQ, UNPATCHED_GRISTLE_RES  , UNPATCHED_GRISTLE_LEVEL}
 };
 // clang-format on
 
@@ -402,8 +429,8 @@ const uint32_t unpatchedGlobalParamShortcuts[kDisplayWidth][kDisplayHeight] = {
     {UNPATCHED_ARP_RATE  , kNoParamID            , UNPATCHED_ARP_GATE        , UNPATCHED_HIGH_MID_FREQ     , kNoParamID				   , UNPATCHED_LOW_MID_FREQ	   	 	, UNPATCHED_TREBLE      , UNPATCHED_TREBLE_FREQ},
     {kNoParamID          , kNoParamID            , kNoParamID                , kNoParamID                  , UNPATCHED_MOD_FX_OFFSET   , UNPATCHED_MOD_FX_FEEDBACK		, UNPATCHED_MOD_FX_DEPTH, UNPATCHED_MOD_FX_RATE},
     {kNoParamID          , kNoParamID            , kNoParamID                , UNPATCHED_REVERB_SEND_AMOUNT, kNoParamID				   , kNoParamID			   		 	, kNoParamID            , kNoParamID},
-    {UNPATCHED_DELAY_RATE, kNoParamID            , kNoParamID                , UNPATCHED_DELAY_AMOUNT      , kNoParamID				   , kNoParamID			  		 	, kNoParamID            , kNoParamID},
-    {kNoParamID          , kNoParamID            , kNoParamID                , kNoParamID                  , kNoParamID				   , kNoParamID			   		 	, kNoParamID            , kNoParamID}};
+    {UNPATCHED_DELAY_RATE  , kNoParamID               , kNoParamID             , UNPATCHED_DELAY_AMOUNT, kNoParamID            , UNPATCHED_GRISTLE_ON  , UNPATCHED_GRISTLE_DEPTH, UNPATCHED_GRISTLE_DIRT},
+    {UNPATCHED_GRISTLE_RATE, kNoParamID               , UNPATCHED_GRISTLE_SHAPE, UNPATCHED_GRISTLE_BIAS, UNPATCHED_GRISTLE_MODE, UNPATCHED_GRISTLE_FREQ, UNPATCHED_GRISTLE_RES  , UNPATCHED_GRISTLE_LEVEL}};
 // clang-format on
 
 uint32_t expressionParamFromShortcut(int x, int y);

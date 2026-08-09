@@ -221,6 +221,7 @@
 #include "gui/menu_item/unison/stereoSpread.h"
 #include "gui/menu_item/unpatched_param.h"
 #include "gui/menu_item/unpatched_param/pan.h"
+#include "gui/menu_item/unpatched_param_switch.h"
 #include "gui/menu_item/voice/polyphony.h"
 #include "gui/menu_item/voice/portamento.h"
 #include "gui/menu_item/voice/priority.h"
@@ -497,6 +498,55 @@ eq::EqMenu eqMenu{
         &lowMidFreqMenu,
         &highMidMenu,
         &highMidFreqMenu,
+    },
+};
+
+// Gristleizer -----------------------------------------------------------------------------
+// Ten shared unpatched params, so ONE set of menu items serves synths, kits, audio clips and
+// song FX alike — unlike Heat, which is per-voice and therefore cannot appear outside a synth.
+// The master switch first, then the rest ordered as the signal flows: LFO, then what the LFO
+// drives, then the output stage.
+//
+// A HorizontalMenu paginates by slot count, four per page, so ten single-slot items give three
+// pages (4/4/2) with no fixed-size array to overrun. (The 1.2.1 branch uses a plain vector-backed
+// Submenu here; either works, this matches how the rest of this branch renders param groups.)
+//
+// ON IS FIRST DELIBERATELY. It is the only control that can make the other nine inaudible, so it
+// is the one you must be able to find without paging. Moving it costs nothing functionally but
+// puts the switch two pages inside the effect it switches.
+UnpatchedParamSwitch gristleOnMenu{STRING_FOR_ON, STRING_FOR_GRISTLE_ON, params::UNPATCHED_GRISTLE_ON};
+UnpatchedParam gristleRateMenu{STRING_FOR_RATE, STRING_FOR_GRISTLE_RATE, params::UNPATCHED_GRISTLE_RATE,
+                               RenderingStyle::BAR};
+UnpatchedParam gristleDepthMenu{STRING_FOR_DEPTH, STRING_FOR_GRISTLE_DEPTH, params::UNPATCHED_GRISTLE_DEPTH,
+                                RenderingStyle::BAR};
+UnpatchedParam gristleShapeMenu{STRING_FOR_SHAPE, STRING_FOR_GRISTLE_SHAPE, params::UNPATCHED_GRISTLE_SHAPE,
+                                RenderingStyle::BAR};
+UnpatchedParam gristleBiasMenu{STRING_FOR_BIAS, STRING_FOR_GRISTLE_BIAS, params::UNPATCHED_GRISTLE_BIAS,
+                               RenderingStyle::BAR};
+UnpatchedParam gristleModeMenu{STRING_FOR_MODE, STRING_FOR_GRISTLE_MODE, params::UNPATCHED_GRISTLE_MODE,
+                               RenderingStyle::BAR};
+UnpatchedParam gristleFreqMenu{STRING_FOR_FREQUENCY, STRING_FOR_GRISTLE_FREQ, params::UNPATCHED_GRISTLE_FREQ,
+                               RenderingStyle::BAR};
+UnpatchedParam gristleResMenu{STRING_FOR_RESONANCE, STRING_FOR_GRISTLE_RES, params::UNPATCHED_GRISTLE_RES,
+                              RenderingStyle::BAR};
+UnpatchedParam gristleDirtMenu{STRING_FOR_DIRT, STRING_FOR_GRISTLE_DIRT, params::UNPATCHED_GRISTLE_DIRT,
+                               RenderingStyle::BAR};
+UnpatchedParam gristleLevelMenu{STRING_FOR_LEVEL, STRING_FOR_GRISTLE_LEVEL, params::UNPATCHED_GRISTLE_LEVEL,
+                                RenderingStyle::BAR};
+
+HorizontalMenu gristleMenu{
+    STRING_FOR_GRISTLE,
+    {
+        &gristleOnMenu,
+        &gristleRateMenu,
+        &gristleDepthMenu,
+        &gristleShapeMenu,
+        &gristleBiasMenu,
+        &gristleModeMenu,
+        &gristleFreqMenu,
+        &gristleResMenu,
+        &gristleDirtMenu,
+        &gristleLevelMenu,
     },
 };
 
@@ -831,6 +881,7 @@ Submenu globalFXMenu{
         &stutterMenu,
         &globalModFXMenu,
         &globalDistortionMenu,
+        &gristleMenu,
     },
 };
 
@@ -900,6 +951,7 @@ Submenu audioClipFXMenu{
         &stutterMenu,
         &globalModFXMenu,
         &audioClipDistortionMenu,
+        &gristleMenu,
     },
 };
 
@@ -1460,6 +1512,7 @@ Submenu soundFXMenu{
         &stutterMenu,
         &modFXMenu,
         &soundDistortionMenu,
+        &gristleMenu,
         &noiseMenu,
     },
 };
