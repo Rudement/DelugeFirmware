@@ -35,3 +35,8 @@ __pycache__
 *.srctrl*
 
 .deluge_hex_key
+
+# split delivery artefacts - branches live on the remote now
+rudement-split/*.bundle
+rudement-split/HANDOFF.local.md
+rudement-split/stash-backup/
