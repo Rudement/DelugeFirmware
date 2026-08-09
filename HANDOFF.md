@@ -28,8 +28,8 @@ Older builds sit alongside them; those two are current.
 
 | Branch | Tip | Line | What |
 |---|---|---|---|
-| `chopin-rudement` | `4d68a0b1` | 1.2.1 | Release branch, all features integrated. **Push here, not `chopin`.** |
-| `beta-1.3` | `a99b641b` | 1.3 | Everything including the arp work. Built as the 1.3 beta. |
+| `chopin-rudement` | `70294678` | 1.2.1 | Release branch, all features integrated, plus docs. **Push here, not `chopin`.** Firmware content is `4d68a0b1`. |
+| `beta-1.3` | `991939d1` | 1.3 | Everything including the arp work, plus docs. Firmware content is `a99b641b`. |
 | `base-12` | `a2e333b9` | 1.2.1 | Split point. PR target only — no work on it. |
 | `base-13` | `134d000f` | 1.3 | Split point. PR target only — no work on it. |
 | `midi-fx` | `a99b641b` | 1.3 | Same commit as `beta-1.3`. The name that survived the force-syncs. |
@@ -74,17 +74,28 @@ remotes. Work under names upstream does not use has survived; keep using those.
 - Ten feature branches split from the integrated lines, verified lossless, pushed.
 - Both binaries built and collected.
 - Four issues and ten draft PRs created.
-- `docs/DEVELOPMENT-NOTES.md` written and committed **on `chopin-rudement` only**.
+- `docs/DEVELOPMENT-NOTES.md` committed on **both** `chopin-rudement` and `beta-1.3`.
+- Cleanup: `rudement-split.bundle` and `HANDOFF.local.md` untracked, `.gitignore` rules added,
+  `chopin-backport` deleted after verifying it was contained in `chopin-rudement`, `.stranded`
+  files removed.
+- The ten GitHub Desktop stashes are **cleared but recoverable** — each was written to
+  `rudement-split\stash-backup\stash-N.patch` first. Restore with
+  `git apply rudement-split\stash-backup\stash-N.patch`. Delete that folder once you are
+  confident none of it is wanted; it is gitignored.
+
+- All ten PRs retargeted at `base-12` / `base-13`, so each shows exactly its own feature diff
+  against the bare split point and nothing else.
+
+- Hardware listening 2026-08-09. **#2 Gristle bypass passes. #3 EQ readout passes.**
+  Both closed.
 
 ## Open
 
-- [ ] **Run `rudement-split\tidy-up.cmd`.** Carries the docs onto `beta-1.3` (they are not
-      there yet), untracks `rudement-split.bundle` and `HANDOFF.local.md`, backs up then
-      clears the GitHub Desktop stashes, deletes `chopin-backport` and the `.stranded` files.
-- [ ] Optional: `rudement-split\gh\retarget-prs.cmd` — point all ten PRs at `base-12`/`base-13`
-      so each shows exactly its own feature diff. Targets are currently inconsistent.
-- [ ] Flash both binaries and work through issues #1–#3. **This is the real remaining work**
-      and nothing else can substitute for it.
+- [ ] **#1 Sear is still too tame.** `kSearDriveBoost` did not fix it. Before touching the
+      constant, run the discriminating test: force the corrective gain to unity and listen.
+      The auto-leveller divides out every bit of loudness the extra drive produces, by design,
+      so level-matched saturation reading as "tame" is the expected outcome of it working
+      correctly — and more pre-gain will not change that. Full reasoning in the issue.
 - [ ] Upstream: see issue #4. Nothing has ever been format-checked — run `dbt format` first.
       `feat/midi-fx-13` is the only branch with no prerequisites; lead with it.
 - [ ] Decide whether to delete local `chopin` / `chopin-to-13`. Both are preserved elsewhere,
@@ -112,10 +123,10 @@ commits, and `feat/gristle-on-13` needs the Gristleizer port which needs Heat's
 2-build-chopin.cmd        1.2.1-rudement, v16                        [run]
 3-build-beta13.cmd        1.3.0-rudement beta, v22                   [run]
 collect-binaries.cmd      copy build/Release/*.bin to Rude Claude    [run]
-tidy-up.cmd               loose-end cleanup                          [NOT YET RUN]
+tidy-up.cmd               loose-end cleanup                          [run]
 gh\create-trail.cmd       create the issues and draft PRs            [run]
 gh\fix-remaining-prs.cmd  base-12 / base-13 and three retries        [run]
-gh\retarget-prs.cmd       point every PR at its line's base          [NOT YET RUN]
+gh\retarget-prs.cmd       point every PR at its line's base          [run]
 ```
 
 **macOS / Linux** — same behaviour, platform detected at runtime
