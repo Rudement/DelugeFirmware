@@ -20,7 +20,7 @@
 #include "definitions_cxx.hpp"
 #include "dsp/dx/engine.h"
 #include "dsp/filter/filter_set.h"
-#include "dsp/heat.hpp"
+#include "dsp/sear.hpp"
 #include "dsp/timestretch/time_stretcher.h"
 #include "dsp/util.hpp"
 #include "gui/waveform/waveform_renderer.h"
@@ -139,6 +139,19 @@ bool Voice::noteOn(ModelStackWithVoice* modelStack, int32_t newNoteCodeBeforeArp
 	ParamManagerForTimeline* paramManager = (ParamManagerForTimeline*)modelStack->paramManager;
 	Sound* sound = (Sound*)modelStack->modControllable;
 
+	// Sear's auto-level is seeded from the Sound, and deliberately NOT reset in the resetEnvelopes
+	// block below like every other piece of per-note DSP state. What it holds is a property of the
+	// patch and the drive setting rather than of the note, and a measuring stage that starts from
+	// scratch runs the first few ms of a note uncorrected — measured at +8 dB, or a 19 dB dropout
+	// if the note happened to start near a zero crossing.
+	//
+	// On the 1.3 line this lives in Voice's constructor, which takes a Sound&. This branch's Voice
+	// is placement-constructed by AudioEngine as a bare `Voice()` with no Sound in reach, so the
+	// seeding happens here instead. Same net effect: the ctor runs per note-on there, and noteOn
+	// runs per note-on here. Unconditional on resetEnvelopes — it is a seed, not a reset. See the
+	// note on SearLevel in sear.hpp.
+	searLevelState = sound->searLevelSeed;
+
 	// Setup "half-baked" envelope output values. These need to exist before we do the initial patching below - and it's
 	// only after that that we can render the "actual" envelope output values, taking their own input patching into
 	// account.
@@ -181,8 +194,8 @@ bool Voice::noteOn(ModelStackWithVoice* modelStack, int32_t newNoteCodeBeforeArp
 
 		lastSaturationTanHWorkingValue[0] = 2147483648;
 		lastSaturationTanHWorkingValue[1] = 2147483648;
-		heatToneState[0] = 0;
-		heatToneState[1] = 0;
+		searToneState[0] = 0;
+		searToneState[1] = 0;
 	}
 
 	// Porta
@@ -1484,13 +1497,15 @@ skipUnisonPart: {}
 		// Filters
 		filterSet.renderLongStereo(oscBuffer, oscBufferEnd);
 
-		// Heat: drive is patched (per voice), tone is unpatched (per sound).
+		// Sear: drive is patched (per voice), tone is unpatched (per sound).
 		// Placed AFTER the filter so the LPF doubles as an anti-aliasing control.
-		if (paramFinalValues[params::LOCAL_HEAT] > 0) {
-			dsp::heatBuffer(oscBuffer, oscBufferEnd, paramFinalValues[params::LOCAL_HEAT]);
-			q31_t heatTone = dsp::heatToneFromUnpatched(
-			    paramManager->getUnpatchedParamSet()->getValue(params::UNPATCHED_HEAT_TONE));
-			dsp::heatToneBufferStereo(oscBuffer, oscBufferEnd, heatTone, &heatToneState[0], &heatToneState[1]);
+		if (paramFinalValues[params::LOCAL_SEAR] > 0) {
+			dsp::searBuffer(oscBuffer, oscBufferEnd, paramFinalValues[params::LOCAL_SEAR], searLevelState);
+			// Hand the converged state back so the next note on this Sound starts warm.
+			sound->searLevelSeed = searLevelState;
+			q31_t searTone =
+			    dsp::searToneFromUnpatched(paramManager->getUnpatchedParamSet()->getValue(params::UNPATCHED_SEAR_TONE));
+			dsp::searToneBufferStereo(oscBuffer, oscBufferEnd, searTone, &searToneState[0], &searToneState[1]);
 		}
 
 		// No clipping
@@ -1576,13 +1591,15 @@ skipUnisonPart: {}
 
 		filterSet.renderLong(oscBuffer, oscBufferEnd, numSamples);
 
-		// Heat — mono path. Uses the single-state tone filter; see heat.hpp on why the
+		// Sear — mono path. Uses the single-state tone filter; see sear.hpp on why the
 		// stereo path must not share it.
-		if (paramFinalValues[params::LOCAL_HEAT] > 0) {
-			dsp::heatBuffer(oscBuffer, oscBufferEnd, paramFinalValues[params::LOCAL_HEAT]);
-			q31_t heatTone = dsp::heatToneFromUnpatched(
-			    paramManager->getUnpatchedParamSet()->getValue(params::UNPATCHED_HEAT_TONE));
-			dsp::heatToneBuffer(oscBuffer, oscBufferEnd, heatTone, &heatToneState[0]);
+		if (paramFinalValues[params::LOCAL_SEAR] > 0) {
+			dsp::searBuffer(oscBuffer, oscBufferEnd, paramFinalValues[params::LOCAL_SEAR], searLevelState);
+			// Hand the converged state back so the next note on this Sound starts warm.
+			sound->searLevelSeed = searLevelState;
+			q31_t searTone =
+			    dsp::searToneFromUnpatched(paramManager->getUnpatchedParamSet()->getValue(params::UNPATCHED_SEAR_TONE));
+			dsp::searToneBuffer(oscBuffer, oscBufferEnd, searTone, &searToneState[0]);
 		}
 
 		// No clipping

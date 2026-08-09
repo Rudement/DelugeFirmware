@@ -16,7 +16,7 @@
  */
 
 #pragma once
-#include "deluge/dsp/heat.hpp" // softClipCubic
+#include "deluge/dsp/sear.hpp" // softClipCubic
 #include "deluge/util/fixedpoint.h"
 #include "deluge/util/functions.h"
 #include <algorithm>
@@ -56,7 +56,7 @@ namespace deluge::dsp::gristle {
  * the gate entirely. Do not reintroduce a "param at minimum means off" rule here: on this
  * effect every knob has a musically valid minimum.
  *
- * FIXED-POINT RULE, same as heat.hpp: multiply_32x32_rshift32(a, b) yields a*b/2, not a*b,
+ * FIXED-POINT RULE, same as sear.hpp: multiply_32x32_rshift32(a, b) yields a*b/2, not a*b,
  * because it drops 32 bits of a 64-bit q31 product. Every multiply below is followed by the
  * shift that puts it back on scale. Getting this wrong is silent — the stage just lands 6 dB
  * down — so each step states its intended transfer in a comment.
@@ -130,7 +130,7 @@ struct Config {
  * zero, i.e. a true bypass.
  *
  * If it still feels slow, warp again rather than changing the range; but note that applying
- * the warp twice overshoots and kills the top half, exactly as it does for Heat.
+ * the warp twice overshoots and kills the top half, exactly as it does for Sear.
  */
 [[gnu::always_inline]] inline q31_t warpDepth(q31_t depth) {
 	return add_saturation(depth, multiply_32x32_rshift32(depth, ONE_Q31 - depth) << 1);
@@ -191,7 +191,7 @@ inline Config setup(q31_t shapeParam, q31_t biasParam, q31_t depthParam, q31_t m
 	// Dirt. The mix is the knob; the drive rises alongside it so that turning Dirt up both
 	// adds more clipped signal and clips it harder, which is what the JFET does as it is
 	// pushed. Drive tops out at 3x — beyond that the cubic is fully railed and further gain is
-	// inaudible, the same ceiling Heat runs into above ~100x.
+	// inaudible, the same ceiling Sear runs into above ~100x.
 	c.dirtMix = unipolar(dirtParam);
 	c.dirtDrive = c.dirtMix;
 
@@ -229,7 +229,7 @@ inline Config setup(q31_t shapeParam, q31_t biasParam, q31_t depthParam, q31_t m
  * lshiftAndSaturateUnknown. With a shift of zero it calls
  * signed_saturate_operand_unknown(val, 32), whose switch only covers 31 down to 13 and whose
  * default: is signed_saturate<12> — so the sample is clamped to TWELVE BITS and shifted by
- * nothing, roughly 120 dB down, silently. That exact call cost days on Heat (handoff bug 4)
+ * nothing, roughly 120 dB down, silently. That exact call cost days on Sear (handoff bug 4)
  * and then reappeared here. octaves is zero across the entire bottom quarter of the Shape
  * knob, so without this guard the whole triangle end of the morph collapses.
  *
@@ -256,7 +256,7 @@ inline Config setup(q31_t shapeParam, q31_t biasParam, q31_t depthParam, q31_t m
 }
 
 /// One channel's filter memory. MUST be per-channel: running a single state over an
-/// interleaved stereo buffer combs instead of filtering, the same trap noted for Heat's tone
+/// interleaved stereo buffer combs instead of filtering, the same trap noted for Sear's tone
 /// stage in the handoff.
 struct FilterState {
 	q31_t low;
