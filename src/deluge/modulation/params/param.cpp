@@ -209,6 +209,7 @@ char const* getParamDisplayName(Kind kind, int32_t p) {
 		    [UNPATCHED_SIDECHAIN_SHAPE] = STRING_FOR_SIDECHAIN_SHAPE,
 		    [UNPATCHED_COMPRESSOR_THRESHOLD] = STRING_FOR_THRESHOLD,
 		    [UNPATCHED_HEAT_TONE] = STRING_FOR_HEAT_TONE,
+		    [UNPATCHED_GRISTLE_ON] = STRING_FOR_GRISTLE_ON,
 		    [UNPATCHED_GRISTLE_RATE] = STRING_FOR_GRISTLE_RATE,
 		    [UNPATCHED_GRISTLE_DEPTH] = STRING_FOR_GRISTLE_DEPTH,
 		    [UNPATCHED_GRISTLE_SHAPE] = STRING_FOR_GRISTLE_SHAPE,
@@ -406,6 +407,8 @@ constexpr char const* paramNameForFileConst(Kind const kind, ParamType const par
 		// songs store params by name, so a saved song survives the sub-ranges shifting.
 		// param.cpp's static_assert(validateParams()) round-trips every one of these, so a
 		// duplicate or a missing case is a compile-time failure rather than a runtime one.
+		case UNPATCHED_GRISTLE_ON:
+			return "gristleOn";
 		case UNPATCHED_GRISTLE_RATE:
 			return "gristleRate";
 
