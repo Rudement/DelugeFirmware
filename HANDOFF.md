@@ -1,104 +1,157 @@
-# Handoff — Heat / Sear, and the state of the fork
+# HANDOFF
 
-Last updated 2026-08-08. The DSP comments in `sear.hpp` and `heat.hpp` say "See HANDOFF.md";
-this is that file.
+Thin index. Last updated 2026-08-09.
 
-## Branch map
+This file used to carry everything. Most of it now lives somewhere it can be found:
 
-| Branch | Base | Drive stage | Other extras | Build label |
-|---|---|---|---|---|
-| `chopin` | 1.2.1 (`release_1_2_1`) | **Heat**, wired | Mid EQ → four-band EQ, Gristle → Gristleizer standalone, grid shortcut fix | `1.2.1-rudement` |
-| `chopin-to-13` | 1.3.0 | **Sear** (Heat renamed + reworked), wired | Gristleizer, four-band EQ | `1.3.0-rudement` |
-| `heat` | 1.2.1 | Heat, original feature branch | — | inherits |
-| `mid-eq`, `grid-pulse` | 1.2.1 | — | earlier feature branches | — |
+| Was in here | Now |
+|---|---|
+| Environment hazards, build/toolchain traps | [`docs/DEVELOPMENT-NOTES.md`](docs/DEVELOPMENT-NOTES.md) |
+| Branch map, "what landed and why" | The ten draft PRs — rationale sits with the diff |
+| Open questions needing hardware | Issues #1–#3, label `needs-hardware-test` |
+| Upstream submission plan | Issue #4, label `upstream` |
 
-`PROJECT_VERSION` is deliberately left at upstream's value on both lines. It feeds
-`BUILD_VERSION_STRING_SHORT`, which `storage_manager.cpp` writes into every saved song as the
-`firmwareVersion` attribute. `DISPLAY_VERSION` carries the `-rudement` label instead, and only
-affects the output filename and the on-device Firmware Version screen, so song files stay
-byte-identical to stock.
+---
 
-**Known gap:** the `RELEASE_TYPE STREQUAL "release"` path in `CMakeLists.txt` still uses
-`-c${PROJECT_VERSION}` for the filename, so a true release build would come out as
-`deluge-c1_2_0.bin` with no `-rudement` and the wrong version. Dev builds are unaffected. One
-line in each of `CMakeLists.txt` and `src/deluge/version/CMakeLists.txt` fixes it.
+## State
 
-## Heat (1.2.1) — +50% drive, 2026-08-08
+**Everything is pushed.** Nothing is single-copy on this machine.
 
-Reported too tame on hardware. Applied as a constant offset in exponent space rather than a
-per-sample multiply, so the octave/fraction split stays exact and the cost is one add per
-buffer:
+Both binaries in `Desktop\Rude Claude`:
 
-```cpp
-constexpr q31_t kHeatDriveBoost = 39258415; // round(log2(1.5) * (1 << 26))
-const q31_t boosted = level + kHeatDriveBoost;
+- `deluge-v1_2_1-rudement+2026_08_08-4d68a0b1.bin` — 1.2.1 line, toolchain v16, 468 objects
+- `deluge-v1_3_0-rudement+2026_08_08-a99b641b.bin` — 1.3 beta, toolchain v22, 502 objects
+
+Older builds sit alongside them; those two are current.
+
+### Branches
+
+| Branch | Tip | Line | What |
+|---|---|---|---|
+| `chopin-rudement` | `4d68a0b1` | 1.2.1 | Release branch, all features integrated. **Push here, not `chopin`.** |
+| `beta-1.3` | `a99b641b` | 1.3 | Everything including the arp work. Built as the 1.3 beta. |
+| `base-12` | `a2e333b9` | 1.2.1 | Split point. PR target only — no work on it. |
+| `base-13` | `134d000f` | 1.3 | Split point. PR target only — no work on it. |
+| `midi-fx` | `a99b641b` | 1.3 | Same commit as `beta-1.3`. The name that survived the force-syncs. |
+| `feat/sear-12` | `df7cb689` | 1.2.1 | ┐ |
+| `feat/eq-readout-12` | `7befe053` | 1.2.1 | │ all four independent, |
+| `feat/gristle-on-12` | `7f6c3896` | 1.2.1 | │ rooted at `a2e333b9` |
+| `feat/ci-chopin-12` | `18c7dedb` | 1.2.1 | ┘ |
+| `feat/gristle-13` | `6c02c5d6` | 1.3 | **Shared prerequisite** — creates `gristle.hpp` |
+| `feat/sear-13` | `a0da0808` | 1.3 | on `feat/gristle-13` |
+| `feat/gristle-on-13` | `75ab6c82` | 1.3 | on `feat/gristle-13` |
+| `feat/eq-readout-13` | `5b23e396` | 1.3 | independent, rooted at `134d000f` |
+| `feat/midi-fx-13` | `e3402639` | 1.3 | independent — most upstream-ready of the set |
+| `feat/version-label-13` | `5d4d0d22` | 1.3 | independent |
+
+Split verified lossless: re-stacking reproduces tree `a54fbe45` (= `chopin` `33c4e258`) and
+tree `e203afbc` (= `chopin-to-13` `5cf8edeb`) exactly.
+
+### GitHub
+
+Issues #1–#4, PRs #5–#14 on `Rudement/DelugeFirmware`.
+
+| # | What |
+|---|---|
+| #1 | Sear: does `kSearDriveBoost` actually fix "too tame"? |
+| #2 | Gristleizer: verify bypass behaviour (LFO timeline lock) |
+| #3 | EQ: verify Hz/dB readout, Treble especially |
+| #4 | Upstream submission: dependency order and prerequisites |
+| #5–#8 | `feat/sear-12`, `feat/eq-readout-12`, `feat/gristle-on-12`, `feat/version-label-13` |
+| #9–#11 | `feat/eq-readout-13`, `feat/gristle-on-13`, `feat/midi-fx-13` |
+| #12–#14 | `feat/gristle-13`, `feat/sear-13`, `feat/ci-chopin-12` |
+
+### Do not trust these branches
+
+`chopin` and `chopin-to-13` on the **remote** have both been force-synced to upstream commits
+at least once, taking the work with them. Local copies still exist and diverge from their
+remotes. Work under names upstream does not use has survived; keep using those.
+
+---
+
+## Done
+
+- Ten feature branches split from the integrated lines, verified lossless, pushed.
+- Both binaries built and collected.
+- Four issues and ten draft PRs created.
+- `docs/DEVELOPMENT-NOTES.md` written and committed **on `chopin-rudement` only**.
+
+## Open
+
+- [ ] **Run `rudement-split\tidy-up.cmd`.** Carries the docs onto `beta-1.3` (they are not
+      there yet), untracks `rudement-split.bundle` and `HANDOFF.local.md`, backs up then
+      clears the GitHub Desktop stashes, deletes `chopin-backport` and the `.stranded` files.
+- [ ] Optional: `rudement-split\gh\retarget-prs.cmd` — point all ten PRs at `base-12`/`base-13`
+      so each shows exactly its own feature diff. Targets are currently inconsistent.
+- [ ] Flash both binaries and work through issues #1–#3. **This is the real remaining work**
+      and nothing else can substitute for it.
+- [ ] Upstream: see issue #4. Nothing has ever been format-checked — run `dbt format` first.
+      `feat/midi-fx-13` is the only branch with no prerequisites; lead with it.
+- [ ] Decide whether to delete local `chopin` / `chopin-to-13`. Both are preserved elsewhere,
+      but `feat/ci-chopin-12`'s workflow keys off the name `chopin`.
+- [ ] Optional: `dbt configure -DENABLE_SYSEX_LOAD=YES` then flash once via SD, so later builds
+      can go over USB with `dbt loadfw release` instead of shuttling the card.
+
+### The upstream finding, in one paragraph
+
+The 1.3 base `134d000f` is **not upstream** — it is this fork's own stack. Underneath it sit
+the four-band EQ, the Mid band EQ, and three Heat commits, none of which Synthstrom has seen.
+So `feat/sear-13` needs Heat (Sear is a rename of it), `feat/eq-readout-13` needs both EQ
+commits, and `feat/gristle-on-13` needs the Gristleizer port which needs Heat's
+`softClipCubic`. Order is forced. Full detail in issue #4.
+
+---
+
+## Tooling in `rudement-split/`
+
+**Windows**
+
+```
+0-cleanup-locks.cmd       unjam git after a sandbox session          [run]
+1-import-branches.cmd     import the ten branches from the bundle    [run]
+2-build-chopin.cmd        1.2.1-rudement, v16                        [run]
+3-build-beta13.cmd        1.3.0-rudement beta, v22                   [run]
+collect-binaries.cmd      copy build/Release/*.bin to Rude Claude    [run]
+tidy-up.cmd               loose-end cleanup                          [NOT YET RUN]
+gh\create-trail.cmd       create the issues and draft PRs            [run]
+gh\fix-remaining-prs.cmd  base-12 / base-13 and three retries        [run]
+gh\retarget-prs.cmd       point every PR at its line's base          [NOT YET RUN]
 ```
 
-Verified through the real fixed-point path, not the ideal formula:
-
-| knob | 0 | 3 | 5 | 10 | 15 | 20 | 25 | 30 | 35 | 40 | 45 | 50 |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| before | 1.0 | 1.5 | 1.8 | 3.2 | 5.6 | 9.6 | 16 | 29 | 51 | 90 | 154 | 256 |
-| after | 1.6 | 2.1 | 2.8 | 4.7 | 7.9 | 14 | 25 | 44 | 76 | 127 | 228 | 406 |
-
-Two consequences, both documented at the call site:
-
-- The ceiling lands on ~406x, not the nominal 384x, and the realised ratio wobbles 1.42–1.59x
-  by knob position. That is the pre-existing linear-interpolation-in-the-exponent
-  approximation (`2^s * (1 + f)` overshoots `2^(s+f)` by up to 6% mid-octave), not new error.
-- Gain now starts at ~1.5x rather than 1.0x the instant the knob leaves its stop. Inherent to a
-  uniform boost. Scaling `level` by 1.073 instead would remove the step at the cost of less
-  boost mid-knob.
-
-The `octaves == 0` guard comment was updated with it: the zero window narrows from k < 6.25 to
-k < 2.6 of 50. That guard is the one tied to the earlier muting bug, so the stated range has to
-stay accurate.
-
-Landed on `chopin` as `a2e333b9 "Chopin 8.8.26"`.
-
-## Sear (1.3) — not yet boosted
-
-Heat became **Sear** on the 1.3 port: `LOCAL_SEAR`, `searMenu` in `menus.cpp`, an automation
-entry, l10n strings. Wired and working.
-
-It is not a straight rename. `heatMakeup()` — a static 1.0 → 0.75 droop across the sweep — was
-replaced with an envelope-following auto-gain: a `SearLevel` struct tracking mean |sample| in
-and out of the clipper, correcting toward unity, with a warmup period
-(`kSearWarmupSamples = 1 << kSearDetectorShift`).
-
-**This changes what a drive boost does.** On Heat, extra pre-gain shows up as both dirt and
-level. On Sear, the follower actively claws the level back, so the same boost reads mostly as
-added harmonic content. Decide which is wanted before copying `kHeatDriveBoost` across:
-
-1. Same 1.5x offset as chopin — curves stay matched, output level stays put.
-2. Boost plus a cap on how far the follower may correct — louder, but partly undoes the reason
-   auto-gain was added.
-3. Model `searBuffer`'s fixed-point path with the follower included and pick a number from the
-   measured table.
-
-`src/deluge/dsp/heat.hpp.stranded` on this branch is dead — renamed out of the way in
-`5ea71d2a "mid-eq"`, superseded by `sear.hpp`, referenced by nothing. Safe to delete; git
-history keeps it.
-
-## Gotchas that have cost time
-
-- **pre-commit hook.** `.git/hooks/pre-commit` runs the `pre-commit` framework, but only the
-  1.3 line has a `.pre-commit-config.yaml`. Committing on `chopin` fails with "No
-  .pre-commit-config.yaml file was found" until `PRE_COMMIT_ALLOW_NO_CONFIG=1` is set in the
-  environment (GitHub Desktop must be restarted to pick it up).
-- **Stale lock files.** A crashed git operation can leave `.git/index.lock`, `.git/HEAD.lock`,
-  `.git/ORIG_HEAD.lock` and `.git/refs/heads/<branch>.lock`. GitHub Desktop then reports "A
-  lock file already exists" and, if the index is half-written, shows ~1,500 phantom changed
-  files. Fix: close GitHub Desktop, delete all four, `git reset`.
-- **Branch switching with uncommitted work.** Choosing "bring my changes" during a switch is
-  what produced most of the stash pile; prefer committing first.
-
-## Build
+**macOS / Linux** — same behaviour, platform detected at runtime
 
 ```
-.\dbt.cmd build release
+sh/cleanup-locks.sh
+sh/build-chopin.sh
+sh/build-beta13.sh
+sh/collect-binaries.sh
 ```
 
-Output in `build\Release\`. With `RELEASE_TYPE=dev` in the CMake cache the binary is named
-`deluge-v<DISPLAY_VERSION>+<date>-<sha>.bin`. The toolchain in `toolchain/` is `win32-x64`
-only.
+The shell versions resolve the Desktop per platform (`xdg-user-dir` on Linux, `~/Desktop` on
+macOS) and call `./dbt` rather than `dbt.cmd`. `dbt` itself is already cross-platform and
+downloads the toolchain matching the host. If they arrive without the executable bit:
+`chmod +x rudement-split/sh/*.sh`
+
+No shell equivalent of `1-import-branches` or the `gh` scripts — those were one-shot and have
+already done their job.
+
+### gh setup gotchas, if you start on a fresh machine
+
+- **Two remotes.** `origin` is the fork, `upstream` is SynthstromAudible. `gh` refuses to
+  guess. Run `gh repo set-default Rudement/DelugeFirmware` — pointing it at `upstream` would
+  file issues and PRs on Synthstrom's repository.
+- **Issues are disabled on forks by default.** `gh repo edit --enable-issues`.
+- **PATH is stale** in any shell open when `gh` was installed, and Windows Terminal hands new
+  tabs the environment it started with. Restart the terminal or refresh `$env:Path`.
+
+---
+
+## MIDI FX — status
+
+`feat/midi-fx-13` is **groundwork, not a feature**. Two commits collapse the arpeggiator note
+dispatch into single seams (`dispatchArpNoteOffs` / `dispatchArpNoteOns` on both the
+`NonAudioInstrument` and `Sound` sides). There is no menu entry, no param, no CC, and nothing
+to access on the device.
+
+The point is to create one place to stand between the arpeggiator and the output — the seam a
+MIDI FX stage would plug into. **That stage has not been written.**
