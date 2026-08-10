@@ -311,15 +311,32 @@ inline void searBuffer(q31_t* startSample, q31_t* endSample, q31_t level, SearLe
 	//
 	// Correcting all the way to 0.00 dB makes drive read as "nothing is happening" — the ear
 	// takes the loudness rise as part of the effect. So the target is not unity but unity plus
-	// a little, rising linearly with knob position: at 2 * level the multiplier reaches 1.5,
-	// i.e. +3.5 dB of allowance, which measures as about +2.3 dB of real output rise at knob 50
-	// and stays inside ±0.4 dB up to knob 15. The gap between allowance and measured rise is
-	// mean-abs matching being slightly stricter than RMS on a clipped wave; it is expected.
+	// a little, rising linearly with knob position: at 4 * level the multiplier reaches 2.0,
+	// i.e. +6.0 dB of allowance at full knob, scaling linearly at every position below.
 	//
-	// The guard is defensive. `level` is documented as topping out just under 2^29, so the
-	// shift is safe, but a future change to the param's neutral value would silently turn a
-	// left shift into a sign flip and hand the clipper a negative makeup.
-	const q31_t lift = (level < (1 << 30)) ? (level << 1) : ONE_Q31;
+	// WHY 2.0 AND NOT 1.5. This was 2 * level -> 1.5x (+3.5 dB) and it measured as about
+	// +2.3 dB of real output rise at knob 50, staying inside ±0.4 dB up to knob 15. It was
+	// reported as "too tame" on hardware. The diagnostic bypass build — corrective gain forced
+	// to unity — came back as GOOD DRIVE CHARACTER BUT TOO LOUD, which localised the fault to
+	// the leveller rather than the waveshaper: softClipCubic is exonerated, and the answer is
+	// partial correction, just more generous than 1.5x. 2.0x was auditioned and accepted.
+	// See HANDOFF.md and issue #1.
+	//
+	// The allowance is not the measured rise — mean-abs matching is slightly stricter than RMS
+	// on a clipped wave, so real output rise lands below the figure above. The 1.5x version
+	// measured at roughly two thirds of its allowance; the 2.0x version has been auditioned but
+	// NOT re-measured, so do not quote a measured number for it without taking one.
+	//
+	// STILL LINEAR IN `level`, which is a known limitation rather than a design choice. Doubling
+	// the slope doubles the allowance everywhere, but the bottom of the knob remains small in
+	// absolute terms (~+2.3 dB at knob 15). If tameness is ever reported low on the knob rather
+	// than across the range, the fix is to SHAPE this curve, not to enlarge it further.
+	//
+	// The guard is defensive, and tracks the shift. `level` is documented as topping out just
+	// under 2^29, so << 2 is safe, but a future change to the param's neutral value would
+	// silently turn a left shift into a sign flip and hand the clipper a negative makeup. If
+	// the shift ever changes again, move this bound with it.
+	const q31_t lift = (level < (1 << 29)) ? (level << 2) : ONE_Q31;
 
 	q31_t envIn = state.envIn;
 	q31_t envOut = state.envOut;
