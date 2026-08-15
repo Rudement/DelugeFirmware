@@ -37,12 +37,21 @@ public:
 	    : Selection(name), FormattedTitle(title_format_str, source_id + 1), sourceId_{source_id} {};
 	void beginSession(MenuItem* navigatedBackwardFrom) override { Selection::beginSession(navigatedBackwardFrom); }
 
+	/// DX7 and Plaits are both source-0-only and not available in kits. Kept as
+	/// one predicate on purpose: the option list hides both or neither, and the
+	/// index arithmetic below depends on that being true.
 	bool mayUseDx() const { return !soundEditor.editingKit() && sourceId_ == 0; }
+
+	/// How many enum entries the option list hides when mayUseDx() is false:
+	/// OscType::DX7 and OscType::PLAITS, which are adjacent in the enum.
+	/// If a third source-0-only type is ever added next to them, this is the
+	/// number to bump -- and it is the ONLY number, which is why it is named.
+	static constexpr int32_t kNumSourceZeroOnlyOscTypes = 2;
 
 	void readCurrentValue() override {
 		int32_t rawVal = static_cast<int32_t>(soundEditor.currentSound->sources[sourceId_].oscType);
-		if (!mayUseDx() && rawVal > static_cast<int32_t>(OscType::DX7)) {
-			rawVal -= 1;
+		if (!mayUseDx() && rawVal > static_cast<int32_t>(OscType::PLAITS)) {
+			rawVal -= kNumSourceZeroOnlyOscTypes;
 		}
 		setValue(rawVal);
 	}
@@ -50,7 +59,7 @@ public:
 		OscType oldValue = soundEditor.currentSound->sources[sourceId_].oscType;
 		auto newValue = getValue<OscType>();
 		if (!mayUseDx() && static_cast<int32_t>(newValue) >= static_cast<int32_t>(OscType::DX7)) {
-			newValue = static_cast<OscType>(static_cast<int32_t>(newValue) + 1);
+			newValue = static_cast<OscType>(static_cast<int32_t>(newValue) + kNumSourceZeroOnlyOscTypes);
 		}
 
 		const auto needs_unassignment = {
@@ -59,6 +68,7 @@ public:
 		    OscType::INPUT_STEREO,
 		    OscType::SAMPLE,
 		    OscType::DX7,
+		    OscType::PLAITS,
 
 		    // Haven't actually really determined if this needs to be here - maybe not?
 		    OscType::WAVETABLE,
@@ -98,6 +108,7 @@ public:
 
 		if (mayUseDx()) {
 			options.emplace_back(l10n::getView(STRING_FOR_DX7));
+			options.emplace_back(l10n::getView(STRING_FOR_PLAITS));
 		}
 
 		if (AudioEngine::micPluggedIn || AudioEngine::lineInPluggedIn) {
@@ -130,7 +141,7 @@ public:
 		oled_canvas::Canvas& image = OLED::main;
 
 		const OscType osc_type = soundEditor.currentSound->sources[sourceId_].oscType;
-		if (osc_type == OscType::DX7) {
+		if (osc_type == OscType::DX7 || osc_type == OscType::PLAITS) {
 			const auto option = getOptions(OptType::FULL)[getValue()].data();
 			return image.drawStringCentered(option, slot.start_x, slot.start_y + kHorizontalMenuSlotYOffset + 5,
 			                                kTextTitleSpacingX, kTextTitleSizeY, slot.width);

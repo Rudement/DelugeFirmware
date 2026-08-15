@@ -365,6 +365,14 @@ enum class OscType : uint8_t {
 	WAVETABLE,
 	SAMPLE,
 	DX7,
+	// Mutable Instruments Plaits. Appended after DX7 and BEFORE the input
+	// types so the inputs keep their meaning relative to the "is this a real
+	// oscillator" checks. Song files store osc types by NAME (see
+	// oscTypeToString / stringToOscType in util/functions.cpp), so inserting
+	// here does not break saved songs -- but the option-list index arithmetic
+	// in gui/menu_item/osc/type.h does depend on this position. Both places
+	// must move together.
+	PLAITS,
 	INPUT_L,
 	INPUT_R,
 	INPUT_STEREO,

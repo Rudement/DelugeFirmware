@@ -22,6 +22,7 @@
 #include "dsp/filter/filter_set.h"
 #include "dsp/heat.hpp"
 #include "dsp/oscillators/sine_osc.h"
+#include "dsp/plaits_adapter.h"
 #include "dsp/timestretch/time_stretcher.h"
 #include "dsp/util.hpp"
 #include "gui/waveform/waveform_renderer.h"
@@ -623,6 +624,13 @@ void Voice::noteOff(ModelStackWithSoundFlags* modelStack, bool allowReleaseStage
 				for (int u = 0; u < sound.numUnison; u++) {
 					if (unisonParts[u].sources[s].dxVoice) {
 						unisonParts[u].sources[s].dxVoice->keyup();
+					}
+				}
+			}
+			else if (sound.sources[s].oscType == OscType::PLAITS) {
+				for (int u = 0; u < sound.numUnison; u++) {
+					if (unisonParts[u].sources[s].plaitsVoice) {
+						unisonParts[u].sources[s].plaitsVoice->keyup();
 					}
 				}
 			}
@@ -1526,8 +1534,8 @@ skipUnisonPart: {}
 		// Placed AFTER the filter so the LPF doubles as an anti-aliasing control.
 		if (paramFinalValues[params::LOCAL_HEAT] > 0) {
 			dsp::heatBuffer(oscBuffer, oscBufferEnd, paramFinalValues[params::LOCAL_HEAT]);
-			q31_t heatTone = dsp::heatToneFromUnpatched(
-			    paramManager->getUnpatchedParamSet()->getValue(params::UNPATCHED_HEAT_TONE));
+			q31_t heatTone =
+			    dsp::heatToneFromUnpatched(paramManager->getUnpatchedParamSet()->getValue(params::UNPATCHED_HEAT_TONE));
 			dsp::heatToneBufferStereo(oscBuffer, oscBufferEnd, heatTone, &heatToneState[0], &heatToneState[1]);
 		}
 
@@ -1619,8 +1627,8 @@ skipUnisonPart: {}
 		// stereo path must not share it.
 		if (paramFinalValues[params::LOCAL_HEAT] > 0) {
 			dsp::heatBuffer(oscBuffer, oscBufferEnd, paramFinalValues[params::LOCAL_HEAT]);
-			q31_t heatTone = dsp::heatToneFromUnpatched(
-			    paramManager->getUnpatchedParamSet()->getValue(params::UNPATCHED_HEAT_TONE));
+			q31_t heatTone =
+			    dsp::heatToneFromUnpatched(paramManager->getUnpatchedParamSet()->getValue(params::UNPATCHED_HEAT_TONE));
 			dsp::heatToneBuffer(oscBuffer, oscBufferEnd, heatTone, &heatToneState[0]);
 		}
 
@@ -2461,6 +2469,56 @@ dontUseCache: {}
 				for (int i = 0; i < numSamples; i++) {
 					sourceAmplitudeNow += amplitudeIncrement;
 					oscBuffer[i] += multiply_32x32_rshift32(uniBuf[i], sourceAmplitudeNow) << 6;
+				}
+			}
+
+			// Or regular wave
+		}
+		else if (sound.sources[s].oscType == OscType::PLAITS) {
+			// Deliberately a near-copy of the DX7 block above rather than a
+			// shared helper: the two engines will diverge (Plaits gains three
+			// live params in Phase 2, DX7 has its patch/LFO handling), and a
+			// premature abstraction here would have to be unpicked. Keep them
+			// side by side and keep the differences visible.
+			static int32_t plaitsBuf[132] __attribute__((aligned(CACHE_LINE_SIZE)));
+			memset(plaitsBuf, 0, sizeof plaitsBuf);
+
+			PlaitsVoice* pv = unisonParts[u].sources[s].plaitsVoice;
+			if (pv == nullptr) {
+				goto instantUnassign;
+			}
+
+			// PHASE 1: Harmonics / Timbre / Morph are pinned to centre. Phase 2
+			// reads them from the three per-source patched params that are
+			// already modulatable and automatable and cost no new param slots:
+			//
+			//   Harmonics -> paramFinalValues[params::LOCAL_OSC_A_PHASE_WIDTH  + s]
+			//   Timbre    -> paramFinalValues[params::LOCAL_OSC_A_WAVE_INDEX   + s]
+			//   Morph     -> paramFinalValues[params::LOCAL_CARRIER_0_FEEDBACK + s]
+			//
+			// Pinned here so the CPU measurement is not confounded by whatever
+			// the params happen to be sitting at.
+			constexpr int32_t kPlaitsCentre = 1073741824; // 0.5 in q31
+
+			if (!pv->compute(plaitsBuf, numSamples, phaseIncrement, kPlaitsCentre, kPlaitsCentre, kPlaitsCentre)) {
+				goto instantUnassign;
+			}
+
+			// Same amplitude convention as the DX7 block -- see the scaling
+			// note in dsp/plaits_adapter.cpp for why the two match on purpose.
+			int32_t sourceAmplitudeNow = sourceAmplitude;
+			if (stereoUnison) {
+				for (int i = 0; i < numSamples; i++) {
+					sourceAmplitudeNow += amplitudeIncrement;
+					int amplified = multiply_32x32_rshift32(plaitsBuf[i], sourceAmplitudeNow) << 6;
+					oscBuffer[(i << 1)] += multiply_32x32_rshift32(amplified, amplitudeL) << 2;
+					oscBuffer[(i << 1) + 1] += multiply_32x32_rshift32(amplified, amplitudeR) << 2;
+				}
+			}
+			else {
+				for (int i = 0; i < numSamples; i++) {
+					sourceAmplitudeNow += amplitudeIncrement;
+					oscBuffer[i] += multiply_32x32_rshift32(plaitsBuf[i], sourceAmplitudeNow) << 6;
 				}
 			}
 

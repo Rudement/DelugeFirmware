@@ -259,6 +259,7 @@ PLACE_SDRAM_DATA Language english{
         {STRING_FOR_ANALOG_SAW, "Analog saw"},
         {STRING_FOR_SAMPLE, "Sample"},
         {STRING_FOR_DX7, "DX7"},
+        {STRING_FOR_PLAITS, "PLAITS"},
         {STRING_FOR_INPUT, "Input"},
         {STRING_FOR_INPUT_LEFT, "Input (left)"},
         {STRING_FOR_INPUT_RIGHT, "Input (right)"},
