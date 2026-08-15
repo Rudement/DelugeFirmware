@@ -1,0 +1,9 @@
+# Vendored third-party source. Formatted upstream (Mutable Instruments house
+# style, 2-space indent) and deliberately kept byte-identical so that
+# re-vendoring is a copy rather than a merge. Reformatting it to Deluge style
+# would make every future upstream diff unreadable.
+#
+# Note the CI format check (.github/workflows/format-check.yml) only looks at
+# c,cpp,h,hpp -- the .cc files here are already skipped by extension. This entry
+# is what covers the ~90 vendored .h files.
+src/deluge/dsp/plaits/**

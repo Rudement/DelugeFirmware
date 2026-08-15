@@ -47,3 +47,8 @@ target_compile_options(deluge_dsp PRIVATE
     # Build dsp code with arm mode
     "-marm"
 )
+
+# Mutable Instruments Plaits (vendored, MIT). Separate target — see
+# plaits/CMakeLists.txt for why it is not folded into this unity build.
+add_subdirectory(plaits)
+target_link_libraries(deluge_dsp PUBLIC plaits_dsp)
