@@ -43,6 +43,16 @@ target_compile_options(clouds_dsp PRIVATE
     "-marm"
     # Upstream is warning-noisy by our standards and we do not want to edit it.
     "-w"
+    # granular_processor.cc initialises Parameters' `freeze` and `gate` bools
+    # from 0.0f in a braced-init-list. That was fine in the C++98/03 dialect
+    # Mutable wrote against; C++11 onwards makes narrowing in a braced init
+    # ill-formed, and gcc reports it as an ERROR, which plain "-w" does not
+    # suppress. The alternative -- editing two literals to `false` -- would
+    # break the byte-for-byte identity with upstream that PROVENANCE.md
+    # promises and turn every future re-vendor into a merge, so it is a
+    # compiler flag instead. Scoped to this target; nothing of ours is built
+    # with it.
+    "-Wno-narrowing"
 )
 
 target_compile_definitions(clouds_dsp PRIVATE

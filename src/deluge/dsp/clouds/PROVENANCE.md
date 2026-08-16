@@ -64,6 +64,14 @@ the adapter boundary instead. See `../clouds_adapter.h`.
   `CMakeLists.txt` in this directory. Confirmed by grep that `TEST` is not
   referenced anywhere else in the files taken, so this define changes
   nothing else.
+- Needs `-Wno-narrowing`. `dsp/granular_processor.cc` (the
+  `PLAYBACK_MODE_OLIVERB` branch) initialises `Parameters::freeze` and
+  `::gate` -- both `bool` -- from `0.0f` inside a braced-init-list. Legal in
+  the dialect Mutable wrote against, ill-formed from C++11 on, and gcc emits
+  it as an **error**, which the `-w` above does not suppress. Fixing it in
+  place would mean editing upstream and losing the byte-for-byte identity
+  this file promises, so it is a build flag. Two occurrences, both in that
+  one initialiser; a re-vendor that removes them can drop the flag.
 - Needs GNU extensions on, same reason as Plaits: `stmlib/dsp/filter.h` and
   several Clouds headers assume `M_PI` is visible, which strict ANSI hides.
 - stmlib's inline assembly footprint used by the two Clouds-only files
