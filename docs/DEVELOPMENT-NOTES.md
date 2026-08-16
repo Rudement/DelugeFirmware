@@ -35,6 +35,34 @@ them was 1.3 having modernised code the 1.2.1 patch still assumed. Do not repeat
 
 `base-12` and `base-13` are PR targets only — no work on them. See `HANDOFF.md` for the branch map.
 
+## A Linux container can build this, with two patches
+
+Useful for CI, or for verifying a port when the Windows toolchain is not to hand. Ubuntu's
+`gcc-arm-none-eabi` (13.2) configures and links the whole firmware:
+
+```
+apt-get install -y gcc-arm-none-eabi
+ln -s /usr toolchain/v22/linux-x86_64/arm-none-eabi-gcc
+DELUGE_FW_ROOT=$PWD DBT_TOOLCHAIN_PATH=$PWD \
+  cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_TOOLCHAIN_FILE=scripts/cmake/CMakeToolchainDeluge.cmake
+cmake --build build --target deluge
+```
+
+Both env vars are required — `CMakeToolchainDeluge.cmake` re-reads `toolchain/REQUIRED_VERSION`
+inside CMake's try-compile scratch dir, where `CMAKE_SOURCE_DIR` is not the repo.
+
+Two spots need a **build-only, never-committed** patch, and both are the compiler version rather
+than the code:
+
+| File | gcc 13.2 | Vendor v22 |
+|---|---|---|
+| `src/memmove.c` | no `vld1q_u8_x2` / `_x4` | present |
+| `util/container/enum_to_string_map.hpp` | rejects a function parameter in `static_assert` | accepts |
+
+Shim the four intrinsics from `vld1q_u8`/`vst1q_u8`, and comment out the one `static_assert`.
+Neither belongs in a commit. If a container build ever fails anywhere *else*, that is real.
+
 ## Toolchains differ by line
 
 | Line | Branches | `toolchain/REQUIRED_VERSION` |
