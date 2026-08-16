@@ -1151,8 +1151,13 @@ std::array<MenuItem*, 3> dxMenuItems = {
 menu_item::Submenu dxMenu{STRING_FOR_DX_1, dxMenuItems};
 
 // Plaits: model list plus the aux-output toggle.
-std::array<MenuItem*, 2> plaitsMenuItems = {
+// All four Plaits controls in one place. Harmonics/Timbre/Morph are the SAME
+// params the oscillator menus edit -- a second door, not a copy.
+std::array<MenuItem*, 5> plaitsMenuItems = {
     &plaitsEngineSelect,
+    &plaitsHarmonicsMenu,
+    &plaitsTimbreMenu,
+    &plaitsMorphMenu,
     &plaitsAuxToggle,
 };
 menu_item::Submenu plaitsMenu{STRING_FOR_PLAITS, plaitsMenuItems};

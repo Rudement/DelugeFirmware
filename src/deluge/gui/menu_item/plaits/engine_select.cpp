@@ -16,17 +16,35 @@
  */
 
 #include "engine_select.h"
+#include "gui/menu_item/value_scaling.h"
 #include "gui/ui/sound_editor.h"
 #include "hid/display/display.h"
+#include "modulation/params/param_set.h"
 #include "processing/source.h"
 
-#include "util/container/static_vector.hpp"
 #include <algorithm>
+#include "util/container/static_vector.hpp"
 
 namespace deluge::gui::menu_item {
 
 PlaitsEngineSelect plaitsEngineSelect{l10n::String::STRING_FOR_PLAITS_ENGINE};
 PlaitsAux plaitsAuxToggle{l10n::String::STRING_FOR_PLAITS_AUX};
+
+namespace params = deluge::modulation::params;
+
+PlaitsHalfPrecisionParam plaitsHarmonicsMenu{l10n::String::STRING_FOR_PLAITS_HARMONICS,
+                                             params::LOCAL_OSC_A_PHASE_WIDTH};
+patched_param::Integer plaitsTimbreMenu{l10n::String::STRING_FOR_PLAITS_TIMBRE, params::LOCAL_OSC_A_WAVE_INDEX};
+PlaitsHalfPrecisionParam plaitsMorphMenu{l10n::String::STRING_FOR_PLAITS_MORPH, params::LOCAL_OSC_B_PHASE_WIDTH};
+
+int32_t PlaitsHalfPrecisionParam::getFinalValue() {
+	return computeFinalValueForHalfPrecisionMenuItem(this->getValue());
+}
+
+void PlaitsHalfPrecisionParam::readCurrentValue() {
+	this->setValue(computeCurrentValueForHalfPrecisionMenuItem(
+	    soundEditor.currentParamManager->getPatchedParamSet()->getValue(getP())));
+}
 
 void PlaitsAux::readCurrentValue() {
 	this->setValue(soundEditor.currentSource->plaitsAux);

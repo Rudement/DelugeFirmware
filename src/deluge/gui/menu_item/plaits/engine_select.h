@@ -19,7 +19,9 @@
 
 #include "definitions_cxx.hpp"
 #include "gui/menu_item/menu_item.h"
+#include "gui/menu_item/patched_param/integer.h"
 #include "gui/menu_item/toggle.h"
+#include "modulation/params/param.h"
 
 namespace deluge::gui::menu_item {
 
@@ -62,4 +64,35 @@ public:
 };
 
 extern PlaitsAux plaitsAuxToggle;
+
+/// Harmonics / Timbre / Morph, surfaced inside the Plaits menu.
+///
+/// These edit the SAME patched params the oscillator menus do -- this is a
+/// second door onto one room, not a copy. Automation, MIDI CCs, grid pads and
+/// the mod matrix are all unaffected, because nothing about the underlying
+/// param changes.
+///
+/// They exist because the borrowed params are scattered: Harmonics and Timbre
+/// sit in Osc 1's list among the sample entries, and Morph is over in Osc 2.
+/// That is defensible internally and indefensible to use -- it took four
+/// separate attempts to explain where they were. All four Plaits controls now
+/// live behind PLTS, in a sensible order.
+///
+/// Bound to fixed param IDs rather than deriving them from
+/// soundEditor.currentSourceIndex, because Morph is hardwired to OSC B's phase
+/// width while the others are OSC A's. Plaits is source-0-only, so nothing is
+/// lost by pinning them.
+class PlaitsHalfPrecisionParam final : public patched_param::Integer {
+public:
+	using patched_param::Integer::Integer;
+	/// Phase-width params are half-precision menu items: knob 0..50 maps to
+	/// patched 0..INT32_MAX. Must match osc::PulseWidth exactly, or the same
+	/// param would read differently depending on which door you came through.
+	int32_t getFinalValue() override;
+	void readCurrentValue() override;
+};
+
+extern PlaitsHalfPrecisionParam plaitsHarmonicsMenu;
+extern patched_param::Integer plaitsTimbreMenu;
+extern PlaitsHalfPrecisionParam plaitsMorphMenu;
 } // namespace deluge::gui::menu_item
