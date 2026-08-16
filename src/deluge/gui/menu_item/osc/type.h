@@ -29,6 +29,7 @@
 #include <hid/display/oled.h>
 
 extern gui::menu_item::Submenu dxMenu;
+extern gui::menu_item::Submenu plaitsMenu;
 
 namespace deluge::gui::menu_item::osc {
 class Type final : public Selection, public FormattedTitle {
@@ -37,12 +38,20 @@ public:
 	    : Selection(name), FormattedTitle(title_format_str, source_id + 1), sourceId_{source_id} {};
 	void beginSession(MenuItem* navigatedBackwardFrom) override { Selection::beginSession(navigatedBackwardFrom); }
 
+	/// DX7 and Plaits are both source-0-only and unavailable in kits. One
+	/// predicate on purpose: the option list hides both or neither, and the
+	/// index arithmetic below depends on that.
 	bool mayUseDx() const { return !soundEditor.editingKit() && sourceId_ == 0; }
+
+	/// How many enum entries the option list hides when mayUseDx() is false:
+	/// OscType::DX7 and OscType::PLAITS, which are adjacent. The ONLY number to
+	/// bump if a third source-0-only type is added beside them.
+	static constexpr int32_t kNumSourceZeroOnlyOscTypes = 2;
 
 	void readCurrentValue() override {
 		int32_t rawVal = static_cast<int32_t>(soundEditor.currentSound->sources[sourceId_].oscType);
-		if (!mayUseDx() && rawVal > static_cast<int32_t>(OscType::DX7)) {
-			rawVal -= 1;
+		if (!mayUseDx() && rawVal > static_cast<int32_t>(OscType::PLAITS)) {
+			rawVal -= kNumSourceZeroOnlyOscTypes;
 		}
 		setValue(rawVal);
 	}
@@ -50,7 +59,7 @@ public:
 		OscType oldValue = soundEditor.currentSound->sources[sourceId_].oscType;
 		auto newValue = getValue<OscType>();
 		if (!mayUseDx() && static_cast<int32_t>(newValue) >= static_cast<int32_t>(OscType::DX7)) {
-			newValue = static_cast<OscType>(static_cast<int32_t>(newValue) + 1);
+			newValue = static_cast<OscType>(static_cast<int32_t>(newValue) + kNumSourceZeroOnlyOscTypes);
 		}
 
 		const auto needs_unassignment = {
@@ -59,6 +68,7 @@ public:
 		    OscType::INPUT_STEREO,
 		    OscType::SAMPLE,
 		    OscType::DX7,
+		    OscType::PLAITS,
 
 		    // Haven't actually really determined if this needs to be here - maybe not?
 		    OscType::WAVETABLE,
@@ -98,6 +108,7 @@ public:
 
 		if (mayUseDx()) {
 			options.emplace_back(l10n::getView(STRING_FOR_DX7));
+			options.emplace_back(l10n::getView(STRING_FOR_PLAITS));
 		}
 
 		if (AudioEngine::micPluggedIn || AudioEngine::lineInPluggedIn) {
@@ -118,10 +129,14 @@ public:
 	}
 
 	MenuItem* selectButtonPress() override {
-		if (soundEditor.currentSound->sources[sourceId_].oscType != OscType::DX7) {
-			return nullptr;
+		const OscType oscType = soundEditor.currentSound->sources[sourceId_].oscType;
+		if (oscType == OscType::DX7) {
+			return &dxMenu;
 		}
-		return &dxMenu;
+		if (oscType == OscType::PLAITS) {
+			return &plaitsMenu;
+		}
+		return nullptr;
 	}
 
 	[[nodiscard]] bool showColumnLabel() const override { return false; }

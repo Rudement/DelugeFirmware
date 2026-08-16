@@ -151,6 +151,7 @@
 #include "gui/menu_item/patched_param/integer_non_fm.h"
 #include "gui/menu_item/patched_param/pan.h"
 #include "gui/menu_item/performance_session_view/editing_mode.h"
+#include "gui/menu_item/plaits/engine_select.h"
 #include "gui/menu_item/randomizer/midi_cv/bass_probability.h"
 #include "gui/menu_item/randomizer/midi_cv/chord_polyphony.h"
 #include "gui/menu_item/randomizer/midi_cv/chord_probability.h"
@@ -1426,6 +1427,13 @@ std::array<MenuItem*, 3> dxMenuItems = {
     &dxEngineSelect,
 };
 menu_item::Submenu dxMenu{STRING_FOR_DX_1, dxMenuItems};
+
+// Plaits: model list plus the aux-output toggle.
+std::array<MenuItem*, 2> plaitsMenuItems = {
+    &plaitsEngineSelect,
+    &plaitsAuxToggle,
+};
+menu_item::Submenu plaitsMenu{STRING_FOR_PLAITS, plaitsMenuItems};
 
 // Not FM
 MasterTranspose masterTransposeMenu{STRING_FOR_MASTER_TRANSPOSE, STRING_FOR_MASTER_TRAN_MENU_TITLE};

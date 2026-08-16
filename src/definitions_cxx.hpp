@@ -365,12 +365,24 @@ enum class OscType : uint8_t {
 	WAVETABLE,
 	SAMPLE,
 	DX7,
+	// Mutable Instruments Plaits. Appended after DX7 and BEFORE the input
+	// types. Song files store osc types by NAME, so inserting here does not
+	// break saved songs -- but the option-list index arithmetic in
+	// gui/menu_item/osc/type.h depends on this position.
+	PLAITS,
 	INPUT_L,
 	INPUT_R,
 	INPUT_STEREO,
 };
 
 constexpr OscType kLastRingmoddableOscType = OscType::WAVETABLE;
+
+/// Mutable Instruments Plaits: 24 synthesis models, in upstream's registration
+/// order (plaits/dsp/voice.cc). Indices 0-7 are the models added in Plaits
+/// firmware 1.2; 8-23 are the original sixteen.
+constexpr uint8_t kPlaitsNumEngines = 24;
+/// Virtual Analog -- upstream index 8.
+constexpr uint8_t kPlaitsDefaultEngine = 8;
 constexpr int32_t kNumOscTypesRingModdable = util::to_underlying(kLastRingmoddableOscType) + 1;
 constexpr int32_t kNumOscTypes = util::to_underlying(OscType::INPUT_STEREO) + 1;
 
