@@ -56,10 +56,10 @@ public:
 	/// Note-on. Resets engine state and latches the note.
 	void init(int32_t noteCode, uint8_t velocity);
 
-	/// Note-off. For the sixteen engines with no envelope of their own this is a
-	/// no-op -- the Deluge's envelopes do the amplitude work. For the eight that
-	/// self-envelope it drops Plaits' gate, which is what lets a held drum or
-	/// six-op patch finish the way the module does.
+	/// Note-off. Drops Plaits' gate. Matters for the eight self-enveloped
+	/// engines, and for anything using the LPG; for a bypassed-LPG,
+	/// non-self-enveloped engine it is a no-op and the Deluge's envelopes do all
+	/// the amplitude work.
 	void keyup();
 
 	/// True for the eight engines whose post_processing_settings declare
@@ -92,6 +92,21 @@ public:
 	/// in definitions_cxx.hpp so the menu, the Source and the clamp all agree.
 	uint8_t engineIndex = kPlaitsDefaultEngine;
 
+	/// Engage Plaits' low-pass gate. Mirrors Source::plaitsLpg and, like
+	/// engineIndex, is refreshed every render block so a held note responds.
+	///
+	/// This is the one flag that decides whether the port sounds like the
+	/// module or like a bare oscillator. See compute() for the whole argument.
+	bool lpg = false;
+
+	/// patch.decay, 0.0 .. 1.0. Drives the LPG's tail when `lpg` is set, and the
+	/// internal envelopes of the eight self-enveloped engines always.
+	float decay = 0.5f;
+
+	/// patch.lpg_colour, 0.0 .. 1.0. VCA at one end, VCF at the other. Only read
+	/// when `lpg` is set.
+	float lpgColour = 0.5f;
+
 	/// False when construction ran out of RAM. Callers must check; running out
 	/// is a normal outcome here, not a bug -- see solicitPlaitsVoice().
 	[[nodiscard]] bool isValid() const { return voice_ != nullptr; }
@@ -113,10 +128,22 @@ private:
 	float note_ = 48.0f;
 	float velocity_ = 1.0f;
 	bool active_ = false;
-	/// Plaits' gate, used only by the self-enveloped engines. Held high while
-	/// the note is on; Voice::Render finds the rising edge itself via its own
-	/// trigger delay line, so there is nothing to edge-detect here.
+	/// Plaits' gate. Held high while the note is on; Voice::Render finds the
+	/// rising edge itself via its own trigger delay line, so there is nothing to
+	/// edge-detect here.
 	bool gate_ = false;
+
+	/// Set by init() when the gate was ALREADY high -- i.e. this PlaitsVoice is
+	/// being reused for a new note without an intervening keyup(), which
+	/// voice_unison_part_source.cpp explicitly allows ("we might actually
+	/// already have one, and just be restarting this voice").
+	///
+	/// Upstream only re-pings the LPG on a RISING edge of the trigger. Without
+	/// this, a restarted note would find trigger_state_ already true, produce no
+	/// edge, and play with no attack at all -- silent in the worst case. One
+	/// render block of forced-low trigger manufactures the edge; kTriggerDelay
+	/// is 5 samples and a block is 12, so one block is comfortably enough.
+	bool retriggerPending_ = false;
 };
 
 /// Global Plaits state holder: the LUTs that every voice shares, plus the voice

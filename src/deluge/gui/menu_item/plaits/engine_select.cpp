@@ -29,6 +29,9 @@ namespace deluge::gui::menu_item {
 
 PlaitsEngineSelect plaitsEngineSelect{l10n::String::STRING_FOR_PLAITS_ENGINE};
 PlaitsAux plaitsAuxToggle{l10n::String::STRING_FOR_PLAITS_AUX};
+PlaitsLpg plaitsLpgToggle{l10n::String::STRING_FOR_PLAITS_LPG};
+PlaitsDecay plaitsDecayMenu{l10n::String::STRING_FOR_PLAITS_DECAY};
+PlaitsLpgColour plaitsLpgColourMenu{l10n::String::STRING_FOR_PLAITS_LPG_COLOUR};
 
 namespace params = deluge::modulation::params;
 
@@ -48,6 +51,34 @@ void PlaitsHalfPrecisionParam::readCurrentValue() {
 
 void PlaitsAux::readCurrentValue() {
 	this->setValue(soundEditor.currentSource->plaitsAux);
+}
+
+void PlaitsLpg::readCurrentValue() {
+	this->setValue(soundEditor.currentSource->plaitsLpg);
+}
+
+void PlaitsLpg::writeCurrentValue() {
+	// Same no-killAllVoices reasoning as the Aux toggle: PlaitsVoice re-reads
+	// this every block. A held note will not re-ping the gate -- the trigger is
+	// already high, so there is no rising edge -- but the next note will. That
+	// is the same seam the module has and is what you want while auditioning.
+	soundEditor.currentSource->plaitsLpg = this->getValue();
+}
+
+void PlaitsDecay::readCurrentValue() {
+	this->setValue(soundEditor.currentSource->plaitsDecay);
+}
+
+void PlaitsDecay::writeCurrentValue() {
+	soundEditor.currentSource->plaitsDecay = static_cast<uint8_t>(this->getValue());
+}
+
+void PlaitsLpgColour::readCurrentValue() {
+	this->setValue(soundEditor.currentSource->plaitsLpgColour);
+}
+
+void PlaitsLpgColour::writeCurrentValue() {
+	soundEditor.currentSource->plaitsLpgColour = static_cast<uint8_t>(this->getValue());
 }
 
 void PlaitsAux::writeCurrentValue() {

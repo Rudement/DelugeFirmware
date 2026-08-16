@@ -2490,6 +2490,24 @@ dontUseCache: {}
 				pv->engineIndex = sound->sources[s].plaitsEngine;
 				pv->useAux = sound->sources[s].plaitsAux;
 
+				// Low-pass gate. Off by default -- see Source::plaitsLpg for
+				// why, and dsp/plaits_adapter.cpp::compute for what the flag
+				// actually does inside Plaits.
+				//
+				// Deliberately NOT patched params. Decay and Colour are
+				// per-source settings like the model itself, not per-note
+				// modulation targets, and the three patched params Plaits
+				// already borrows are as far as squatting on OSC A/B should go.
+				// Promoting Decay later is a contained change: it would want a
+				// hybrid param and the same hybridParamToUnit() treatment
+				// Harmonics/Timbre/Morph get.
+				//
+				// 1/50, not 1/51: the menu range is 0..50 inclusive, so 50 must
+				// land on exactly 1.0 or the top of the control is unreachable.
+				pv->lpg = sound->sources[s].plaitsLpg;
+				pv->decay = static_cast<float>(sound->sources[s].plaitsDecay) * (1.0f / 50.0f);
+				pv->lpgColour = static_cast<float>(sound->sources[s].plaitsLpgColour) * (1.0f / 50.0f);
+
 				if (!pv->compute(plaitsBuf, numSamples, phaseIncrement, plaitsHarmonics, plaitsTimbre, plaitsMorph)) {
 					goto instantUnassign;
 				}
