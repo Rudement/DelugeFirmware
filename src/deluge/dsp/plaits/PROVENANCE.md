@@ -19,7 +19,14 @@ reuse. There is no permission to seek and nobody to seek it from.
 
 - `plaits/dsp/**` — all 24 engines, physical modelling, speech, FM, chords, FX
 - `plaits/resources.{cc,h}` — wavetables and lookup tables
-- `stmlib/` — only the 13 headers and 3 sources Plaits actually includes
+- `stmlib/` — only the 13 headers and 3 sources Plaits actually includes.
+  **Moved to `../stmlib/` (2026-08-16)** when Mutable Instruments Clouds was
+  vendored under `../clouds/` and needed nine of the same thirteen files plus
+  two more (`stmlib/dsp/atan.{h,cc}`, `stmlib/fft/shy_fft.h` — see
+  `../clouds/PROVENANCE.md`). One compiled copy, `stmlib_dsp`, is now shared
+  by both `plaits_dsp` and `clouds_dsp`; see `../stmlib/CMakeLists.txt` for
+  why that has to be a link, not a second vendored copy. The files themselves
+  did not change, only their location and which target compiles them.
 
 ## What was NOT taken
 

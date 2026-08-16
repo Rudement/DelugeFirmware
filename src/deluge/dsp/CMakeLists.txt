@@ -48,7 +48,18 @@ target_compile_options(deluge_dsp PRIVATE
     "-marm"
 )
 
+# stmlib (vendored, MIT). Shared support code for both Mutable ports below --
+# see stmlib/CMakeLists.txt for why it is one target, not two.
+add_subdirectory(stmlib)
+
 # Mutable Instruments Plaits (vendored, MIT). Separate target -- see
 # plaits/CMakeLists.txt for why it is not folded into this unity build.
 add_subdirectory(plaits)
 target_link_libraries(deluge_dsp PUBLIC plaits_dsp)
+
+# Mutable Instruments Clouds / Parasites (vendored, MIT). Separate target --
+# see clouds/CMakeLists.txt for why it is not folded into this unity build.
+# clouds_adapter.cpp, compiled as part of deluge_dsp itself, is what actually
+# calls into clouds_dsp.
+add_subdirectory(clouds)
+target_link_libraries(deluge_dsp PUBLIC clouds_dsp)
