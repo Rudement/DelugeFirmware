@@ -1,0 +1,141 @@
+/*
+ * Copyright © 2026 Synthstrom Audible Limited
+ *
+ * This file is part of The Synthstrom Audible Deluge Firmware.
+ *
+ * The Synthstrom Audible Deluge Firmware is free software: you can redistribute it and/or modify it under the
+ * terms of the GNU General Public License as published by the Free Software Foundation,
+ * either version 3 of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
+ * without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See the GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along with this program.
+ * If not, see <https://www.gnu.org/licenses/>.
+ */
+
+#include "engine_select.h"
+#include "gui/ui/sound_editor.h"
+#include "hid/display/display.h"
+#include "processing/source.h"
+
+// 1.2.1 has no etl; static_vector is the equivalent here, and it is what this
+// release's DxEngineSelect uses for exactly the same job.
+#include "util/container/static_vector.hpp"
+
+namespace deluge::gui::menu_item {
+
+PlaitsEngineSelect plaitsEngineSelect{l10n::String::STRING_FOR_PLAITS_ENGINE};
+PlaitsAux plaitsAuxToggle{l10n::String::STRING_FOR_PLAITS_AUX};
+
+void PlaitsAux::readCurrentValue() {
+	this->setValue(soundEditor.currentSource->plaitsAux);
+}
+
+void PlaitsAux::writeCurrentValue() {
+	// No killAllVoices(): PlaitsVoice re-reads this every render block, so a
+	// held note swaps output rather than being cut.
+	soundEditor.currentSource->plaitsAux = this->getValue();
+}
+
+namespace {
+
+/// Upstream registration order, from plaits/dsp/voice.cc. Indices 0-7 are the
+/// models added in Plaits firmware 1.2; 8-23 are the original sixteen, which is
+/// why the "classic" Virtual Analog sits at 8 and is the default.
+///
+/// DO NOT REORDER. The index is what Source::plaitsEngine stores and what the
+/// preset file records, so shuffling this list silently repatches every saved
+/// sound. If a friendlier order is wanted, sort the *display* and map back.
+const char* const kEngineNames[kPlaitsNumEngines] = {
+    "Virtual Analog VCF", // 0
+    "Phase Distortion",   // 1
+    "6-op FM A",          // 2
+    "6-op FM B",          // 3
+    "6-op FM C",          // 4
+    "Wave Terrain",       // 5
+    "String Machine",     // 6
+    "Chiptune",           // 7
+    "Virtual Analog",     // 8  <- default
+    "Waveshaping",        // 9
+    "2-op FM",            // 10
+    "Granular Formant",   // 11
+    "Harmonic",           // 12
+    "Wavetable",          // 13
+    "Chords",             // 14
+    "Speech",             // 15
+    "Granular Cloud",     // 16
+    "Filtered Noise",     // 17
+    "Particle Noise",     // 18
+    "Inharmonic String",  // 19
+    "Modal Resonator",    // 20
+    "Bass Drum",          // 21
+    "Snare Drum",         // 22
+    "Hi-Hat",             // 23
+};
+
+/// Four characters, because that is all a 7-segment Deluge has.
+const char* const kEngineNames7Seg[kPlaitsNumEngines] = {
+    "VAVC", "PHDS", "FMA",  "FMB",  "FMC",  "TERR", "STRM", "CHIP", //
+    "VANA", "WSHP", "FM2",  "FORM", "HARM", "WTBL", "CHRD", "SPCH", //
+    "CLUD", "NOIS", "PART", "STRG", "MODL", "BASS", "SNAR", "HHAT",
+};
+
+} // namespace
+
+void PlaitsEngineSelect::beginSession(MenuItem* navigatedBackwardFrom) {
+	readValueAgain();
+}
+
+void PlaitsEngineSelect::readValueAgain() {
+	currentValue = soundEditor.currentSource->plaitsEngine;
+	if (currentValue < 0 || currentValue >= kPlaitsNumEngines) {
+		currentValue = kPlaitsDefaultEngine;
+	}
+	drawValue();
+}
+
+void PlaitsEngineSelect::drawPixelsForOled() {
+	static_vector<std::string_view, kPlaitsNumEngines> itemNames;
+	for (int32_t i = 0; i < kPlaitsNumEngines; i++) {
+		itemNames.push_back(kEngineNames[i]);
+	}
+	drawItemsForOled(itemNames, currentValue, 0);
+}
+
+void PlaitsEngineSelect::drawValue() {
+	if (display->haveOLED()) {
+		renderUIsForOled();
+	}
+	else {
+		display->setScrollingText(kEngineNames7Seg[currentValue]);
+	}
+}
+
+void PlaitsEngineSelect::selectEncoderAction(int32_t offset) {
+	int32_t newValue = currentValue + offset;
+
+	// OLED shows a scrolling list, so clamping at the ends reads naturally.
+	// 7SEG shows one value at a time, so wrapping is the only sane behaviour --
+	// same split DxEngineSelect uses.
+	if (display->haveOLED()) {
+		if (newValue >= kPlaitsNumEngines || newValue < 0) {
+			return;
+		}
+	}
+	else {
+		newValue = ((newValue % kPlaitsNumEngines) + kPlaitsNumEngines) % kPlaitsNumEngines;
+	}
+
+	currentValue = newValue;
+	soundEditor.currentSource->plaitsEngine = static_cast<uint8_t>(newValue);
+
+	// No killAllVoices() here: PlaitsVoice re-reads engineIndex every render
+	// block, so a live note switches model rather than being cut. Changing
+	// model on the module is not click-free either, so a seam is expected --
+	// but a dropped note would not be.
+	drawValue();
+}
+
+} // namespace deluge::gui::menu_item

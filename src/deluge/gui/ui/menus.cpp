@@ -1,6 +1,4 @@
 #include "gui/l10n/strings.h"
-#include "gui/menu_item/eq/eq_freq_param.h"
-#include "gui/menu_item/eq/eq_gain_param.h"
 #include "gui/menu_item/active_scales.h"
 #include "gui/menu_item/arpeggiator/midi_cv/gate.h"
 #include "gui/menu_item/arpeggiator/midi_cv/ratchet_amount.h"
@@ -56,6 +54,8 @@
 #include "gui/menu_item/dx/global_params.h"
 #include "gui/menu_item/dx/param.h"
 #include "gui/menu_item/envelope/segment.h"
+#include "gui/menu_item/eq/eq_freq_param.h"
+#include "gui/menu_item/eq/eq_gain_param.h"
 #include "gui/menu_item/file_selector.h"
 #include "gui/menu_item/filter/hpf_freq.h"
 #include "gui/menu_item/filter/hpf_mode.h"
@@ -116,6 +116,7 @@
 #include "gui/menu_item/patched_param/integer_non_fm.h"
 #include "gui/menu_item/patched_param/pan.h"
 #include "gui/menu_item/performance_session_view/editing_mode.h"
+#include "gui/menu_item/plaits/engine_select.h"
 #include "gui/menu_item/record/countin.h"
 #include "gui/menu_item/record/quantize.h"
 #include "gui/menu_item/reverb/damping.h"
@@ -1157,6 +1158,13 @@ std::array<MenuItem*, 3> dxMenuItems = {
     &dxEngineSelect,
 };
 menu_item::Submenu dxMenu{STRING_FOR_DX_1, dxMenuItems};
+
+// Plaits: model list plus the aux-output toggle.
+std::array<MenuItem*, 2> plaitsMenuItems = {
+    &plaitsEngineSelect,
+    &plaitsAuxToggle,
+};
+menu_item::Submenu plaitsMenu{STRING_FOR_PLAITS, plaitsMenuItems};
 
 // Not FM
 patched_param::IntegerNonFM noiseMenu{STRING_FOR_NOISE_LEVEL, params::LOCAL_NOISE_VOLUME};

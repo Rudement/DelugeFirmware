@@ -45,6 +45,11 @@ public:
 	MultiRangeArray ranges;
 
 	DxPatch* dxPatch;
+
+	/// Which Plaits model this source renders when oscType == PLAITS.
+	uint8_t plaitsEngine = kPlaitsDefaultEngine;
+	/// Take Plaits' AUX output instead of its main one.
+	bool plaitsAux = false;
 	bool dxPatchChanged = false;
 	SampleRepeatMode repeatMode;
 
