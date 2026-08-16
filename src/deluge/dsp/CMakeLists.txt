@@ -63,3 +63,15 @@ target_link_libraries(deluge_dsp PUBLIC plaits_dsp)
 # calls into clouds_dsp.
 add_subdirectory(clouds)
 target_link_libraries(deluge_dsp PUBLIC clouds_dsp)
+
+# Keep clouds_adapter.cpp out of the unity build. clouds_dsp is a separate
+# target precisely so upstream translation units are never concatenated with
+# ours, but the adapter lives in deluge_dsp and includes upstream headers, so
+# without this the macros stmlib.h defines -- NULL, CLIP, CONSTRAIN, UNROLL2/4/8,
+# IN_RAM -- get textually merged into whatever Deluge sources share its chunk.
+# That is not hypothetical: it is how a missing #include in dsp/dx/aligned_buf.h
+# stayed hidden until this file grew and reshuffled the chunk.
+set_source_files_properties(
+    ${CMAKE_CURRENT_LIST_DIR}/clouds_adapter.cpp
+    PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON
+)

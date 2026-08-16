@@ -17,6 +17,12 @@
 #pragma once
 
 #include "storage/wave_table/wave_table.h"
+
+// Fixed-width integer types used below. Added defensively: deluge_dsp is a
+// unity build, so a header that relies on a neighbour in its chunk having
+// included this first compiles only by luck, and stops compiling as soon as
+// anything changes the chunk.
+#include <stdint.h>
 namespace deluge::dsp {
 
 class Oscillator {
