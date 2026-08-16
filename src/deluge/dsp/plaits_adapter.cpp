@@ -158,12 +158,15 @@ void PlaitsVoice::init(int32_t noteCode, uint8_t velocity) {
 	note_ = static_cast<float>(noteCode);
 	velocity_ = static_cast<float>(velocity) * (1.0f / 127.0f);
 	active_ = (voice_ != nullptr);
+	// Restarting a voice whose gate never dropped: upstream re-pings only on a
+	// RISING edge, so manufacture one. See the field comment in the header.
+	retriggerPending_ = gate_;
 	gate_ = true;
 }
 
 void PlaitsVoice::keyup() {
-	// Only meaningful for the self-enveloped engines; harmless otherwise, since
-	// compute() ignores the gate unless trigger_patched is set.
+	// Meaningful for the self-enveloped engines and for the LPG; harmless
+	// otherwise, since compute() ignores the gate unless trigger_patched is set.
 	gate_ = false;
 }
 
@@ -182,8 +185,8 @@ bool PlaitsVoice::compute(int32_t* buffer, int32_t numSamples, uint32_t phaseInc
 	patch.frequency_modulation_amount = 0.0f;
 	patch.timbre_modulation_amount = 0.0f;
 	patch.morph_modulation_amount = 0.0f;
-	patch.decay = 0.5f;
-	patch.lpg_colour = 0.5f;
+	patch.decay = decay;
+	patch.lpg_colour = lpgColour;
 
 	plaits::Modulations modulations{};
 	modulations.note = phaseIncrementToNote(phaseIncrement);
@@ -192,26 +195,46 @@ bool PlaitsVoice::compute(int32_t* buffer, int32_t numSamples, uint32_t phaseInc
 
 	// ------------------------------------------------------------------
 	// THE FLAG COMBINATION THAT MATTERS. Read plaits/dsp/voice.cc::Render
-	// before changing either of these.
+	// before changing any of these.
 	//
 	//   use_internal_envelope = modulations.trigger_patched
 	//   lpg_bypass            = already_enveloped
 	//                           || (!level_patched && !trigger_patched)
 	//
-	// The Deluge already has envelopes, a filter and its own amplitude
-	// handling. We want Plaits' raw oscillator, not its decay envelope and
-	// not its low-pass gate. BOTH flags false is what turns both off.
+	// Three cases, and the LPG control picks between the first two.
 	//
-	// Get this wrong and every single patch sounds plucked, on every engine,
-	// which reads as "the port is broken" rather than "one bool is wrong".
-	// ------------------------------------------------------------------
+	// LPG OFF, ordinary engine -- trigger_patched false, level_patched false.
+	// lpg_bypass is true: Plaits' raw oscillator, no decay envelope, no gate.
+	// The Deluge's own envelopes and filter do all the amplitude work. This was
+	// the only behaviour the port had, and it is why nothing sounded like the
+	// demo videos: on the module the LPG is in circuit unless you patch LEVEL,
+	// and it supplies most of what people recognise as "Plaits".
 	//
-	// THE EXCEPTION, and it is upstream's own rule rather than a guess. Eight
-	// engines declare already_enveloped in their post_processing_settings: the
-	// three six-op FM banks, Inharmonic String, Modal Resonator and the three
-	// drums. For those, Voice::Render forces lpg_bypass true REGARDLESS of the
-	// flags -- so patching the trigger there enables their internal envelopes
-	// without reintroducing the low-pass gate this bypass exists to avoid.
+	// LPG ON, ordinary engine -- trigger_patched true, level_patched still
+	// false. lpg_bypass goes false and Voice::Render takes the ProcessPing
+	// branch: the LPG is struck on the rising edge of the trigger and decays
+	// under patch.decay and patch.lpg_colour. Plucks, bongos, blooming pads.
+	//
+	// Note that trigger_patched ALSO sets use_internal_envelope, which offers
+	// Plaits' decay envelope to pitch, timbre and morph. That costs nothing
+	// here: ApplyModulations scales each by the matching *_modulation_amount,
+	// all three of which we hold at 0, so the envelope contributes exactly
+	// zero. If those attenuverters are ever exposed, this stops being free --
+	// turning the LPG on would suddenly add a 48-semitone pitch sweep.
+	//
+	// level_patched stays false in both cases. Patching it would replace the
+	// ping with a level-following LP gate and hand Plaits an accent value, but
+	// the Deluge has no per-block level to feed it that its own envelopes are
+	// not already applying downstream. Doing both would be gain-staging the
+	// same envelope twice.
+	//
+	// SELF-ENVELOPED ENGINES -- eight of them declare already_enveloped in
+	// their post_processing_settings: the three six-op FM banks, Inharmonic
+	// String, Modal Resonator and the three drums. Voice::Render forces
+	// lpg_bypass true for those REGARDLESS of the flags, so the trigger is
+	// always patched for them: it enables their internal envelopes without
+	// reintroducing the gate. The LPG control is a no-op there, by upstream's
+	// design rather than ours.
 	//
 	// It is not optional for the drums. AnalogBassDrum reads an unpatched
 	// trigger as `sustain` and takes its level from accent * decay, where decay
@@ -219,8 +242,13 @@ bool PlaitsVoice::compute(int32_t* buffer, int32_t numSamples, uint32_t phaseInc
 	// borrows does. Result: a bass drum with nothing to strike it and zero
 	// sustain gain, i.e. silence. Snare and hi-hat are the same shape.
 	const bool selfEnveloped = engineIsSelfEnveloped(patch.engine);
-	modulations.trigger_patched = selfEnveloped;
-	modulations.trigger = (selfEnveloped && gate_) ? 1.0f : 0.0f;
+	const bool wantTrigger = selfEnveloped || lpg;
+	modulations.trigger_patched = wantTrigger;
+	const float triggerValue = (wantTrigger && gate_) ? 1.0f : 0.0f;
+	// One engine-block of forced-low trigger, so a reused voice produces the
+	// rising edge upstream needs. Cleared inside the render loop below rather
+	// than here, so the cost is 12 samples and not a whole 128-sample call.
+	modulations.trigger = retriggerPending_ ? 0.0f : triggerValue;
 	modulations.level_patched = false;
 	modulations.frequency_patched = false;
 	modulations.timbre_patched = false;
@@ -239,6 +267,12 @@ bool PlaitsVoice::compute(int32_t* buffer, int32_t numSamples, uint32_t phaseInc
 		const size_t block = plaits::kBlockSize;
 		voice_->Render(patch, modulations, &frames[rendered], block);
 		rendered += static_cast<int32_t>(block);
+		if (retriggerPending_) {
+			// The forced-low block has been rendered; let the gate through so
+			// the next one is the rising edge.
+			retriggerPending_ = false;
+			modulations.trigger = triggerValue;
+		}
 	}
 
 	// Scaling and polarity.

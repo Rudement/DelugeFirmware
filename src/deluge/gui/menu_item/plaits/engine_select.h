@@ -18,6 +18,7 @@
 #pragma once
 
 #include "definitions_cxx.hpp"
+#include "gui/menu_item/integer.h"
 #include "gui/menu_item/menu_item.h"
 #include "gui/menu_item/patched_param/integer.h"
 #include "gui/menu_item/toggle.h"
@@ -64,6 +65,51 @@ public:
 };
 
 extern PlaitsAux plaitsAuxToggle;
+
+/// Engages Plaits' low-pass gate.
+///
+/// Off is the port's original behaviour and stays the default so existing
+/// presets do not change under anyone. On is the more faithful setting: on the
+/// module the LPG is in circuit unless you patch LEVEL, and it is doing most of
+/// the work in every demo video.
+class PlaitsLpg final : public Toggle {
+public:
+	using Toggle::Toggle;
+	void readCurrentValue() override;
+	void writeCurrentValue() override;
+};
+
+extern PlaitsLpg plaitsLpgToggle;
+
+/// LPG decay and colour, 0..50.
+///
+/// Plain per-source integers rather than patched params -- these are settings
+/// like the model, not per-note modulation targets, and Plaits is already
+/// borrowing three of OSC A/B's params for Harmonics/Timbre/Morph. Note the
+/// asymmetry: Decay reaches the eight self-enveloped engines even with the LPG
+/// off (it is their envelope time, and it is what finally gives the three drums
+/// a decay control), while Colour does nothing unless the LPG is on.
+class PlaitsDecay final : public Integer {
+public:
+	using Integer::Integer;
+	void readCurrentValue() override;
+	void writeCurrentValue() override;
+	[[nodiscard]] int32_t getMinValue() const override { return 0; }
+	[[nodiscard]] int32_t getMaxValue() const override { return 50; }
+};
+
+extern PlaitsDecay plaitsDecayMenu;
+
+class PlaitsLpgColour final : public Integer {
+public:
+	using Integer::Integer;
+	void readCurrentValue() override;
+	void writeCurrentValue() override;
+	[[nodiscard]] int32_t getMinValue() const override { return 0; }
+	[[nodiscard]] int32_t getMaxValue() const override { return 50; }
+};
+
+extern PlaitsLpgColour plaitsLpgColourMenu;
 
 /// Harmonics / Timbre / Morph, surfaced inside the Plaits menu.
 ///
