@@ -25,6 +25,17 @@
 namespace deluge::gui::menu_item {
 
 PlaitsEngineSelect plaitsEngineSelect{l10n::String::STRING_FOR_PLAITS_ENGINE};
+PlaitsAux plaitsAuxToggle{l10n::String::STRING_FOR_PLAITS_AUX};
+
+void PlaitsAux::readCurrentValue() {
+	this->setValue(soundEditor.currentSource->plaitsAux);
+}
+
+void PlaitsAux::writeCurrentValue() {
+	// No killAllVoices(): PlaitsVoice re-reads this every render block, so a
+	// held note swaps output rather than being cut.
+	soundEditor.currentSource->plaitsAux = this->getValue();
+}
 
 namespace {
 

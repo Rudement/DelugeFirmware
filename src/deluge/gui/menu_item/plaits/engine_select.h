@@ -19,6 +19,7 @@
 
 #include "definitions_cxx.hpp"
 #include "gui/menu_item/menu_item.h"
+#include "gui/menu_item/toggle.h"
 
 namespace deluge::gui::menu_item {
 
@@ -43,4 +44,15 @@ public:
 };
 
 extern PlaitsEngineSelect plaitsEngineSelect;
+
+/// Swaps the source between Plaits' main and AUX outputs. Both are always
+/// rendered -- Plaits computes them in the same pass -- so this costs nothing.
+class PlaitsAux final : public Toggle {
+public:
+	using Toggle::Toggle;
+	void readCurrentValue() override;
+	void writeCurrentValue() override;
+};
+
+extern PlaitsAux plaitsAuxToggle;
 } // namespace deluge::gui::menu_item

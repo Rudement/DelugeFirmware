@@ -224,9 +224,10 @@ bool PlaitsVoice::compute(int32_t* buffer, int32_t numSamples, uint32_t phaseInc
 	// noticeably louder or quieter than DX7 on first listen, this shift is the
 	// place to look, and it should move in whole bits.
 	for (int32_t i = 0; i < numSamples; i++) {
+		const int16_t sample = useAux ? frames[i].aux : frames[i].out;
 		// Multiply rather than shift: left-shifting a negative value is not
 		// something to rely on, and the compiler emits the same instruction.
-		buffer[i] = -static_cast<int32_t>(frames[i].out) * 512;
+		buffer[i] = -static_cast<int32_t>(sample) * 512;
 	}
 
 	return true;

@@ -2508,8 +2508,10 @@ dontUseCache: {}
 			const int32_t plaitsTimbre = paramFinalValues[params::LOCAL_OSC_A_WAVE_INDEX + s];
 			const int32_t plaitsMorph = paramFinalValues[params::LOCAL_OSC_B_PHASE_WIDTH];
 
-			// Refreshed every block so changing model mid-note takes effect.
+			// Refreshed every block so changing model or output mid-note takes
+			// effect on a held note rather than only on the next one.
 			pv->engineIndex = sound.sources[s].plaitsEngine;
+			pv->useAux = sound.sources[s].plaitsAux;
 
 			if (!pv->compute(plaitsBuf, numSamples, phaseIncrement, plaitsHarmonics, plaitsTimbre, plaitsMorph)) {
 				goto instantUnassign;

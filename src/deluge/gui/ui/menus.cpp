@@ -1423,8 +1423,9 @@ menu_item::Submenu dxMenu{STRING_FOR_DX_1, dxMenuItems};
 // Plaits. One item for now -- the model list. Kept as a submenu rather than
 // hanging the selector straight off Osc Type so that Phase 3's per-engine
 // options have somewhere to go without another restructure.
-std::array<MenuItem*, 1> plaitsMenuItems = {
+std::array<MenuItem*, 2> plaitsMenuItems = {
     &plaitsEngineSelect,
+    &plaitsAuxToggle,
 };
 menu_item::Submenu plaitsMenu{STRING_FOR_PLAITS, plaitsMenuItems};
 

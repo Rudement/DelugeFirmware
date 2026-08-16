@@ -51,6 +51,13 @@ public:
 	/// A discrete choice, not a patched param -- so it is stored here and
 	/// saved by name in the preset, the same way dxPatch is.
 	uint8_t plaitsEngine = kPlaitsDefaultEngine;
+
+	/// Take Plaits' AUX output instead of its main one. Every engine has two,
+	/// and on several of them the aux is the more interesting signal (the
+	/// chord engine's root note, the wavetable engine's 5-bit version, the
+	/// speech engine's raw vocal cords). The Deluge's per-unison source is mono
+	/// by construction, so this is a choice rather than a second channel.
+	bool plaitsAux = false;
 	SampleRepeatMode repeatMode;
 
 	int8_t timeStretchAmount;

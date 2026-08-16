@@ -3377,6 +3377,10 @@ Error Sound::readSourceFromFile(Deserializer& reader, int32_t s, ParamManagerFor
 			source->sampleControls.reversed = reader.readTagOrAttributeValueInt();
 			reader.exitTag("reversed");
 		}
+		else if (!strcmp(tagName, "plaitsaux")) {
+			source->plaitsAux = (reader.readTagOrAttributeValueInt() != 0);
+			reader.exitTag("plaitsaux");
+		}
 		else if (!strcmp(tagName, "plaitsengine")) {
 			int32_t value = reader.readTagOrAttributeValueInt();
 			// Clamp on read: a preset written by a future firmware with more
@@ -3739,6 +3743,9 @@ void Sound::writeSourceToFile(Serializer& writer, int32_t s, char const* tagName
 			// Morph need nothing here -- they are patched params and the param
 			// set already saves them.
 			writer.writeAttribute("plaitsengine", source->plaitsEngine);
+			if (source->plaitsAux) {
+				writer.writeAttribute("plaitsaux", 1);
+			}
 			goto justCloseTag;
 		}
 		else if (source->oscType == OscType::DX7

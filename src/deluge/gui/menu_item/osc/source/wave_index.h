@@ -17,6 +17,7 @@
 #pragma once
 #include "gui/menu_item/formatted_title.h"
 #include "gui/menu_item/source/patched_param.h"
+#include "gui/ui/sound_editor.h"
 #include "processing/sound/sound.h"
 
 namespace deluge::gui::menu_item::osc::source {
@@ -25,7 +26,27 @@ public:
 	WaveIndex(l10n::String name, l10n::String title_format_str, int32_t newP, uint8_t source_id)
 	    : PatchedParam(name, newP, source_id), FormattedTitle(title_format_str, source_id + 1) {}
 
-	[[nodiscard]] std::string_view getTitle() const override { return FormattedTitle::title(); }
+	/// Plaits borrows this param for TIMBRE. Same reasoning as the pulse width
+	/// relabel -- a control called "Wave index" that changes formant width is
+	/// worse than no label.
+	[[nodiscard]] bool isPlaitsControl() const {
+		return soundEditor.currentSound != nullptr
+		       && soundEditor.currentSound->sources[source_id_].oscType == OscType::PLAITS;
+	}
+
+	[[nodiscard]] std::string_view getName() const override {
+		if (isPlaitsControl()) {
+			return l10n::getView(l10n::String::STRING_FOR_PLAITS_TIMBRE);
+		}
+		return PatchedParam::getName();
+	}
+
+	[[nodiscard]] std::string_view getTitle() const override {
+		if (isPlaitsControl()) {
+			return getName();
+		}
+		return FormattedTitle::title();
+	}
 
 	bool isRelevant(ModControllableAudio* modControllable, int32_t whichThing) override {
 		const auto sound = static_cast<Sound*>(modControllable);

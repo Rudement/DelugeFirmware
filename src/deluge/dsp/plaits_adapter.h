@@ -73,6 +73,11 @@ public:
 	bool compute(int32_t* buffer, int32_t numSamples, uint32_t phaseIncrement, int32_t harmonics, int32_t timbre,
 	             int32_t morph);
 
+	/// Take the engine's AUX output rather than its main one. Both are rendered
+	/// either way -- Plaits computes them together -- so this costs nothing but
+	/// the choice of which buffer to read.
+	bool useAux = false;
+
 	/// Which of the 24 engines this voice renders. Read off the Source at
 	/// note-on and refreshed each render block, so changing model mid-note
 	/// takes effect immediately. kPlaitsNumEngines / kPlaitsDefaultEngine live

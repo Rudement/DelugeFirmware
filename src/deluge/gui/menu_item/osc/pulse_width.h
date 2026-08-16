@@ -18,6 +18,7 @@
 #include "definitions_cxx.hpp"
 #include "gui/menu_item/formatted_title.h"
 #include "gui/menu_item/source/patched_param.h"
+#include "gui/ui/sound_editor.h"
 #include "modulation/params/param_set.h"
 #include "processing/sound/sound.h"
 
@@ -27,7 +28,29 @@ public:
 	PulseWidth(l10n::String name, l10n::String title_format_str, int32_t newP, uint8_t source_id)
 	    : PatchedParam(name, newP, source_id), FormattedTitle(title_format_str, source_id + 1) {}
 
-	[[nodiscard]] std::string_view getTitle() const override { return FormattedTitle::title(); }
+	/// When source 0 is Plaits, this param is not a pulse width at all -- it is
+	/// HARMONICS on source 0 and MORPH on source 1 (see the render block in
+	/// voice.cpp for why Morph has to reach across to source B). Relabel rather
+	/// than leave the user reading "Pulse width" for a control that does
+	/// something entirely different.
+	[[nodiscard]] bool isPlaitsControl() const {
+		return soundEditor.currentSound != nullptr && soundEditor.currentSound->sources[0].oscType == OscType::PLAITS;
+	}
+
+	[[nodiscard]] std::string_view getName() const override {
+		if (isPlaitsControl()) {
+			return l10n::getView(source_id_ == 0 ? l10n::String::STRING_FOR_PLAITS_HARMONICS
+			                                     : l10n::String::STRING_FOR_PLAITS_MORPH);
+		}
+		return PatchedParam::getName();
+	}
+
+	[[nodiscard]] std::string_view getTitle() const override {
+		if (isPlaitsControl()) {
+			return getName();
+		}
+		return FormattedTitle::title();
+	}
 
 	int32_t getFinalValue() override { return computeFinalValueForHalfPrecisionMenuItem(this->getValue()); }
 
