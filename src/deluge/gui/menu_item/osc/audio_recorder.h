@@ -59,7 +59,14 @@ public:
 
 	bool isRelevant(ModControllableAudio* modControllable, int32_t) override {
 		const auto sound = static_cast<Sound*>(modControllable);
-		return sound->getSynthMode() == SynthMode::SUBTRACTIVE;
+		if (sound->getSynthMode() != SynthMode::SUBTRACTIVE) {
+			return false;
+		}
+		// Recording audio into a Plaits source is meaningless -- it would just
+		// replace the engine with a sample. The FileSelector next to this one
+		// already checks oscType; this item never has, which is why it shows for
+		// every subtractive osc type including DX7. Narrowed only for PLAITS.
+		return sound->sources[source_id_].oscType != OscType::PLAITS;
 	}
 
 	MenuPermission checkPermissionToBeginSession(ModControllableAudio* modControllable, int32_t,
