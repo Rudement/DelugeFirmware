@@ -3276,6 +3276,20 @@ Error Sound::readSourceFromFile(Deserializer& reader, int32_t s, ParamManagerFor
 			source->sampleControls.reversed = reader.readTagOrAttributeValueInt();
 			reader.exitTag("reversed");
 		}
+		else if (!strcmp(tagName, "plaitsaux")) {
+			source->plaitsAux = (reader.readTagOrAttributeValueInt() != 0);
+			reader.exitTag("plaitsaux");
+		}
+		else if (!strcmp(tagName, "plaitsengine")) {
+			int32_t value = reader.readTagOrAttributeValueInt();
+			// Clamp on read: a preset from a future firmware with more models
+			// must not index off the end of the engine table.
+			if (value < 0 || value >= kPlaitsNumEngines) {
+				value = kPlaitsDefaultEngine;
+			}
+			source->plaitsEngine = static_cast<uint8_t>(value);
+			reader.exitTag("plaitsengine");
+		}
 		else if (!strcmp(tagName, "dx7patch")) {
 			DxPatch* patch = source->ensureDxPatch();
 			int len = reader.readTagOrAttributeValueHexBytes(patch->params, 156);
@@ -3618,6 +3632,16 @@ void Sound::writeSourceToFile(Serializer& writer, int32_t s, char const* tagName
 			else {
 				goto justCloseTag;
 			}
+		}
+		else if (source->oscType == OscType::PLAITS && synthMode != SynthMode::FM) {
+			// Written unconditionally so a preset always records which model it
+			// meant. Harmonics/Timbre/Morph need nothing here -- they are
+			// patched params and the param set already saves them.
+			writer.writeAttribute("plaitsengine", source->plaitsEngine);
+			if (source->plaitsAux) {
+				writer.writeAttribute("plaitsaux", 1);
+			}
+			goto justCloseTag;
 		}
 		else if (source->oscType == OscType::DX7
 		         && synthMode != SynthMode::FM) { // Don't combine this with the above "if" - there's an "else" below

@@ -114,6 +114,7 @@
 #include "gui/menu_item/patched_param/integer_non_fm.h"
 #include "gui/menu_item/patched_param/pan.h"
 #include "gui/menu_item/performance_session_view/editing_mode.h"
+#include "gui/menu_item/plaits/engine_select.h"
 #include "gui/menu_item/record/countin.h"
 #include "gui/menu_item/record/quantize.h"
 #include "gui/menu_item/reverb/damping.h"
@@ -1148,6 +1149,13 @@ std::array<MenuItem*, 3> dxMenuItems = {
     &dxEngineSelect,
 };
 menu_item::Submenu dxMenu{STRING_FOR_DX_1, dxMenuItems};
+
+// Plaits: model list plus the aux-output toggle.
+std::array<MenuItem*, 2> plaitsMenuItems = {
+    &plaitsEngineSelect,
+    &plaitsAuxToggle,
+};
+menu_item::Submenu plaitsMenu{STRING_FOR_PLAITS, plaitsMenuItems};
 
 // Not FM
 patched_param::IntegerNonFM noiseMenu{STRING_FOR_NOISE_LEVEL, params::LOCAL_NOISE_VOLUME};
