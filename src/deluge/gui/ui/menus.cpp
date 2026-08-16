@@ -847,7 +847,7 @@ UnpatchedParam cloudsFeedbackMenu{STRING_FOR_CLOUDS_FEEDBACK_SHORT, STRING_FOR_C
 UnpatchedParam cloudsReverbMenu{STRING_FOR_CLOUDS_REVERB_SHORT, STRING_FOR_CLOUDS_REVERB,
                                 params::UNPATCHED_CLOUDS_REVERB};
 
-Submenu cloudsMenu{
+HorizontalMenu cloudsMenu{
     STRING_FOR_CLOUDS,
     {
         &cloudsModeMenu,
@@ -943,6 +943,7 @@ Submenu audioClipFXMenu{
         &stutterMenu,
         &globalModFXMenu,
         &audioClipDistortionMenu,
+        &cloudsMenu,
     },
 };
 
@@ -2013,21 +2014,24 @@ deluge::vector<HorizontalMenu*> horizontalMenusChainForKit = {
 	&globalFiltersMenuGroup, &globalEQMenu, &globalModFXMenu,
 	&globalReverbMenuGroup, &globalDelayMenu, &globalDistortionMenu,
 	&globalSidechainMenu, &audioCompMenu, &stutterMenu,
-	&arpMenuGroupKit, &randomizerMenu
+	&arpMenuGroupKit, &randomizerMenu,
+	&cloudsMenu
 };
 
 deluge::vector<HorizontalMenu*> horizontalMenusChainForSong = {
 	&songMasterMenu,
 	&globalFiltersMenuGroup, &globalEQMenu, &globalModFXMenu,
 	&globalReverbMenuGroup, &globalDelayMenu, &globalDistortionMenu,
-	&audioCompMenu, &stutterMenu
+	&audioCompMenu, &stutterMenu,
+	&cloudsMenu
 };
 
 deluge::vector<HorizontalMenu*> horizontalMenusChainForAudioClip = {
 	&audioClipMasterMenu, &audioClipSampleMenu,
 	&globalFiltersMenuGroup, &eqMenu, &globalModFXMenu,
 	&globalReverbMenuGroup, &globalDelayMenu, &audioClipDistortionMenu,
-	&globalSidechainMenu, &audioCompMenu, &stutterMenu
+	&globalSidechainMenu, &audioCompMenu, &stutterMenu,
+	&cloudsMenu
 };
 
 deluge::vector<HorizontalMenu*> horizontalMenusChainForMidiOrCv = {
