@@ -22,8 +22,10 @@
 #include "modulation/params/param_set.h"
 #include "processing/source.h"
 
+// 1.3 dropped util/container/static_vector.hpp for ETL. DxEngineSelect,
+// which this class is modelled on, uses etl::vector for the same job.
 #include <algorithm>
-#include "util/container/static_vector.hpp"
+#include <etl/vector.h>
 
 namespace deluge::gui::menu_item {
 
@@ -149,7 +151,7 @@ void PlaitsEngineSelect::readValueAgain() {
 }
 
 void PlaitsEngineSelect::drawPixelsForOled() {
-	static_vector<std::string_view, kPlaitsNumEngines> itemNames;
+	etl::vector<std::string_view, kPlaitsNumEngines> itemNames;
 	for (int32_t i = 0; i < kPlaitsNumEngines; i++) {
 		itemNames.push_back(kEngineNames[i]);
 	}
