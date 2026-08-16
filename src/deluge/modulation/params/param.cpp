@@ -48,7 +48,10 @@ bool isParamPitch(Kind kind, int32_t paramID) {
 		       || (paramID == LOCAL_MODULATOR_1_PITCH_ADJUST);
 	}
 	else if (kind == Kind::UNPATCHED_GLOBAL) {
-		return static_cast<UnpatchedGlobal>(paramID) == UNPATCHED_PITCH_ADJUST;
+		// Clouds' pitch shift is a transposition either side of unity, so it
+		// wants the same centre-detented treatment master pitch gets.
+		return static_cast<UnpatchedGlobal>(paramID) == UNPATCHED_PITCH_ADJUST
+		       || static_cast<UnpatchedGlobal>(paramID) == UNPATCHED_CLOUDS_PITCH;
 	}
 	else {
 		return false;
@@ -353,6 +356,15 @@ char const* getParamDisplayName(Kind kind, int32_t p) {
 		    [UNPATCHED_SIDECHAIN_VOLUME - unc] = STRING_FOR_SIDECHAIN_LEVEL,
 		    [UNPATCHED_PITCH_ADJUST - unc] = STRING_FOR_MASTER_PITCH,
 		    [UNPATCHED_TEMPO - unc] = STRING_FOR_TEMPO,
+		    [UNPATCHED_CLOUDS_POSITION - unc] = STRING_FOR_CLOUDS_POSITION,
+		    [UNPATCHED_CLOUDS_SIZE - unc] = STRING_FOR_CLOUDS_SIZE,
+		    [UNPATCHED_CLOUDS_PITCH - unc] = STRING_FOR_CLOUDS_PITCH,
+		    [UNPATCHED_CLOUDS_DENSITY - unc] = STRING_FOR_CLOUDS_DENSITY,
+		    [UNPATCHED_CLOUDS_TEXTURE - unc] = STRING_FOR_CLOUDS_TEXTURE,
+		    [UNPATCHED_CLOUDS_BLEND - unc] = STRING_FOR_CLOUDS_BLEND,
+		    [UNPATCHED_CLOUDS_SPREAD - unc] = STRING_FOR_CLOUDS_SPREAD,
+		    [UNPATCHED_CLOUDS_FEEDBACK - unc] = STRING_FOR_CLOUDS_FEEDBACK,
+		    [UNPATCHED_CLOUDS_REVERB - unc] = STRING_FOR_CLOUDS_REVERB,
 		};
 		return l10n::get(NAMES[p - unc]);
 	}
@@ -487,6 +499,28 @@ constexpr char const* paramNameForFileConst(Kind const kind, ParamType const par
 				return "pitch";
 			}
 			return "pitchAdjust";
+
+		// Clouds. These names are what ends up in the song file, so they are
+		// API: renaming one orphans that setting in every song already saved.
+		// validateParams() below round-trips all of them at compile time.
+		case UNPATCHED_CLOUDS_POSITION:
+			return "cloudsPosition";
+		case UNPATCHED_CLOUDS_SIZE:
+			return "cloudsSize";
+		case UNPATCHED_CLOUDS_PITCH:
+			return "cloudsPitch";
+		case UNPATCHED_CLOUDS_DENSITY:
+			return "cloudsDensity";
+		case UNPATCHED_CLOUDS_TEXTURE:
+			return "cloudsTexture";
+		case UNPATCHED_CLOUDS_BLEND:
+			return "cloudsBlend";
+		case UNPATCHED_CLOUDS_SPREAD:
+			return "cloudsSpread";
+		case UNPATCHED_CLOUDS_FEEDBACK:
+			return "cloudsFeedback";
+		case UNPATCHED_CLOUDS_REVERB:
+			return "cloudsReverb";
 
 		// explicit fallthrough cases
 		case UNPATCHED_TEMPO: // nothing, really?

@@ -430,6 +430,27 @@ enum class ModFXType : uint8_t {
 };
 constexpr int32_t kNumModFXTypes = util::to_underlying(ModFXType::GRAIN) + 1;
 
+/// Playback modes of the vendored Mutable Instruments Clouds engine, plus an
+/// OFF that upstream has no equivalent of.
+///
+/// OFF is what makes Clouds cost nothing when nobody is using it: it is the
+/// default, and while it is selected no CloudsAdapter is constructed and none
+/// of the ~180 KB working buffer is allocated. Everything after OFF maps 1:1
+/// onto clouds::PlaybackMode in the order upstream declares it -- the mapping
+/// table in clouds_adapter.cpp static_asserts on this enum's size, so adding
+/// an entry here without extending that table is a compile error, not a
+/// silent mode mix-up.
+enum class CloudsMode : uint8_t {
+	OFF,
+	GRANULAR,
+	STRETCH,
+	DELAY,
+	SPECTRAL,
+	OLIVERB,
+	RESONESTOR,
+};
+constexpr int32_t kNumCloudsModes = util::to_underlying(CloudsMode::RESONESTOR) + 1;
+
 enum class SynthMode : uint8_t {
 	SUBTRACTIVE,
 	FM,

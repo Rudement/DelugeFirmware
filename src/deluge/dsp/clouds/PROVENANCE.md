@@ -79,22 +79,58 @@ the adapter boundary instead. See `../clouds_adapter.h`.
   scaffold; routing them through `GeneralMemoryAllocator`/`Stealable` is
   follow-up work, not done in this commit.
 
-## Not done in this pass
+## Wiring status
 
-This vendoring + the adapter in `../clouds_adapter.{h,cc}` gets Clouds
-compiling and processing a 32 kHz buffer in isolation. Still open, per the
-feasibility doc's own "open questions" section:
+The vendoring commit left this compiling but unreachable. It is now wired in
+as a standalone GlobalEffectable effect on `feat/clouds-fx-13`:
 
-1. Effect-chain wiring — where Clouds hangs off the audio graph (it is an
-   effect, not an oscillator source like Plaits; `GranularProcessor` doesn't
-   fit the `Source`/`Voice` shape `plaits_adapter` uses). The doc points at
-   `dsp/granular/GranularProcessor`'s existing stealable-buffer pattern as
-   the closer precedent to study, not `plaits_adapter.*`.
-2. Menu items / params / preset save-load, mirroring how `PLTS` did it.
-3. The 44.1 kHz ↔ 32 kHz resampler in `clouds_adapter.cpp` is a plain linear
-   interpolator, functionally correct but not the polyphase resampler
-   `dsp/interpolation/` already provides elsewhere in this codebase. Swap it
-   in before this is judged on audio quality.
-4. Hardware measurement: `.text`/`.rodata` cost from the linker map, and
-   whether resampling cost is trivial next to the Clouds engine itself
-   (question 1 in the feasibility doc).
+- **Not a mod-FX type.** Mod FX has four parameter slots (Rate, Depth,
+  Feedback, Offset) and Clouds needs nine, so it is its own stage at the head
+  of the GlobalEffectable chain, ahead of mod FX, EQ, delay and reverb, with
+  its own submenu under Song FX.
+- **Nine automatable params**, appended to `UnpatchedGlobal` *after*
+  `UNPATCHED_TEMPO` so no existing param ID moved: Position, Size, Pitch,
+  Density, Texture, Blend, Spread, Feedback, Reverb. Pitch is the only
+  bipolar one.
+- **`CloudsMode`** (definitions_cxx.hpp) is the on/off switch and the
+  playback-mode selector in one. OFF is the zero value and the default, and
+  while it is selected no adapter exists and no working buffer is allocated.
+- **Memory**: the ~180 KB working set is one `CloudsBuffer : Stealable`
+  allocation from the SDRAM pool, following `dsp/granular/GrainBuffer`. It is
+  pinned for the duration of one audio block and released at the end of each
+  `process()`, so under pressure the allocator can take it back; the next
+  block re-acquires and re-`Init`s. Losing it costs the recording, not
+  stability.
+- **Save/load**: all nine params plus `cloudsMode` and `cloudsFreeze`
+  round-trip. The mode attribute is only written when Clouds is on, so songs
+  that never touch it are unchanged; an absent attribute reads back as OFF.
+
+### Cost this introduces
+
+`kMaxNumUnpatchedParams` is the max across `UnpatchedSound` and
+`UnpatchedGlobal`, and `UnpatchedParamSet` sizes its `AutoParam` array from
+it. Adding nine global params therefore grows **every** `UnpatchedParamSet`,
+Sounds included, by nine `AutoParam`s -- ~64 bytes each on ARM32 by field
+layout (no vtable in `ResizeableArray`), so ~576 bytes per param manager.
+That is the main thing to measure on hardware before this goes further; if it
+proves too expensive the fix is a Clouds-only param array rather than
+extending the shared one.
+
+## Still not done
+
+1. The 44.1 kHz <-> 32 kHz resampler is still the plain linear interpolator,
+   not `dsp/interpolation/`'s polyphase one. Measured round-trip SNR against
+   a sine, upstream processor replaced by identity: **60 dB at 100 Hz, 46 dB
+   at 500 Hz, 39 dB at 1 kHz, 31 dB at 2 kHz, 17 dB at 5 kHz, 7 dB at 10 kHz,
+   3 dB at 14 kHz**, with ~44 samples (1 ms) of latency. Fine in the bass and
+   low mids, poor in the top two octaves. Swap it before this is judged on
+   audio quality. (Note also that Clouds' own 32 kHz rate puts Nyquist at
+   16 kHz regardless of resampler quality.)
+2. Hardware measurement: `.text`/`.rodata` from the linker map now that the
+   engine is actually reachable and no longer stripped by `--gc-sections`,
+   plus CPU headroom -- question 1 in the feasibility doc.
+3. Gold-knob / shortcut-grid assignments and automation-view entries. The
+   params are automatable but are not on the shortcut grid.
+4. Granular-specific sub-parameters upstream exposes (`granular.overlap`,
+   `window_shape`, `reverse`, and the `spectral.*` block) are left at their
+   defaults; only the nine main panel controls are mapped.

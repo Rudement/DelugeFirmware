@@ -166,6 +166,8 @@ PolyphonyMode stringToPolyphonyMode(char const* string);
 
 char const* fxTypeToString(ModFXType fxType);
 ModFXType stringToFXType(char const* string);
+char const* cloudsModeToString(CloudsMode mode);
+CloudsMode stringToCloudsMode(char const* string);
 
 char const* modFXParamToString(ModFXParam fxType);
 ModFXParam stringToModFXParam(char const* string);

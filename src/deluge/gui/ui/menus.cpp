@@ -1,6 +1,7 @@
 #include "../menu_item/randomizer/midi_cv/note_probability.h"
 #include "gui/l10n/strings.h"
 #include "gui/menu_item/active_scales.h"
+#include "gui/menu_item/clouds/mode.h"
 #include "gui/menu_item/arpeggiator/arp_unpatched_param.h"
 #include "gui/menu_item/arpeggiator/chord_type.h"
 #include "gui/menu_item/arpeggiator/include_in_kit_arp.h"
@@ -823,6 +824,46 @@ HorizontalMenu globalDistortionMenu{
     },
 };
 
+// Clouds ----------------------------------------------------------------------
+// Nine parameters plus a mode and a freeze, which is why this is its own
+// submenu rather than another entry in the mod-FX type list: mod FX has four
+// param slots and Clouds needs more than twice that.
+clouds_fx::Mode cloudsModeMenu{STRING_FOR_CLOUDS_MODE, STRING_FOR_CLOUDS_MODE};
+clouds_fx::Freeze cloudsFreezeMenu{STRING_FOR_CLOUDS_FREEZE, STRING_FOR_CLOUDS_FREEZE};
+
+UnpatchedParam cloudsPositionMenu{STRING_FOR_CLOUDS_POSITION_SHORT, STRING_FOR_CLOUDS_POSITION,
+                                  params::UNPATCHED_CLOUDS_POSITION};
+UnpatchedParam cloudsSizeMenu{STRING_FOR_CLOUDS_SIZE_SHORT, STRING_FOR_CLOUDS_SIZE, params::UNPATCHED_CLOUDS_SIZE};
+UnpatchedParam cloudsPitchMenu{STRING_FOR_CLOUDS_PITCH_SHORT, STRING_FOR_CLOUDS_PITCH, params::UNPATCHED_CLOUDS_PITCH};
+UnpatchedParam cloudsDensityMenu{STRING_FOR_CLOUDS_DENSITY_SHORT, STRING_FOR_CLOUDS_DENSITY,
+                                 params::UNPATCHED_CLOUDS_DENSITY};
+UnpatchedParam cloudsTextureMenu{STRING_FOR_CLOUDS_TEXTURE_SHORT, STRING_FOR_CLOUDS_TEXTURE,
+                                 params::UNPATCHED_CLOUDS_TEXTURE};
+UnpatchedParam cloudsBlendMenu{STRING_FOR_CLOUDS_BLEND_SHORT, STRING_FOR_CLOUDS_BLEND, params::UNPATCHED_CLOUDS_BLEND};
+UnpatchedParam cloudsSpreadMenu{STRING_FOR_CLOUDS_SPREAD_SHORT, STRING_FOR_CLOUDS_SPREAD,
+                                params::UNPATCHED_CLOUDS_SPREAD};
+UnpatchedParam cloudsFeedbackMenu{STRING_FOR_CLOUDS_FEEDBACK_SHORT, STRING_FOR_CLOUDS_FEEDBACK,
+                                  params::UNPATCHED_CLOUDS_FEEDBACK};
+UnpatchedParam cloudsReverbMenu{STRING_FOR_CLOUDS_REVERB_SHORT, STRING_FOR_CLOUDS_REVERB,
+                                params::UNPATCHED_CLOUDS_REVERB};
+
+Submenu cloudsMenu{
+    STRING_FOR_CLOUDS,
+    {
+        &cloudsModeMenu,
+        &cloudsBlendMenu,
+        &cloudsPositionMenu,
+        &cloudsSizeMenu,
+        &cloudsPitchMenu,
+        &cloudsDensityMenu,
+        &cloudsTextureMenu,
+        &cloudsSpreadMenu,
+        &cloudsFeedbackMenu,
+        &cloudsReverbMenu,
+        &cloudsFreezeMenu,
+    },
+};
+
 Submenu globalFXMenu{
     STRING_FOR_FX,
     {
@@ -832,6 +873,7 @@ Submenu globalFXMenu{
         &stutterMenu,
         &globalModFXMenu,
         &globalDistortionMenu,
+        &cloudsMenu,
     },
 };
 
