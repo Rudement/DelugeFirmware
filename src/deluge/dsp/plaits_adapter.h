@@ -56,10 +56,18 @@ public:
 	/// Note-on. Resets engine state and latches the note.
 	void init(int32_t noteCode, uint8_t velocity);
 
-	/// Note-off. Plaits has no gate of its own once the internal envelope is
-	/// bypassed, so this only marks the voice releasable -- the Deluge's own
-	/// envelopes do the actual amplitude work.
+	/// Note-off. For the sixteen engines with no envelope of their own this is a
+	/// no-op -- the Deluge's envelopes do the amplitude work. For the eight that
+	/// self-envelope it drops Plaits' gate, which is what lets a held drum or
+	/// six-op patch finish the way the module does.
 	void keyup();
+
+	/// True for the eight engines whose post_processing_settings declare
+	/// already_enveloped: the three six-op FM banks, Inharmonic String, Modal
+	/// Resonator, and the three drums. Read straight off upstream's
+	/// RegisterInstance() calls in plaits/dsp/voice.cc -- if that list ever
+	/// changes, this must change with it.
+	static bool engineIsSelfEnveloped(uint8_t engine);
 
 	/// Render `numSamples` into `buffer` as q31.
 	///
@@ -105,6 +113,10 @@ private:
 	float note_ = 48.0f;
 	float velocity_ = 1.0f;
 	bool active_ = false;
+	/// Plaits' gate, used only by the self-enveloped engines. Held high while
+	/// the note is on; Voice::Render finds the rising edge itself via its own
+	/// trigger delay line, so there is nothing to edge-detect here.
+	bool gate_ = false;
 };
 
 /// Global Plaits state holder: the LUTs that every voice shares, plus the voice

@@ -138,18 +138,33 @@ PlaitsVoice::~PlaitsVoice() {
 	}
 }
 
+bool PlaitsVoice::engineIsSelfEnveloped(uint8_t engine) {
+	switch (engine) {
+	case 2:  // six-op FM, bank A
+	case 3:  // six-op FM, bank B
+	case 4:  // six-op FM, bank C
+	case 19: // Inharmonic String
+	case 20: // Modal Resonator
+	case 21: // Analog Bass Drum
+	case 22: // Analog Snare Drum
+	case 23: // Analog Hi-Hat
+		return true;
+	default:
+		return false;
+	}
+}
+
 void PlaitsVoice::init(int32_t noteCode, uint8_t velocity) {
 	note_ = static_cast<float>(noteCode);
 	velocity_ = static_cast<float>(velocity) * (1.0f / 127.0f);
 	active_ = (voice_ != nullptr);
+	gate_ = true;
 }
 
 void PlaitsVoice::keyup() {
-	// Plaits has no gate once its internal envelope and LPG are bypassed (see
-	// compute()), so there is nothing to release here -- the Deluge's own
-	// envelopes own the amplitude contour. Kept as an explicit no-op so the
-	// call site in voice.cpp can mirror the DX7 one exactly, and so that
-	// anyone adding an internal-envelope mode later has an obvious hook.
+	// Only meaningful for the self-enveloped engines; harmless otherwise, since
+	// compute() ignores the gate unless trigger_patched is set.
+	gate_ = false;
 }
 
 bool PlaitsVoice::compute(int32_t* buffer, int32_t numSamples, uint32_t phaseIncrement, int32_t harmonics,
@@ -190,7 +205,22 @@ bool PlaitsVoice::compute(int32_t* buffer, int32_t numSamples, uint32_t phaseInc
 	// Get this wrong and every single patch sounds plucked, on every engine,
 	// which reads as "the port is broken" rather than "one bool is wrong".
 	// ------------------------------------------------------------------
-	modulations.trigger_patched = false;
+	//
+	// THE EXCEPTION, and it is upstream's own rule rather than a guess. Eight
+	// engines declare already_enveloped in their post_processing_settings: the
+	// three six-op FM banks, Inharmonic String, Modal Resonator and the three
+	// drums. For those, Voice::Render forces lpg_bypass true REGARDLESS of the
+	// flags -- so patching the trigger there enables their internal envelopes
+	// without reintroducing the low-pass gate this bypass exists to avoid.
+	//
+	// It is not optional for the drums. AnalogBassDrum reads an unpatched
+	// trigger as `sustain` and takes its level from accent * decay, where decay
+	// is MORPH -- which defaults to 0 on the Deluge because the param it
+	// borrows does. Result: a bass drum with nothing to strike it and zero
+	// sustain gain, i.e. silence. Snare and hi-hat are the same shape.
+	const bool selfEnveloped = engineIsSelfEnveloped(patch.engine);
+	modulations.trigger_patched = selfEnveloped;
+	modulations.trigger = (selfEnveloped && gate_) ? 1.0f : 0.0f;
 	modulations.level_patched = false;
 	modulations.frequency_patched = false;
 	modulations.timbre_patched = false;
