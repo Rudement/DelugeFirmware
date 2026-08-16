@@ -89,6 +89,16 @@ public:
 		if (for_modulator_ && sound->getSynthMode() != SynthMode::FM) {
 			return false;
 		}
+		// Plaits never reads oscPos: noteOn() takes the PLAITS branch, so the
+		// retrigger-phase assignment in the final else is never reached, and the
+		// engines hold their own internal phase with no "start at phase X" entry
+		// point. Nothing honest to connect this to, so hide it rather than leave
+		// a control that silently does nothing. DX7 has the identical dead
+		// control for the identical reason; left alone deliberately.
+		if (source.oscType == OscType::PLAITS) {
+			return false;
+		}
+
 		if (source.oscType == OscType::WAVETABLE) {
 			return source.hasAtLeastOneAudioFileLoaded();
 		}
