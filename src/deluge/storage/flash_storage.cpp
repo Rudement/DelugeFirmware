@@ -25,6 +25,7 @@
 #include "io/midi/midi_transpose.h"
 #include "model/scale/preset_scales.h"
 #include "processing/engines/audio_engine.h"
+#include "processing/engines/cv_audio_stream.h"
 #include "processing/engines/cv_engine.h"
 #include "processing/metronome/metronome.h"
 #include "util/firmware_version.h"
@@ -183,6 +184,7 @@ enum Entries {
 175: accessibilityMenuHighlighting
 176: default new clip type
 177: use last clip type
+178: CV stereo split -- 0 unwritten/default-on, 1 off, 2 on
 */
 
 uint8_t defaultScale;
@@ -336,6 +338,8 @@ void resetSettings() {
 
 	defaultNewClipType = OutputType::SYNTH;
 	defaultUseLastClipType = true;
+
+	cvSetStereoSplit(true);
 }
 
 void resetMidiFollowSettings() {
@@ -727,6 +731,14 @@ void readSettings() {
 	else {
 		defaultUseLastClipType = buffer[177];
 	}
+
+	// Stereo split, global. Tri-state rather than a plain bool, because the default is now ON
+	// and a never-written slot reads as 0 -- a bool would force every existing Deluge to the
+	// wrong default. 0 means "never written, use the default", 1 is explicitly off, 2 is
+	// explicitly on. 178 rather than upstream's 198: this fork's flash layout stops at 177
+	// (defaultUseLastClipType), so this is the next free slot here rather than the offset the
+	// AUX sends port was taken from -- upstream's 178-197 hold features this fork doesn't carry.
+	cvSetStereoSplit(buffer[178] != 1);
 }
 
 static bool areMidiFollowSettingsValid(std::span<uint8_t> buffer) {
@@ -992,6 +1004,10 @@ void writeSettings() {
 
 	buffer[176] = util::to_underlying(defaultNewClipType);
 	buffer[177] = defaultUseLastClipType;
+
+	// See the matching read at offset 178 above: this fork's own next free slot, not
+	// upstream's 198.
+	buffer[178] = cvGetStereoSplit() ? 2 : 1;
 
 	R_SFLASH_EraseSector(0x80000 - 0x1000, SPIBSC_CH, SPIBSC_CMNCR_BSZ_SINGLE, 1, SPIBSC_OUTPUT_ADDR_24);
 	R_SFLASH_ByteProgram(0x80000 - 0x1000, buffer.data(), 256, SPIBSC_CH, SPIBSC_CMNCR_BSZ_SINGLE, SPIBSC_1BIT,

@@ -929,6 +929,18 @@ enum class String : size_t {
 	STRING_FOR_CLIP_MODE,
 	STRING_FOR_CLIP_NAME,
 
+	// strings for the AUX send bus on the CV sockets
+	STRING_FOR_CLIP_OUTPUT_MAIN,
+	STRING_FOR_CLIP_OUTPUT_STEREO_SPLIT,
+	STRING_FOR_OUTPUT_LEVEL_CV1,
+	STRING_FOR_OUTPUT_LEVEL_CV2,
+
+	// per-clip aux send amounts to the CV sockets
+	STRING_FOR_AUX,
+	STRING_FOR_CV_SEND,
+	STRING_FOR_CV1_SEND,
+	STRING_FOR_CV2_SEND,
+
 	// string for default clip creation type
 	STRING_FOR_DEFAULT_CLIP_TYPE,
 	STRING_FOR_DEFAULT_NEW_CLIP_TYPE,

@@ -20,6 +20,10 @@ char const* ClipSettingsMenu::getTitle() {
 
 Sized<char const**> ClipSettingsMenu::getOptions() {
 	using enum l10n::String;
+	// CV routing used to have an entry here. It moved to the AUX menu on each track, where
+	// the sends live: reaching Clip Settings needs a launch-adjacent press, which is no use
+	// mid-performance, and this menu is about how a clip behaves rather than where its audio
+	// goes.
 	if (clip->type == ClipType::AUDIO) {
 		static const char* optionsls[] = {
 		    l10n::get(STRING_FOR_CLIP_MODE),
@@ -61,7 +65,7 @@ bool ClipSettingsMenu::acceptCurrentOption() {
 			launchStyle.setupAndCheckAvailability();
 			openUI(&launchStyle);
 		}
-		else {
+		else if (option == 1) {
 			currentUIMode = UI_MODE_NONE;
 			renameClipNameUI.clip = clip;
 			openUI(&renameClipNameUI);
