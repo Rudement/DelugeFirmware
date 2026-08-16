@@ -113,6 +113,34 @@ as a standalone GlobalEffectable effect on `feat/clouds-fx-13`:
   round-trip. The mode attribute is only written when Clouds is on, so songs
   that never touch it are unchanged; an absent attribute reads back as OFF.
 
+### Measured cost
+
+First successful hardware-toolchain build, `f2ac9a16`, arm-none-eabi-gcc
+14.2.1, Release:
+
+| | bytes |
+|---|---|
+| Binary before (`d2cd22a7`, Clouds vendored but unreachable) | 1,883,520 |
+| Binary after (Clouds wired in) | 1,988,076 |
+| **Delta** | **+104,556 (+5.6%)** |
+
+From the linker map, by object:
+
+| | `.text` | `.rodata` | `.data` | `.bss` | total |
+|---|---|---|---|---|---|
+| `clouds_dsp` (vendored DSP) | 58,940 | 47,330 | 568 | -- | 106,838 |
+| `clouds_adapter.cpp` | 2,432 | 63 | -- | 708 | 3,203 |
+| `stmlib_dsp` (shared with Plaits) | -- | 3,082 | 4 | 3,086 |
+
+Map attribution (~113 KB) slightly exceeds the binary delta because
+`stmlib_dsp` is shared with Plaits and was already partly linked in, and
+because section packing differs. Take +104.5 KB as the real cost.
+
+Note what is *not* in there: the ~180 KB working set. That is allocated at
+runtime from the stealable SDRAM pool and never appears in the image, which
+is the whole point of the `CloudsBuffer` design. `clouds_adapter.cpp`'s 708
+bytes of `.bss` is just the adapter's own resampler rings.
+
 ### Cost this introduces
 
 `kMaxNumUnpatchedParams` is the max across `UnpatchedSound` and
@@ -134,9 +162,9 @@ extending the shared one.
    low mids, poor in the top two octaves. Swap it before this is judged on
    audio quality. (Note also that Clouds' own 32 kHz rate puts Nyquist at
    16 kHz regardless of resampler quality.)
-2. Hardware measurement: `.text`/`.rodata` from the linker map now that the
-   engine is actually reachable and no longer stripped by `--gc-sections`,
-   plus CPU headroom -- question 1 in the feasibility doc.
+2. CPU headroom. The code-size half of the feasibility doc's question 1 is
+   now answered (see "Measured cost" below); how much DSP time Clouds plus
+   the resampling actually eats at 44.1 kHz is not, and needs a device.
 3. Gold-knob / shortcut-grid assignments and automation-view entries. The
    params are automatable but are not on the shortcut grid.
 4. Granular-specific sub-parameters upstream exposes (`granular.overlap`,
