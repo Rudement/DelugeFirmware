@@ -4,6 +4,37 @@ Environment and build behaviour that has cost real time. None of this is about t
 
 ---
 
+## Build new work on 1.3 first
+
+**Standing rule: every new feature starts on the 1.3 line.** Branch `feat/<name>-13` off
+`base-13`, get it right there, and backport to 1.2.1 only afterwards — as a deliberate second
+step, if it is wanted at all.
+
+1.3 is where this fork is going. 1.2.1 is a maintenance line that will eventually stop mattering,
+and it is the *older* codebase, so a feature written against it is written against an API that has
+already moved on.
+
+Direction matters more than it looks. Porting 1.2.1 → 1.3 means replaying a diff whose context
+lines no longer exist:
+
+| Written on 1.2.1 | 1.3 wants |
+|---|---|
+| `Sound* sound` → `sound->sources[s]` | `Sound& sound` → `sound.sources[s]` |
+| `soundEditor.currentSourceIndex` | the menu item's own `source_id_` / `sourceId_` |
+| `NULL`, C casts | `nullptr`, `static_cast` |
+| constructors zeroing members | default member initialisers |
+
+None of that is hard, but every one of them is a silent merge that compiles wrong or does not
+compile at all, and git will happily auto-merge a hunk into the wrong dialect. Going 1.3 → 1.2.1
+is the easy direction: you are removing modern constructs, not guessing at them.
+
+Plaits was done the wrong way round — 1.2.1 first, then forward-ported — and the port needed
+seven conflict resolutions across `voice.cpp`, `osc/type.h`, `menus.cpp`, `english.json`,
+`voice_unison_part_source.{h,cpp}`, `audio_recorder.h` and `retrigger_phase.h`. Every one of
+them was 1.3 having modernised code the 1.2.1 patch still assumed. Do not repeat it.
+
+`base-12` and `base-13` are PR targets only — no work on them. See `HANDOFF.md` for the branch map.
+
 ## Toolchains differ by line
 
 | Line | Branches | `toolchain/REQUIRED_VERSION` |
