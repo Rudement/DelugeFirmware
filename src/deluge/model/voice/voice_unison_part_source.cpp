@@ -92,9 +92,7 @@ bool VoiceUnisonPartSource::noteOn(Voice* voice, Source* source, VoiceSamplePlay
 			}
 		}
 
-		// PHASE 1: engine is hardcoded to Virtual Analog. Phase 2 reads it off
-		// the Source, alongside the Harmonics/Timbre/Morph defaults.
-		plaitsVoice->engineIndex = PlaitsVoice::kPlaitsDefaultEngine;
+		plaitsVoice->engineIndex = source->plaitsEngine;
 		plaitsVoice->init(voice->noteCodeAfterArpeggiation, velocity);
 	}
 	else {

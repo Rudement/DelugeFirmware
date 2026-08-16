@@ -379,6 +379,14 @@ enum class OscType : uint8_t {
 };
 
 constexpr OscType kLastRingmoddableOscType = OscType::WAVETABLE;
+
+/// Mutable Instruments Plaits: 24 synthesis models, in upstream's registration
+/// order (plaits/dsp/voice.cc). Indices 0-7 are the models added in Plaits
+/// firmware 1.2; 8-23 are the original sixteen.
+constexpr uint8_t kPlaitsNumEngines = 24;
+/// Virtual Analog -- upstream index 8, the mid-cost reference engine and the
+/// least surprising thing to land on when you first select PLAITS.
+constexpr uint8_t kPlaitsDefaultEngine = 8;
 constexpr int32_t kNumOscTypesRingModdable = util::to_underlying(kLastRingmoddableOscType) + 1;
 constexpr int32_t kNumOscTypes = util::to_underlying(OscType::INPUT_STEREO) + 1;
 

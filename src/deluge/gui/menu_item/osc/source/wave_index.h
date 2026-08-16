@@ -30,8 +30,18 @@ public:
 	bool isRelevant(ModControllableAudio* modControllable, int32_t whichThing) override {
 		const auto sound = static_cast<Sound*>(modControllable);
 		auto& source = sound->sources[source_id_];
-		return sound->getSynthMode() != SynthMode::FM && source.oscType == OscType::WAVETABLE
-		       && source.hasAtLeastOneAudioFileLoaded();
+		if (sound->getSynthMode() == SynthMode::FM) {
+			return false;
+		}
+		// Plaits borrows this param for TIMBRE, so it must be reachable even
+		// though there is no wavetable loaded. (HARMONICS rides on the pulse
+		// width, whose isRelevant already lets any non-sample osc type through,
+		// and MORPH on OSC B's pulse width -- so this is the only one that
+		// needed opening up.)
+		if (source.oscType == OscType::PLAITS) {
+			return true;
+		}
+		return source.oscType == OscType::WAVETABLE && source.hasAtLeastOneAudioFileLoaded();
 	}
 
 	[[nodiscard]] RenderingStyle getRenderingStyle() const override { return SLIDER; }

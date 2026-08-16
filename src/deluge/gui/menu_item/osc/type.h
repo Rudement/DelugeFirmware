@@ -29,6 +29,7 @@
 #include <hid/display/oled.h>
 
 extern gui::menu_item::Submenu dxMenu;
+extern gui::menu_item::Submenu plaitsMenu;
 
 namespace deluge::gui::menu_item::osc {
 class Type final : public Selection, public FormattedTitle {
@@ -129,10 +130,14 @@ public:
 	}
 
 	MenuItem* selectButtonPress() override {
-		if (soundEditor.currentSound->sources[sourceId_].oscType != OscType::DX7) {
-			return nullptr;
+		const OscType oscType = soundEditor.currentSound->sources[sourceId_].oscType;
+		if (oscType == OscType::DX7) {
+			return &dxMenu;
 		}
-		return &dxMenu;
+		if (oscType == OscType::PLAITS) {
+			return &plaitsMenu;
+		}
+		return nullptr;
 	}
 
 	[[nodiscard]] bool showColumnLabel() const override { return false; }

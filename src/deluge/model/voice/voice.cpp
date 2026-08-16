@@ -2488,19 +2488,30 @@ dontUseCache: {}
 				goto instantUnassign;
 			}
 
-			// PHASE 1: Harmonics / Timbre / Morph are pinned to centre. Phase 2
-			// reads them from the three per-source patched params that are
-			// already modulatable and automatable and cost no new param slots:
+			// Harmonics / Timbre / Morph ride on three existing per-source
+			// patched params, so they arrive already patchable, automatable and
+			// MIDI-mappable and cost no new param slots -- which is what keeps
+			// this port clear of the automation-count and enum-ordering traps.
 			//
-			//   Harmonics -> paramFinalValues[params::LOCAL_OSC_A_PHASE_WIDTH  + s]
-			//   Timbre    -> paramFinalValues[params::LOCAL_OSC_A_WAVE_INDEX   + s]
-			//   Morph     -> paramFinalValues[params::LOCAL_CARRIER_0_FEEDBACK + s]
+			// All three are FIRST_LOCAL__HYBRID params with a neutral value of
+			// 0, so each sweeps 0 .. 2^30 over full knob travel. See
+			// hybridParamToUnit() in dsp/plaits_adapter.cpp for the derivation.
 			//
-			// Pinned here so the CPU measurement is not confounded by whatever
-			// the params happen to be sitting at.
-			constexpr int32_t kPlaitsCentre = 1073741824; // 0.5 in q31
+			// Morph borrows OSC B's phase width rather than a carrier feedback:
+			// the feedback params are linear, not hybrid, with a tiny neutral
+			// value (5931642), so they do NOT give a clean 0..1 sweep. Only
+			// phase width and wave index are hybrid, and there are just two per
+			// source -- hence reaching across to source B for the third.
+			// KNOWN CONFLICT: if OSC 2 is a square/pulse, its pulse width and
+			// Plaits' Morph are the same control. Documented, not accidental.
+			const int32_t plaitsHarmonics = paramFinalValues[params::LOCAL_OSC_A_PHASE_WIDTH + s];
+			const int32_t plaitsTimbre = paramFinalValues[params::LOCAL_OSC_A_WAVE_INDEX + s];
+			const int32_t plaitsMorph = paramFinalValues[params::LOCAL_OSC_B_PHASE_WIDTH];
 
-			if (!pv->compute(plaitsBuf, numSamples, phaseIncrement, kPlaitsCentre, kPlaitsCentre, kPlaitsCentre)) {
+			// Refreshed every block so changing model mid-note takes effect.
+			pv->engineIndex = sound.sources[s].plaitsEngine;
+
+			if (!pv->compute(plaitsBuf, numSamples, phaseIncrement, plaitsHarmonics, plaitsTimbre, plaitsMorph)) {
 				goto instantUnassign;
 			}
 

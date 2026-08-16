@@ -73,17 +73,11 @@ public:
 	bool compute(int32_t* buffer, int32_t numSamples, uint32_t phaseIncrement, int32_t harmonics, int32_t timbre,
 	             int32_t morph);
 
-	/// Which of the 24 engines this voice renders. Set before init().
+	/// Which of the 24 engines this voice renders. Read off the Source at
+	/// note-on and refreshed each render block, so changing model mid-note
+	/// takes effect immediately. kPlaitsNumEngines / kPlaitsDefaultEngine live
+	/// in definitions_cxx.hpp so the menu, the Source and the clamp all agree.
 	uint8_t engineIndex = kPlaitsDefaultEngine;
-
-	/// 24 engines: 8 from the 1.2 firmware update, then the 16 originals, in
-	/// upstream's registration order (see plaits/dsp/voice.cc). Kept here as a
-	/// constant rather than a magic number so the menu and the clamp agree.
-	static constexpr uint8_t kNumEngines = 24;
-
-	/// Virtual Analog -- upstream index 8. The mid-cost reference engine, and
-	/// the one Phase 1 hardcodes for the CPU measurement.
-	static constexpr uint8_t kPlaitsDefaultEngine = 8;
 
 	/// False when construction ran out of RAM. Callers must check; running out
 	/// is a normal outcome here, not a bug -- see solicitPlaitsVoice().

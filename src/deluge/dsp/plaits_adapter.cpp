@@ -72,14 +72,30 @@ inline float phaseIncrementToNote(uint32_t phaseIncrement) {
 	return 9.0f + 12.0f * log2f(normalised / kPlaitsFreqAtNote9);
 }
 
-/// q31 (0 .. 2^31-1) -> Plaits' 0.0 .. 1.0.
+/// Deluge hybrid patched param -> Plaits' 0.0 .. 1.0.
 ///
-/// The Deluge's patched params are signed and can go negative; Plaits CONSTRAINs
-/// its inputs, so a sign error here is SILENT (the engine just sits at 0.0)
-/// rather than loud. That is why this is a named function with a clamp rather
-/// than an inline multiply at three call sites.
-inline float q31ToUnit(int32_t value) {
-	float f = static_cast<float>(value) * (1.0f / 2147483648.0f);
+/// DERIVED, NOT GUESSED -- this is the number most likely to be quietly wrong,
+/// so here is the whole chain:
+///
+///   * Harmonics/Timbre/Morph ride on LOCAL_OSC_A_PHASE_WIDTH,
+///     LOCAL_OSC_A_WAVE_INDEX and LOCAL_OSC_B_PHASE_WIDTH. All three sit in
+///     the FIRST_LOCAL__HYBRID block of the params enum, so patcher.cpp routes
+///     them through getFinalParameterValueHybrid().
+///   * getParamNeutralValue() has no case for any of them, so their neutral
+///     value is the default: 0.
+///   * getFinalParameterValueHybrid(0, patched) = signed_saturate<29>(patched >> 1) << 2,
+///     i.e. simply patched / 2, clamped to +-2^30.
+///   * The menus are half-precision items: knob 0..50 maps to patched
+///     0..INT32_MAX (see computeFinalValueForHalfPrecisionMenuItem).
+///
+/// So the final value sweeps 0 .. 2^30 across full knob travel, and the divisor
+/// is 2^30 -- NOT 2^31, which would strand the top half of every control.
+///
+/// Modulation can push these negative; Plaits CONSTRAINs its inputs, so a sign
+/// error is SILENT (the engine just sits at 0.0) rather than loud. Hence the
+/// explicit clamp and the named function rather than an inline multiply.
+inline float hybridParamToUnit(int32_t value) {
+	float f = static_cast<float>(value) * (1.0f / 1073741824.0f);
 	if (f < 0.0f) {
 		f = 0.0f;
 	}
@@ -143,11 +159,11 @@ bool PlaitsVoice::compute(int32_t* buffer, int32_t numSamples, uint32_t phaseInc
 	}
 
 	plaits::Patch patch{};
-	patch.engine = engineIndex;
+	patch.engine = engineIndex < kPlaitsNumEngines ? engineIndex : kPlaitsDefaultEngine;
 	patch.note = 0.0f; // note travels in modulations.note; see below
-	patch.harmonics = q31ToUnit(harmonics);
-	patch.timbre = q31ToUnit(timbre);
-	patch.morph = q31ToUnit(morph);
+	patch.harmonics = hybridParamToUnit(harmonics);
+	patch.timbre = hybridParamToUnit(timbre);
+	patch.morph = hybridParamToUnit(morph);
 	patch.frequency_modulation_amount = 0.0f;
 	patch.timbre_modulation_amount = 0.0f;
 	patch.morph_modulation_amount = 0.0f;

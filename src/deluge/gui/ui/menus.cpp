@@ -151,6 +151,7 @@
 #include "gui/menu_item/patched_param/integer_non_fm.h"
 #include "gui/menu_item/patched_param/pan.h"
 #include "gui/menu_item/performance_session_view/editing_mode.h"
+#include "gui/menu_item/plaits/engine_select.h"
 #include "gui/menu_item/randomizer/midi_cv/bass_probability.h"
 #include "gui/menu_item/randomizer/midi_cv/chord_polyphony.h"
 #include "gui/menu_item/randomizer/midi_cv/chord_probability.h"
@@ -1418,6 +1419,14 @@ std::array<MenuItem*, 3> dxMenuItems = {
     &dxEngineSelect,
 };
 menu_item::Submenu dxMenu{STRING_FOR_DX_1, dxMenuItems};
+
+// Plaits. One item for now -- the model list. Kept as a submenu rather than
+// hanging the selector straight off Osc Type so that Phase 3's per-engine
+// options have somewhere to go without another restructure.
+std::array<MenuItem*, 1> plaitsMenuItems = {
+    &plaitsEngineSelect,
+};
+menu_item::Submenu plaitsMenu{STRING_FOR_PLAITS, plaitsMenuItems};
 
 // Not FM
 MasterTranspose masterTransposeMenu{STRING_FOR_MASTER_TRANSPOSE, STRING_FOR_MASTER_TRAN_MENU_TITLE};

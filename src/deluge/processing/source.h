@@ -46,6 +46,11 @@ public:
 
 	DxPatch* dxPatch;
 	bool dxPatchChanged = false;
+
+	/// Which Plaits model this source renders when oscType == PLAITS.
+	/// A discrete choice, not a patched param -- so it is stored here and
+	/// saved by name in the preset, the same way dxPatch is.
+	uint8_t plaitsEngine = kPlaitsDefaultEngine;
 	SampleRepeatMode repeatMode;
 
 	int8_t timeStretchAmount;
