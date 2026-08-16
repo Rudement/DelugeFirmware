@@ -41,6 +41,13 @@ public:
 	void drawValue();
 
 	int32_t currentValue = kPlaitsDefaultEngine;
+
+	/// Index of the first model visible on the OLED list. drawItemsForOled only
+	/// renders kOLEDMenuNumOptionsVisible rows and takes the selection as a ROW
+	/// index, not an option index -- so a list longer than the screen needs this
+	/// or the highlight walks off the bottom and the list never scrolls.
+	/// DxEngineSelect has three items and gets away without one; 24 does not.
+	int32_t scrollPos = 0;
 };
 
 extern PlaitsEngineSelect plaitsEngineSelect;

@@ -20,6 +20,7 @@
 #include "hid/display/display.h"
 #include "processing/source.h"
 
+#include <algorithm>
 #include <etl/vector.h>
 
 namespace deluge::gui::menu_item {
@@ -91,6 +92,10 @@ void PlaitsEngineSelect::readValueAgain() {
 	if (currentValue < 0 || currentValue >= kPlaitsNumEngines) {
 		currentValue = kPlaitsDefaultEngine;
 	}
+	// Open with the current model on screen. Without this, selecting a model
+	// near the end of the list and coming back shows the top of the list with
+	// nothing highlighted.
+	scrollPos = std::clamp<int32_t>(currentValue - 1, 0, kPlaitsNumEngines - kOLEDMenuNumOptionsVisible);
 	drawValue();
 }
 
@@ -99,7 +104,7 @@ void PlaitsEngineSelect::drawPixelsForOled() {
 	for (int32_t i = 0; i < kPlaitsNumEngines; i++) {
 		itemNames.push_back(kEngineNames[i]);
 	}
-	drawItemsForOled(itemNames, currentValue, 0);
+	drawItemsForOled(itemNames, currentValue - scrollPos, scrollPos);
 }
 
 void PlaitsEngineSelect::drawValue() {
@@ -127,6 +132,11 @@ void PlaitsEngineSelect::selectEncoderAction(int32_t offset) {
 	}
 
 	currentValue = newValue;
+	if (display->haveOLED()) {
+		// Keep the selection on screen, one row down where there is room, which
+		// is the same feel as the DX7 cartridge and operator lists.
+		scrollPos = std::clamp<int32_t>(newValue - 1, 0, kPlaitsNumEngines - kOLEDMenuNumOptionsVisible);
+	}
 	soundEditor.currentSource->plaitsEngine = static_cast<uint8_t>(newValue);
 
 	// No killAllVoices() here: PlaitsVoice re-reads engineIndex every render
