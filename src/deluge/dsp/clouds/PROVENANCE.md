@@ -89,26 +89,6 @@ the adapter boundary instead. See `../clouds_adapter.h`.
 
 ## Wiring status
 
-**Clouds is a SEND, not an insert.** One instance, owned by the song, fed from
-a stereo bus that every sound, kit and audio clip can contribute to via a
-shared `UNPATCHED_CLOUDS_SEND` parameter. Structurally identical to the reverb
-send, and for the same reason: the engine is too expensive to run more than
-once. "Clouds across the whole mix" is just the song's own send turned up --
-there is no special case for it.
-
-Blend is the **return level**, applied when the wet signal is mixed back in.
-The engine itself runs permanently fully wet (`dry_wet = 1.0`); the dry path
-is simply the signal that never entered the send bus. `CloudsAdapter::setBlend`
-is a deliberate no-op -- pushing Blend to `dry_wet` as well would attenuate
-twice and make the control a square law.
-
-`UNPATCHED_CLOUDS_SEND` lives in the **shared** param block, not the global
-one, because a Sound needs it too. That shifts the numeric IDs of every
-unpatched param below it, which is safe: songs and MIDI-follow files both
-persist parameters by name via `paramNameForFile()`, never by index. Verified
-before making the change.
-
-
 The vendoring commit left this compiling but unreachable. It is now wired in
 as a standalone GlobalEffectable effect on `feat/clouds-fx-13`:
 
@@ -227,37 +207,6 @@ density 0.50 -- dead centre. Clouds was therefore silent out of the box at any
 Blend setting, which looks exactly like a broken port. **The default is now
 menu 40 / density 0.80.** If Clouds ever appears silent again, check Density
 before anything else.
-
-## Two more parameters with non-obvious dead spots
-
-Density's dead zone (above) is not the only one. Both were found by running
-the engine natively rather than by reading it, and both silence a mode
-outright at the value a Deluge q31 default would naturally pick.
-
-**Spread at minimum silences Resonestor.** `stereo_spread` drives two settings
-from one control:
-
-```c
-set_stereo(ss < 0.5f ? 0.0f : (ss - 0.5f) * 2.0f);
-set_separation(ss > 0.5f ? 0.0f : (0.5f - ss) * 2.0f);
-```
-
-so `ss = 0` means `separation = 1.0`, and Resonestor emits nothing. Measured:
-at Spread 0 it is silent for *every* combination of density, reverb, feedback
-and distortion; at Spread 0.5 it produces output at the defaults. Spread now
-defaults to centre.
-
-**Blend/Return is distortion in Resonestor**, not a mix:
-`resonestor_.set_distortion(parameters_.dry_wet)`. Since the send pins
-`dry_wet` to 1.0, Resonestor currently runs at maximum distortion always.
-Resonestor is also excluded from the internal dry/wet crossfade entirely, so
-this costs no level -- but it is a control the user cannot reach. Wiring
-Return through to `dry_wet` in Resonestor mode only would restore it, and is
-worth doing.
-
-Also note Resonestor's feedback mapping cubes its input three times --
-effectively `density^27` -- so it does nothing below about 0.9 and then rises
-very steeply.
 
 ## Still not done
 

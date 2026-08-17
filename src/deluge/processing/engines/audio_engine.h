@@ -190,11 +190,6 @@ extern bool headphonesPluggedIn;
 extern bool micPluggedIn;
 extern bool lineInPluggedIn;
 extern bool renderInStereo;
-
-/// The Clouds send bus for the current render, `numSamples` stereo frames.
-/// Valid only inside a render; sounds add into it, the song's Clouds
-/// instance consumes it. See cloudsSendMemory in audio_engine.cpp.
-std::span<StereoSample> getCloudsSendBuffer(size_t numSamples);
 extern uint32_t audioSampleTimer;
 extern bool mustUpdateReverbParamsBeforeNextRender;
 extern bool bypassCulling;

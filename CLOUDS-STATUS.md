@@ -2,41 +2,62 @@
 
 Branch `feat/clouds-fx-13`. Read this before touching anything.
 
-## What works
+> **The send experiment was reverted.** Source is back to `1c4b2095`, the
+> last state in which all six modes worked. Clouds is an **insert** on the
+> Song / Kit / audio-clip FX chain, with Blend as its dry/wet. It is *not*
+> available on synth clips — that access came with the send work and went
+> back with it. The send attempt is preserved in history, `35821ca7`
+> onwards, and everything below about why it failed still applies.
+
+## What works, as the branch now stands
 
 - Clouds is vendored, builds, links, and runs on hardware.
-- **Granular works.** Grains, all nine parameters, from any context.
-- Reachable from Song, Kit, audio clips **and synth clips** — one page,
-  one shared engine, `clouds_fx::SongParam` resolves the engine params to
-  the song's param manager wherever the menu was opened from.
-- Wired as a **send**: `UNPATCHED_CLOUDS_SEND` (shared param) per source,
-  stereo bus in AudioEngine, one instance owned by the song. Blend is the
-  return level; the engine runs permanently fully wet.
+- **All six modes worked at this commit**, per device testing before the
+  send experiment.
+- Insert on the Song / Kit / audio-clip FX chain. Blend is dry/wet.
+- Density defaults to 0.80, clear of upstream's dead zone.
 - Save/load round-trips all nine params plus mode and freeze.
 
-## What does not work
+**Untested since the revert.** This state was verified on hardware before
+`35821ca7`; it has not been re-flashed since going back to it. Build and
+confirm before building anything on top.
 
-| Symptom | State |
+## What the send experiment cost, and what it was for
+
+The send (`35821ca7` … `84cfc3a2`) existed to answer one need: *drive
+Clouds from a synth clip*. One instance is too expensive to run per
+voice, so the design was one engine fed from a per-source send bus.
+
+It regressed the effect. After it, Granular eventually worked but
+crackled, Stretch dropped out, parameters responded wrongly, and mode
+changes clicked and cut voices. None of it was diagnosed to a root cause.
+
+Worth keeping in mind if you try again: the thing that actually solved
+the *access* problem was `clouds_fx::SongParam` (`a838babe`), a menu item
+that resolves engine params to the song's param manager whatever context
+it was opened from. That is independent of the send and could be
+re-applied to the insert design on its own — giving synth-clip control of
+a song-level Clouds without any of the routing work.
+
+## Open faults recorded from the send attempt
+
+Kept because several are probably not send-specific:
+
+| Symptom | Notes |
 |---|---|
-| **Stretch drops out** | Unsolved. Recovers. Only Stretch. |
-| **Continuous crackle** | Unsolved. Present in all modes. |
-| **Parameters respond wrongly** | Uninvestigated. Suspect the q31 mappings in `clouds_adapter.cpp`. |
-| **Resonestor** | Untested since the mode-change fixes landed. |
-| **Click on mode change** | Reduced, not gone. |
+| Click on mode change | Reduced by a 20 ms fade, never eliminated. Root cause is `Prepare()` doing 14 Init/Allocate calls; partly addressed by moving it to the UI thread (`c38de034`, `30ae1af7`). |
+| Stretch drops out | Recovers. Only Stretch. Rate-limiting `Prepare()` (`84cfc3a2`) did not fix it. May simply be too expensive — it costs 2x Granular. |
+| Crackle | Present in all modes under the send. Untested on the insert. |
+| Resonestor | Needs Spread at centre or it is silent (`c05c49ae`) — that fix is NOT in the current tree, and is worth re-applying. |
 
-All of these arrived with, or were exposed by, the send conversion
-(`35821ca7`). Every mode reportedly worked when Clouds was an insert.
+Fixes made during the send work that are independent of it and worth
+cherry-picking if the symptoms reappear on the insert:
 
-## The single most useful thing to try next
-
-**Revert the send conversion.** All six modes worked under the insert
-design. `clouds_fx::SongParam` and the one-page-everywhere menu are
-independent of it and can stay, so you keep the synth-clip access that
-motivated the change. You lose per-source send amounts — Clouds sits on
-the song bus and affects everything.
-
-That is one revert and one build to a known-good effect, versus an
-unknown number of cycles debugging the send.
+- `c05c49ae` Spread defaults to centre — without it Resonestor is silent
+- `26170c98` `bypassCulling` around the heavy Prepare
+- `c38de034` / `30ae1af7` Prepare on the UI thread, whole change guarded
+- `84cfc3a2` Prepare rate-limited to ~1.4 kHz
+- `df216e35` non-finite output recovery
 
 ## Measurements (real, trust these)
 

@@ -157,22 +157,6 @@ public:
 	void setReverb(q31_t v);
 	void setFreeze(bool frozen);
 
-	/// Do everything expensive that a mode change implies -- acquire the
-	/// buffer, Init the processor if needed, set the playback mode and run the
-	/// first Prepare() -- from a non-audio thread.
-	///
-	/// Upstream drives Prepare() from its main loop for exactly this reason:
-	/// on a mode change it reallocates the grain players, the diffuser, the
-	/// reverb, the correlator and the pitch shifter, fourteen Init/Allocate
-	/// calls in all. Doing that inside an audio block overruns the render
-	/// deadline. Once this has run, the Prepare() in process() finds
-	/// reset_buffers_ clear and previous_playback_mode_ already matching, so
-	/// it takes its cheap path.
-	///
-	/// The CALLER must hold a critical section: this reallocates buffers that
-	/// process() reads.
-	void prepareOffAudioThread();
-
 	/// Render in place over `buffer`, at the Deluge's kSampleRate. Internally
 	/// resamples down to Clouds' native 32 kHz, runs whole
 	/// clouds::kMaxBlockSize blocks through the untouched upstream processor,
@@ -186,32 +170,6 @@ private:
 	CloudsBuffer* buffer_ = nullptr;
 
 	CloudsMode mode_ = CloudsMode::GRANULAR;
-
-	/// Samples of fade-in remaining after a mode change or a re-Init.
-	///
-	/// Changing playback mode makes Prepare() take its reset path: it
-	/// reallocates the grain players and re-Inits the audio buffers, so the
-	/// engine's output jumps discontinuously. Straight into the mix that is an
-	/// audible click. Ramping the return in over a few milliseconds costs
-	/// nothing and removes it.
-	int32_t fadeInRemaining_ = 0;
-
-	/// Samples of audio since Prepare() was last called, so its rate can be
-	/// bounded independently of the render block size.
-	int32_t samplesSincePrepare_ = 0;
-	/// Call Prepare() at most this often. The Deluge's render block varies from
-	/// 4 to 128 samples, so calling Prepare() once per block means anywhere
-	/// from 344 Hz to 11 kHz. Upstream calls it from its main loop, on the
-	/// order of 1 kHz. Stretch and Oliverb do real work in there every call --
-	/// LoadCorrelator() plus EvaluateSomeCandidates() -- so at small block
-	/// sizes we were doing that up to ten times more often than upstream ever
-	/// intended, which is why Stretch specifically ran out of CPU.
-	static constexpr int32_t kSamplesBetweenPrepares = 32;
-
-	/// Set when the next Prepare() will take its expensive reallocation path,
-	/// so process() can tell the audio engine not to cull voices over it.
-	bool heavyPreparePending_ = true;
-	static constexpr int32_t kFadeInSamples = kSampleRate / 50; // 20 ms
 
 	/// Set when the buffer is (re)acquired, so the next process() re-Inits
 	/// upstream against the new memory before touching it.

@@ -20,10 +20,8 @@
 #include "clouds/dsp/frame.h"
 #include "clouds/dsp/granular_processor.h"
 #include "memory/general_memory_allocator.h"
-#include "processing/engines/audio_engine.h"
 
 #include <algorithm>
-#include <cmath>
 #include <cstring>
 #include <iterator>
 #include <new>
@@ -157,8 +155,6 @@ void CloudsAdapter::setMode(CloudsMode mode) {
 		return;
 	}
 	mode_ = mode;
-	fadeInRemaining_ = kFadeInSamples; // hide the reallocation discontinuity
-	heavyPreparePending_ = true;
 	if (processor_ != nullptr) {
 		// Upstream reallocates its internal players out of the working buffer
 		// when the playback mode changes, so this is only safe once Init has
@@ -200,16 +196,9 @@ void CloudsAdapter::setTexture(q31_t v) {
 }
 
 void CloudsAdapter::setBlend(q31_t v) {
-	// Intentionally empty. Clouds is wired as a SEND, so the engine always runs
-	// fully wet (dry_wet is pinned to 1.0 at Init) and the Blend control is the
-	// return level, applied by GlobalEffectable::processClouds() when the wet
-	// signal is mixed back into the mix. Pushing it here as well would
-	// attenuate twice.
-	//
-	// Kept as a no-op rather than deleted so the setter surface still mirrors
-	// the nine parameters one-for-one, and so a future insert mode has an
-	// obvious place to reconnect it.
-	(void)v;
+	if (processor_ != nullptr) {
+		processor_->mutable_parameters()->dry_wet = q31ToUnipolar(v);
+	}
 }
 
 void CloudsAdapter::setSpread(q31_t v) {
@@ -236,31 +225,6 @@ void CloudsAdapter::setFreeze(bool frozen) {
 	}
 }
 
-void CloudsAdapter::prepareOffAudioThread() {
-	if (processor_ == nullptr) {
-		return;
-	}
-	if (!acquireBuffer()) {
-		return; // No memory; process() will pass audio through dry.
-	}
-	if (needsInit_) {
-		processor_->Init(buffer_->large(), CloudsBuffer::kLargeBufferBytes, buffer_->small(),
-		                 CloudsBuffer::kSmallBufferBytes);
-		processor_->set_silence(false);
-		processor_->set_bypass(false);
-		processor_->mutable_parameters()->dry_wet = 1.0f;
-		resetResamplerState();
-		needsInit_ = false;
-	}
-	processor_->set_playback_mode(kPlaybackModeFor[util::to_underlying(mode_)]);
-
-	// The expensive one. Runs here so the audio thread never sees it.
-	processor_->Prepare();
-
-	heavyPreparePending_ = false;
-	fadeInRemaining_ = kFadeInSamples;
-}
-
 void CloudsAdapter::process(std::span<StereoSample> buffer) {
 	// Both are required *here* specifically: isValid() only says the adapter
 	// is usable at all, and the working buffer is per-render state that the
@@ -279,13 +243,8 @@ void CloudsAdapter::process(std::span<StereoSample> buffer) {
 		// at the call site that we know the difference between the two.
 		processor_->set_silence(false);
 		processor_->set_bypass(false);
-		// Fully wet, always: see setBlend(). The dry path back to the mix is
-		// the untouched signal that never entered the send bus.
-		processor_->mutable_parameters()->dry_wet = 1.0f;
 		processor_->set_playback_mode(kPlaybackModeFor[util::to_underlying(mode_)]);
 		resetResamplerState();
-		fadeInRemaining_ = kFadeInSamples;
-		heavyPreparePending_ = true;
 		needsInit_ = false;
 	}
 
@@ -307,11 +266,6 @@ void CloudsAdapter::process(std::span<StereoSample> buffer) {
 	for (StereoSample& sample : buffer) {
 		float inL = static_cast<float>(sample.l) * (1.0f / 2147483648.0f);
 		float inR = static_cast<float>(sample.r) * (1.0f / 2147483648.0f);
-		// q31 in, so these are finite by construction -- but the engine's own
-		// feedback path reads its previous output, so clamp anyway rather than
-		// let one bad block become a permanent one.
-		inL = std::clamp(inL, -1.0f, 1.0f);
-		inR = std::clamp(inR, -1.0f, 1.0f);
 		downsamplePhase_ += kStep;
 		if (downsamplePhase_ >= 1.0f) {
 			downsamplePhase_ -= 1.0f;
@@ -331,38 +285,7 @@ void CloudsAdapter::process(std::span<StereoSample> buffer) {
 	}
 
 	// --- Stage 2: run whole native blocks through the vendored processor. ---
-	//
-	// Prepare() is cheap on most blocks, but on a mode change or a re-Init it
-	// takes its reset path: fourteen Init/Allocate calls -- diffuser, reverb,
-	// correlator, pitch shifter, and then the players or the phase vocoder or
-	// the resonator. Upstream runs Prepare() from its main loop precisely
-	// because of this; we have no choice but to run it here, inside the audio
-	// render, so tell the engine not to cull voices over the resulting spike.
-	//
-	// Without this, changing mode blew the audio deadline, the engine culled
-	// every voice, and the synth stayed silent until playback was stopped and
-	// restarted to re-trigger it. Which also made Resonestor look broken: a
-	// culled synth puts nothing into the send bus, and a resonator with no
-	// input has nothing to resonate.
-	if (heavyPreparePending_) {
-		AudioEngine::bypassCulling = true;
-		heavyPreparePending_ = false;
-		processor_->Prepare();
-		samplesSincePrepare_ = 0;
-	}
-	else {
-		// Rate-limited. The work Prepare() does for Stretch and Oliverb is
-		// incremental by design -- EvaluateSomeCandidates() is meant to be
-		// spread over successive calls -- so calling it less often costs
-		// convergence speed, not correctness. Calling it once per render block
-		// meant up to 11 kHz at the smallest block sizes, which is what made
-		// Stretch drop out.
-		samplesSincePrepare_ += static_cast<int32_t>(buffer.size());
-		if (samplesSincePrepare_ >= kSamplesBetweenPrepares) {
-			samplesSincePrepare_ = 0;
-			processor_->Prepare();
-		}
-	}
+	processor_->Prepare();
 	while (downCount_ >= clouds::kMaxBlockSize) {
 		clouds::ShortFrame shortIn[clouds::kMaxBlockSize];
 		clouds::ShortFrame shortOut[clouds::kMaxBlockSize];
@@ -409,41 +332,6 @@ void CloudsAdapter::process(std::span<StereoSample> buffer) {
 		}
 		float outL = prevOutL_ + (curOutL_ - prevOutL_) * upsamplePhase_;
 		float outR = prevOutR_ + (curOutR_ - prevOutR_) * upsamplePhase_;
-		// Poison guard. If the engine ever emits a non-finite sample -- and
-		// with feedback paths, a resonator that can be driven to feedback 86,
-		// and float state we do not fully control, it can -- then NaN would
-		// otherwise be latched into prevOut/curOut and every sample from here
-		// on would be NaN. std::clamp does not help: all of NaN's comparisons
-		// are false, so it returns NaN unchanged, and casting that to q31_t is
-		// undefined behaviour, in practice INT_MIN. That is a full-scale click
-		// followed by permanent silence, which is exactly the reported
-		// "drops out and doesn't come back".
-		//
-		// So: check, and if it happens, mute this block and reset the
-		// resampler so the next one starts clean.
-		if (!std::isfinite(outL) || !std::isfinite(outR)) {
-			// Resetting our own state is not enough. The engine keeps its
-			// previous output in fb_ and feeds it back, so once NaN is in
-			// there it stays, and every subsequent block is NaN too. The only
-			// way back is to re-Init the engine, which the next process()
-			// will do because needsInit_ is set here. Expensive, but this
-			// should never happen, and permanent silence is worse.
-			resetResamplerState();
-			needsInit_ = true;
-			heavyPreparePending_ = true; // don't let the re-Init cull voices
-			fadeInRemaining_ = kFadeInSamples;
-			outL = 0.0f;
-			outR = 0.0f;
-		}
-
-		if (fadeInRemaining_ > 0) {
-			// Linear ramp 0 -> 1 across kFadeInSamples. Only ever runs for 20 ms
-			// after a mode change or a re-Init, so the cost is irrelevant.
-			float gain = 1.0f - (static_cast<float>(fadeInRemaining_) / static_cast<float>(kFadeInSamples));
-			outL *= gain;
-			outR *= gain;
-			--fadeInRemaining_;
-		}
 		sample.l = static_cast<q31_t>(std::clamp(outL, -1.0f, 1.0f) * 2147483647.0f);
 		sample.r = static_cast<q31_t>(std::clamp(outR, -1.0f, 1.0f) * 2147483647.0f);
 	}

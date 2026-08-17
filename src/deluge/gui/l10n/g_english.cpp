@@ -1034,16 +1034,14 @@ PLACE_SDRAM_DATA Language english{
         {STRING_FOR_CLOUDS_DENSITY_SHORT, "Dens"},
         {STRING_FOR_CLOUDS_TEXTURE, "Texture"},
         {STRING_FOR_CLOUDS_TEXTURE_SHORT, "Text"},
-        {STRING_FOR_CLOUDS_BLEND, "Return"},
-        {STRING_FOR_CLOUDS_BLEND_SHORT, "Retn"},
+        {STRING_FOR_CLOUDS_BLEND, "Blend"},
+        {STRING_FOR_CLOUDS_BLEND_SHORT, "Blnd"},
         {STRING_FOR_CLOUDS_SPREAD, "Spread"},
         {STRING_FOR_CLOUDS_SPREAD_SHORT, "Sprd"},
         {STRING_FOR_CLOUDS_FEEDBACK, "Feedback"},
         {STRING_FOR_CLOUDS_FEEDBACK_SHORT, "Fdbk"},
         {STRING_FOR_CLOUDS_REVERB, "Reverb"},
         {STRING_FOR_CLOUDS_REVERB_SHORT, "Verb"},
-        {STRING_FOR_CLOUDS_SEND, "Send"},
-        {STRING_FOR_CLOUDS_SEND_SHORT, "Send"},
     },
 };
 } // namespace deluge::l10n::built_in
