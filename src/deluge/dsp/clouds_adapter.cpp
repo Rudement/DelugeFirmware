@@ -237,20 +237,26 @@ void CloudsAdapter::process(std::span<StereoSample> buffer) {
 
 #if CLOUDS_DIAGNOSTIC_BUILD
 	// ======================= TEMPORARY - REVERT ME =======================
-	// Four questions, one flash. The mode selector is repurposed as a probe
-	// because reasoning from source has now been wrong four times running and
-	// each wrong guess costs a build-and-flash cycle.
+	// v2. The previous version was flawed: setMode() calls set_playback_mode()
+	// straight from the lookup table, so the "Spectral" slot ran as real
+	// Spectral rather than Granular-with-forced-params, and therefore did not
+	// separate the engine mode from the parameter values. Every diag slot now
+	// forces PLAYBACK_MODE_GRANULAR every block, so the ONLY thing that varies
+	// between them is which parameters are used.
 	//
-	//   Granular  -> untouched, the real signal path
-	//   Stretch   -> DIAG A: emit a 440 Hz tone, engine and input ignored.
-	//                Hearing it proves processClouds() runs and that whatever
-	//                this function writes actually reaches the output.
-	//   Delay     -> DIAG B: input through the resampler ONLY, engine skipped.
-	//                Hearing clean audio clears the resampler; hearing silence
-	//                or mush convicts it.
-	//   Spectral  -> DIAG C: the granular engine with dry_wet and density
-	//                forced in code, ignoring the menu entirely. Hearing
-	//                grains convicts the parameter path.
+	//   Granular    untouched control -- menu params, normal path
+	//   Stretch     440 Hz tone, proves this is the new build
+	//   Oliverb     granular + MENU params        <- same as Granular, but with
+	//                                                the mode forced. Differs
+	//                                                only if mode selection is
+	//                                                the problem.
+	//   Spectral    granular + ALL params forced  <- known good natively
+	//   Delay       granular + menu params, DENSITY forced to 0.9
+	//   Resonestor  granular + menu params, BLEND forced to 1.0
+	//
+	// Reading it: if Spectral sings and Oliverb is silent, the parameter path
+	// is broken. Whichever of Delay/Resonestor then sings names the specific
+	// parameter that is not arriving.
 	if (mode_ == CloudsMode::STRETCH) {
 		constexpr float kTwoPi = 6.28318530718f;
 		for (StereoSample& sample : buffer) {
@@ -263,24 +269,36 @@ void CloudsAdapter::process(std::span<StereoSample> buffer) {
 		}
 		return;
 	}
-	if (CLOUDS_DIAG_FORCED_PARAMS(mode_)) {
+	if (mode_ != CloudsMode::GRANULAR) {
+		// Force the engine mode every block, defeating setMode().
+		processor_->set_playback_mode(clouds::PLAYBACK_MODE_GRANULAR);
 		clouds::Parameters* q = processor_->mutable_parameters();
-		q->position = 0.5f;
-		q->size = 0.5f;
-		q->pitch = 0.0f;
-		q->density = 0.9f;
-		q->texture = 0.5f;
-		q->dry_wet = 1.0f;
-		q->stereo_spread = 0.0f;
-		q->feedback = 0.0f;
-		q->reverb = 0.0f;
-		q->freeze = false;
+		switch (mode_) {
+		case CloudsMode::SPECTRAL: // everything forced
+			q->position = 0.5f;
+			q->size = 0.5f;
+			q->pitch = 0.0f;
+			q->density = 0.9f;
+			q->texture = 0.5f;
+			q->dry_wet = 1.0f;
+			q->stereo_spread = 0.0f;
+			q->feedback = 0.0f;
+			q->reverb = 0.0f;
+			q->freeze = false;
+			break;
+		case CloudsMode::DELAY: // menu params, density overridden
+			q->density = 0.9f;
+			break;
+		case CloudsMode::RESONESTOR: // menu params, blend overridden
+			q->dry_wet = 1.0f;
+			break;
+		default: // OLIVERB: menu params, nothing overridden
+			break;
+		}
 	}
-	const bool diagBypassEngine = (mode_ == CloudsMode::DELAY);
 	// =====================================================================
-#else
-	constexpr bool diagBypassEngine = false;
 #endif
+	constexpr bool diagBypassEngine = false;
 
 	if (needsInit_) {
 		processor_->Init(buffer_->large(), CloudsBuffer::kLargeBufferBytes, buffer_->small(),
