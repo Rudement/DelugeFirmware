@@ -209,7 +209,11 @@ void CloudsAdapter::setFreeze(bool frozen) {
 }
 
 void CloudsAdapter::process(std::span<StereoSample> buffer) {
-	if (!isValid()) {
+	// Both are required *here* specifically: isValid() only says the adapter
+	// is usable at all, and the working buffer is per-render state that the
+	// caller acquires for us. Either being absent means pass the audio
+	// through dry rather than render.
+	if (processor_ == nullptr || buffer_ == nullptr) {
 		return; // Dry passthrough: caller's buffer is left exactly as it came in.
 	}
 

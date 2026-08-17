@@ -109,9 +109,16 @@ public:
 	CloudsAdapter(const CloudsAdapter&) = delete;
 	CloudsAdapter& operator=(const CloudsAdapter&) = delete;
 
-	/// False if the working buffer or the upstream processor failed to
-	/// allocate. Callers must check before calling process().
-	[[nodiscard]] bool isValid() const { return processor_ != nullptr && buffer_ != nullptr; }
+	/// False only if the upstream processor object failed to allocate, i.e.
+	/// this adapter can never work and should be torn down.
+	///
+	/// Deliberately does NOT test buffer_. The working buffer is acquired at
+	/// the top of each render and released at the end of it, so it is null
+	/// for most of an adapter's life -- including immediately after
+	/// construction, which is exactly when setCloudsMode() checks this. An
+	/// earlier version tested it here and, because the constructor no longer
+	/// allocates the buffer, made every single mode change fail.
+	[[nodiscard]] bool isValid() const { return processor_ != nullptr; }
 
 	/// Reclaim the buffer if it is still ours, or take a fresh one if it was
 	/// stolen. Called at the top of every render while Clouds is switched on.
