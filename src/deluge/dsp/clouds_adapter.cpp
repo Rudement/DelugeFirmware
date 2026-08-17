@@ -23,6 +23,7 @@
 #include "processing/engines/audio_engine.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <iterator>
 #include <new>
@@ -306,6 +307,11 @@ void CloudsAdapter::process(std::span<StereoSample> buffer) {
 	for (StereoSample& sample : buffer) {
 		float inL = static_cast<float>(sample.l) * (1.0f / 2147483648.0f);
 		float inR = static_cast<float>(sample.r) * (1.0f / 2147483648.0f);
+		// q31 in, so these are finite by construction -- but the engine's own
+		// feedback path reads its previous output, so clamp anyway rather than
+		// let one bad block become a permanent one.
+		inL = std::clamp(inL, -1.0f, 1.0f);
+		inR = std::clamp(inR, -1.0f, 1.0f);
 		downsamplePhase_ += kStep;
 		if (downsamplePhase_ >= 1.0f) {
 			downsamplePhase_ -= 1.0f;
@@ -389,6 +395,33 @@ void CloudsAdapter::process(std::span<StereoSample> buffer) {
 		}
 		float outL = prevOutL_ + (curOutL_ - prevOutL_) * upsamplePhase_;
 		float outR = prevOutR_ + (curOutR_ - prevOutR_) * upsamplePhase_;
+		// Poison guard. If the engine ever emits a non-finite sample -- and
+		// with feedback paths, a resonator that can be driven to feedback 86,
+		// and float state we do not fully control, it can -- then NaN would
+		// otherwise be latched into prevOut/curOut and every sample from here
+		// on would be NaN. std::clamp does not help: all of NaN's comparisons
+		// are false, so it returns NaN unchanged, and casting that to q31_t is
+		// undefined behaviour, in practice INT_MIN. That is a full-scale click
+		// followed by permanent silence, which is exactly the reported
+		// "drops out and doesn't come back".
+		//
+		// So: check, and if it happens, mute this block and reset the
+		// resampler so the next one starts clean.
+		if (!std::isfinite(outL) || !std::isfinite(outR)) {
+			// Resetting our own state is not enough. The engine keeps its
+			// previous output in fb_ and feeds it back, so once NaN is in
+			// there it stays, and every subsequent block is NaN too. The only
+			// way back is to re-Init the engine, which the next process()
+			// will do because needsInit_ is set here. Expensive, but this
+			// should never happen, and permanent silence is worse.
+			resetResamplerState();
+			needsInit_ = true;
+			heavyPreparePending_ = true; // don't let the re-Init cull voices
+			fadeInRemaining_ = kFadeInSamples;
+			outL = 0.0f;
+			outR = 0.0f;
+		}
+
 		if (fadeInRemaining_ > 0) {
 			// Linear ramp 0 -> 1 across kFadeInSamples. Only ever runs for 20 ms
 			// after a mode change or a re-Init, so the cost is irrelevant.
