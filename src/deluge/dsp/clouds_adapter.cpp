@@ -347,8 +347,22 @@ void CloudsAdapter::process(std::span<StereoSample> buffer) {
 	if (heavyPreparePending_) {
 		AudioEngine::bypassCulling = true;
 		heavyPreparePending_ = false;
+		processor_->Prepare();
+		samplesSincePrepare_ = 0;
 	}
-	processor_->Prepare();
+	else {
+		// Rate-limited. The work Prepare() does for Stretch and Oliverb is
+		// incremental by design -- EvaluateSomeCandidates() is meant to be
+		// spread over successive calls -- so calling it less often costs
+		// convergence speed, not correctness. Calling it once per render block
+		// meant up to 11 kHz at the smallest block sizes, which is what made
+		// Stretch drop out.
+		samplesSincePrepare_ += static_cast<int32_t>(buffer.size());
+		if (samplesSincePrepare_ >= kSamplesBetweenPrepares) {
+			samplesSincePrepare_ = 0;
+			processor_->Prepare();
+		}
+	}
 	while (downCount_ >= clouds::kMaxBlockSize) {
 		clouds::ShortFrame shortIn[clouds::kMaxBlockSize];
 		clouds::ShortFrame shortOut[clouds::kMaxBlockSize];

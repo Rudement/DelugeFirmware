@@ -196,6 +196,18 @@ private:
 	/// nothing and removes it.
 	int32_t fadeInRemaining_ = 0;
 
+	/// Samples of audio since Prepare() was last called, so its rate can be
+	/// bounded independently of the render block size.
+	int32_t samplesSincePrepare_ = 0;
+	/// Call Prepare() at most this often. The Deluge's render block varies from
+	/// 4 to 128 samples, so calling Prepare() once per block means anywhere
+	/// from 344 Hz to 11 kHz. Upstream calls it from its main loop, on the
+	/// order of 1 kHz. Stretch and Oliverb do real work in there every call --
+	/// LoadCorrelator() plus EvaluateSomeCandidates() -- so at small block
+	/// sizes we were doing that up to ten times more often than upstream ever
+	/// intended, which is why Stretch specifically ran out of CPU.
+	static constexpr int32_t kSamplesBetweenPrepares = 32;
+
 	/// Set when the next Prepare() will take its expensive reallocation path,
 	/// so process() can tell the audio engine not to cull voices over it.
 	bool heavyPreparePending_ = true;
