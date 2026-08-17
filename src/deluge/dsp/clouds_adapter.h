@@ -54,6 +54,11 @@ namespace clouds {
 class GranularProcessor;
 } // namespace clouds
 
+// TEMPORARY diagnostic build. Set to 0 (or delete this block and the guarded
+// code in the .cpp) to restore normal behaviour.
+#define CLOUDS_DIAGNOSTIC_BUILD 1
+#define CLOUDS_DIAG_FORCED_PARAMS(m) (CLOUDS_DIAGNOSTIC_BUILD && (m) == CloudsMode::SPECTRAL)
+
 class CloudsAdapter;
 
 /// The stealable SDRAM block backing one CloudsAdapter.
@@ -197,6 +202,9 @@ private:
 	float upRing_[kRingFrames * 2]{};
 	uint16_t downWrite_ = 0, downRead_ = 0, downCount_ = 0;
 	uint16_t upWrite_ = 0, upRead_ = 0, upCount_ = 0;
+
+	/// TEMPORARY, diagnostic build only: phase for the DIAG A test tone.
+	float diagPhase_ = 0.0f;
 
 	float prevInL_ = 0.0f, prevInR_ = 0.0f;
 	float prevOutL_ = 0.0f, prevOutR_ = 0.0f;

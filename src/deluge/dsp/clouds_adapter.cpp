@@ -22,6 +22,7 @@
 #include "memory/general_memory_allocator.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <iterator>
 #include <new>
@@ -234,6 +235,53 @@ void CloudsAdapter::process(std::span<StereoSample> buffer) {
 		return; // Dry passthrough: caller's buffer is left exactly as it came in.
 	}
 
+#if CLOUDS_DIAGNOSTIC_BUILD
+	// ======================= TEMPORARY - REVERT ME =======================
+	// Four questions, one flash. The mode selector is repurposed as a probe
+	// because reasoning from source has now been wrong four times running and
+	// each wrong guess costs a build-and-flash cycle.
+	//
+	//   Granular  -> untouched, the real signal path
+	//   Stretch   -> DIAG A: emit a 440 Hz tone, engine and input ignored.
+	//                Hearing it proves processClouds() runs and that whatever
+	//                this function writes actually reaches the output.
+	//   Delay     -> DIAG B: input through the resampler ONLY, engine skipped.
+	//                Hearing clean audio clears the resampler; hearing silence
+	//                or mush convicts it.
+	//   Spectral  -> DIAG C: the granular engine with dry_wet and density
+	//                forced in code, ignoring the menu entirely. Hearing
+	//                grains convicts the parameter path.
+	if (mode_ == CloudsMode::STRETCH) {
+		constexpr float kTwoPi = 6.28318530718f;
+		for (StereoSample& sample : buffer) {
+			float v = 0.25f * std::sin(diagPhase_);
+			diagPhase_ += kTwoPi * 440.0f / static_cast<float>(kSampleRate);
+			if (diagPhase_ > kTwoPi) {
+				diagPhase_ -= kTwoPi;
+			}
+			sample.l = sample.r = static_cast<q31_t>(v * 2147483647.0f);
+		}
+		return;
+	}
+	if (CLOUDS_DIAG_FORCED_PARAMS(mode_)) {
+		clouds::Parameters* q = processor_->mutable_parameters();
+		q->position = 0.5f;
+		q->size = 0.5f;
+		q->pitch = 0.0f;
+		q->density = 0.9f;
+		q->texture = 0.5f;
+		q->dry_wet = 1.0f;
+		q->stereo_spread = 0.0f;
+		q->feedback = 0.0f;
+		q->reverb = 0.0f;
+		q->freeze = false;
+	}
+	const bool diagBypassEngine = (mode_ == CloudsMode::DELAY);
+	// =====================================================================
+#else
+	constexpr bool diagBypassEngine = false;
+#endif
+
 	if (needsInit_) {
 		processor_->Init(buffer_->large(), CloudsBuffer::kLargeBufferBytes, buffer_->small(),
 		                 CloudsBuffer::kSmallBufferBytes);
@@ -243,7 +291,9 @@ void CloudsAdapter::process(std::span<StereoSample> buffer) {
 		// at the call site that we know the difference between the two.
 		processor_->set_silence(false);
 		processor_->set_bypass(false);
-		processor_->set_playback_mode(kPlaybackModeFor[util::to_underlying(mode_)]);
+		processor_->set_playback_mode(CLOUDS_DIAG_FORCED_PARAMS(mode_)
+		                                  ? clouds::PLAYBACK_MODE_GRANULAR
+		                                  : kPlaybackModeFor[util::to_underlying(mode_)]);
 		resetResamplerState();
 		needsInit_ = false;
 	}
@@ -297,7 +347,12 @@ void CloudsAdapter::process(std::span<StereoSample> buffer) {
 			shortIn[i].r = static_cast<int16_t>(std::clamp(f.r, -1.0f, 1.0f) * 32767.0f);
 		}
 
-		processor_->Process(shortIn, shortOut, clouds::kMaxBlockSize);
+		if (!diagBypassEngine) {
+			processor_->Process(shortIn, shortOut, clouds::kMaxBlockSize);
+		}
+		else {
+			std::memcpy(shortOut, shortIn, sizeof(shortIn));
+		}
 
 		for (size_t i = 0; i < clouds::kMaxBlockSize; ++i) {
 			if (upCount_ < kRingFrames) {
