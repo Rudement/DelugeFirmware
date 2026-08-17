@@ -297,6 +297,7 @@ char const* getParamDisplayName(Kind kind, int32_t p) {
 		    [UNPATCHED_SIDECHAIN_SHAPE] = STRING_FOR_SIDECHAIN_SHAPE,
 		    [UNPATCHED_COMPRESSOR_THRESHOLD] = STRING_FOR_THRESHOLD,
 		    [UNPATCHED_HEAT_TONE] = STRING_FOR_HEAT_TONE,
+		    [UNPATCHED_CLOUDS_SEND] = STRING_FOR_CLOUDS_SEND,
 		    [UNPATCHED_ARP_GATE] = STRING_FOR_ARP_GATE_MENU_TITLE,
 		    [UNPATCHED_ARP_RHYTHM] = STRING_FOR_ARP_RHYTHM_MENU_TITLE,
 		    [UNPATCHED_ARP_SEQUENCE_LENGTH] = STRING_FOR_ARP_SEQUENCE_LENGTH_MENU_TITLE,
@@ -581,6 +582,9 @@ constexpr char const* paramNameForFileConst(Kind const kind, ParamType const par
 
 		case UNPATCHED_HEAT_TONE:
 			return "heatTone";
+
+		case UNPATCHED_CLOUDS_SEND:
+			return "cloudsSend";
 
 		case UNPATCHED_ARP_GATE:
 			return "arpGate";

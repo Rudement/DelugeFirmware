@@ -144,7 +144,7 @@ GlobalEffectableForClip::GlobalEffectableForClip() {
 	}
 
 	processReverbSendAndVolume(global_effectable_audio, reverbBuffer, volumePostFX, postReverbVolume, reverbSendAmount,
-	                           pan, true);
+	                           pan, true, paramManagerForClip);
 
 	if (compThreshold > 0) {
 		compressor.renderVolNeutral(global_effectable_audio, volumePostFX);

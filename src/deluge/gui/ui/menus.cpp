@@ -847,10 +847,22 @@ UnpatchedParam cloudsFeedbackMenu{STRING_FOR_CLOUDS_FEEDBACK_SHORT, STRING_FOR_C
 UnpatchedParam cloudsReverbMenu{STRING_FOR_CLOUDS_REVERB_SHORT, STRING_FOR_CLOUDS_REVERB,
                                 params::UNPATCHED_CLOUDS_REVERB};
 
+// The per-source send. UNPATCHED_CLOUDS_SEND is a *shared* param, so this one
+// menu item works for a Sound, a Kit, an audio clip and the song alike -- which
+// is the whole reason Clouds is a send rather than nine params per voice.
+UnpatchedParam cloudsSendMenu{STRING_FOR_CLOUDS_SEND_SHORT, STRING_FOR_CLOUDS_SEND, params::UNPATCHED_CLOUDS_SEND};
+
+// A Sound has no Clouds page of its own -- the nine engine parameters belong to
+// the single song-level instance -- but it does need somewhere to set how much
+// of itself to send. This one-item page is that somewhere, and it goes in the
+// Sound horizontal chain, which is what 1.3 actually navigates.
+HorizontalMenu cloudsSendPageForSound{STRING_FOR_CLOUDS, {&cloudsSendMenu}};
+
 HorizontalMenu cloudsMenu{
     STRING_FOR_CLOUDS,
     {
         &cloudsModeMenu,
+        &cloudsSendMenu,
         &cloudsBlendMenu,
         &cloudsPositionMenu,
         &cloudsSizeMenu,
@@ -2006,7 +2018,8 @@ deluge::vector<HorizontalMenu*> horizontalMenusChainForSound = {
 	&filtersMenuGroup, &eqMenu, &modFXMenu,
 	&reverbMenuGroup, &delayMenu, &soundDistortionMenu,
 	&sidechainMenu, &audioCompMenu, &stutterMenu,
-	&arpMenuGroup, &randomizerMenu
+	&arpMenuGroup, &randomizerMenu,
+	&cloudsSendPageForSound
 };
 
 deluge::vector<HorizontalMenu*> horizontalMenusChainForKit = {

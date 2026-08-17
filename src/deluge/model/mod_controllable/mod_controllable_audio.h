@@ -52,9 +52,14 @@ public:
 	virtual void cloneFrom(ModControllableAudio* other);
 
 	void processStutter(std::span<StereoSample> buffer, ParamManager* paramManager);
+	/// `paramManagerForCloudsSend` is optional: pass the source's param manager
+	/// to have it feed the song's Clouds send bus, or nullptr to opt out. It is
+	/// a separate argument rather than read from a member because Sounds and
+	/// GlobalEffectables reach their param manager by different routes.
 	void processReverbSendAndVolume(std::span<StereoSample> buffer, int32_t* reverbBuffer, int32_t postFXVolume,
 	                                int32_t postReverbVolume, int32_t reverbSendAmount, int32_t pan = 0,
-	                                bool doAmplitudeIncrement = false);
+	                                bool doAmplitudeIncrement = false,
+	                                ParamManager* paramManagerForCloudsSend = nullptr);
 	void writeAttributesToFile(Serializer& writer);
 	void writeTagsToFile(Serializer& writer);
 	virtual Error readTagFromFile(Deserializer& reader, char const* tagName, ParamManagerForTimeline* paramManager,

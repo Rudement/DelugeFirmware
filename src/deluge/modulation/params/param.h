@@ -202,6 +202,13 @@ enum UnpatchedShared : ParamType {
 	UNPATCHED_SIDECHAIN_SHAPE,
 	UNPATCHED_COMPRESSOR_THRESHOLD,
 	UNPATCHED_HEAT_TONE,
+	/// How much of this sound/clip is sent to the song's single Clouds
+	/// instance. SHARED, not global, because a Sound needs it too -- that is
+	/// the whole point of Clouds being a send. Inserting here shifts the
+	/// numeric IDs of everything below, which is safe: songs and MIDI-follow
+	/// files both persist params by NAME via paramNameForFile(), never by
+	/// index.
+	UNPATCHED_CLOUDS_SEND,
 	// Arp
 	UNPATCHED_FIRST_ARP_PARAM,
 	UNPATCHED_ARP_GATE = UNPATCHED_FIRST_ARP_PARAM,

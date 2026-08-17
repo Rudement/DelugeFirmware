@@ -1042,6 +1042,8 @@ PLACE_SDRAM_DATA Language english{
         {STRING_FOR_CLOUDS_FEEDBACK_SHORT, "Fdbk"},
         {STRING_FOR_CLOUDS_REVERB, "Reverb"},
         {STRING_FOR_CLOUDS_REVERB_SHORT, "Verb"},
+        {STRING_FOR_CLOUDS_SEND, "Clouds Send"},
+        {STRING_FOR_CLOUDS_SEND_SHORT, "Clds"},
     },
 };
 } // namespace deluge::l10n::built_in

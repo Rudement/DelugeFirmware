@@ -2535,8 +2535,10 @@ void Song::renderAudio(std::span<StereoSample> outputBuffer, int32_t* reverbBuff
 	globalEffectable.processFXForGlobalEffectable(outputBuffer, &volumePostFX, &paramManager, delayWorkingState, true,
 	                                              reverbSendAmount >> 3);
 
+	// The song feeds the Clouds bus too, so "Clouds across the whole mix" is
+	// just the song's own send turned up -- no special case for it.
 	globalEffectable.processReverbSendAndVolume(outputBuffer, reverbBuffer, volumePostFX, postReverbVolume,
-	                                            reverbSendAmount >> 1);
+	                                            reverbSendAmount >> 1, 0, false, &paramManager);
 	AudioEngine::logAction("done global effectables");
 
 	if (playbackHandler.isEitherClockActive() && !playbackHandler.ticksLeftInCountIn

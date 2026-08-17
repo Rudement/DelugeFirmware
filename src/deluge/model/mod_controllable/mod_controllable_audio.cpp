@@ -20,6 +20,7 @@
 #include "definitions_cxx.hpp"
 #include "deluge/dsp/granular/GranularProcessor.h"
 #include "dsp/clouds_adapter.h"
+#include "processing/engines/audio_engine.h"
 #include "deluge/model/settings/runtime_feature_settings.h"
 #include "dsp/stereo_sample.h"
 #include "gui/l10n/l10n.h"
@@ -295,7 +296,8 @@ void ModControllableAudio::processGrainFX(std::span<StereoSample> buffer, int32_
 void ModControllableAudio::processReverbSendAndVolume(std::span<StereoSample> buffer, int32_t* reverbBuffer,
                                                       int32_t postFXVolume, int32_t postReverbVolume,
                                                       int32_t reverbSendAmount, int32_t pan,
-                                                      bool doAmplitudeIncrement) {
+                                                      bool doAmplitudeIncrement,
+                                                      ParamManager* paramManagerForCloudsSend) {
 
 	int32_t reverbSendAmountAndPostFXVolume = multiply_32x32_rshift32(postFXVolume, reverbSendAmount) << 5;
 
@@ -324,10 +326,42 @@ void ModControllableAudio::processReverbSendAndVolume(std::span<StereoSample> bu
 		amplitudeIncrementR = multiply_32x32_rshift32(amplitudeIncrementR, amplitudeR) << 2;
 	}
 
+	// Clouds send. Tapped at exactly the same point as the reverb send -- after
+	// this source's own FX, before its post-FX volume -- so the two behave
+	// identically from the user's side. Stereo rather than summed to mono,
+	// because Clouds' stereo spread has nothing to work with otherwise.
+	int32_t cloudsSendAmount = 0;
+	StereoSample* cloudsSend = nullptr;
+	if (paramManagerForCloudsSend != nullptr) {
+		// q31 spans -2^31..2^31-1 with the param's minimum at the bottom; a send
+		// amount wants 0..2^31. Same shift-and-bias the EQ bands use on their
+		// own unpatched params.
+		cloudsSendAmount =
+		    (paramManagerForCloudsSend->getUnpatchedParamSet()->getValue(params::UNPATCHED_CLOUDS_SEND) >> 1)
+		    + 1073741824;
+		if (cloudsSendAmount > 0) {
+			std::span<StereoSample> bus = AudioEngine::getCloudsSendBuffer(buffer.size());
+			cloudsSend = bus.data();
+		}
+		else {
+			cloudsSendAmount = 0;
+		}
+	}
+	int32_t cloudsSendAndPostFXVolume = multiply_32x32_rshift32(postFXVolume, cloudsSendAmount) << 5;
+
 	for (StereoSample& sample : buffer) {
 		// Send to reverb
 		if (reverbSendAmount != 0) {
 			*(reverbBuffer++) += multiply_32x32_rshift32(sample.l + sample.r, reverbSendAmountAndPostFXVolume) << 1;
+		}
+
+		// Send to Clouds
+		if (cloudsSend != nullptr) {
+			cloudsSend->l = add_saturate(cloudsSend->l, multiply_32x32_rshift32(sample.l, cloudsSendAndPostFXVolume)
+			                                                << 1);
+			cloudsSend->r = add_saturate(cloudsSend->r, multiply_32x32_rshift32(sample.r, cloudsSendAndPostFXVolume)
+			                                                << 1);
+			++cloudsSend;
 		}
 
 		if (doAmplitudeIncrement) {

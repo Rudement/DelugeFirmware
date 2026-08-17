@@ -185,6 +185,12 @@ uint16_t lastRoutineTime;
 
 alignas(CACHE_LINE_SIZE) std::array<StereoSample, SSI_TX_BUFFER_NUM_SAMPLES> renderingMemory;
 alignas(CACHE_LINE_SIZE) std::array<int32_t, 2 * SSI_TX_BUFFER_NUM_SAMPLES> reverbMemory;
+/// Clouds send bus. Stereo, unlike the reverb send, because Clouds is a
+/// stereo effect and its stereo spread is meaningless on a summed mono feed.
+/// Zeroed at the top of every render; every sound and clip adds its own
+/// contribution during output rendering; the song's single Clouds instance
+/// consumes it in GlobalEffectable::processClouds().
+alignas(CACHE_LINE_SIZE) std::array<StereoSample, SSI_TX_BUFFER_NUM_SAMPLES> cloudsSendMemory;
 
 StereoSample* renderingBufferOutputPos = renderingMemory.begin();
 StereoSample* renderingBufferOutputEnd = renderingMemory.begin();
@@ -624,6 +630,7 @@ void renderAudio(size_t numSamples) {
 
 	memset(&renderingMemory, 0, renderingBuffer.size_bytes());
 	memset(&reverbMemory, 0, reverbBuffer.size_bytes());
+	memset(&cloudsSendMemory, 0, sizeof(StereoSample) * numSamples);
 
 	if (sideChainHitPending != 0) {
 		timeLastSideChainHit = audioSampleTimer;
@@ -659,6 +666,7 @@ void renderAudioForStemExport(size_t numSamples) {
 
 	memset(&renderingMemory, 0, renderingBuffer.size_bytes());
 	memset(&reverbMemory, 0, reverbBuffer.size_bytes());
+	memset(&cloudsSendMemory, 0, sizeof(StereoSample) * numSamples);
 
 	if (sideChainHitPending) {
 		timeLastSideChainHit = audioSampleTimer;
@@ -815,6 +823,10 @@ startAgain:
 void feedReverbBackdoorForGrain(int index, q31_t value) {
 	reverbMemory[index] += value;
 }
+std::span<StereoSample> getCloudsSendBuffer(size_t numSamples) {
+	return {cloudsSendMemory.data(), numSamples};
+}
+
 void renderReverb(size_t numSamples) {
 	std::span renderingBuffer{renderingMemory.data(), numSamples};
 	std::span reverbBuffer{reverbMemory.data(), numSamples};

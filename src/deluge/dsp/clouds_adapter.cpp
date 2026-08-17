@@ -196,9 +196,16 @@ void CloudsAdapter::setTexture(q31_t v) {
 }
 
 void CloudsAdapter::setBlend(q31_t v) {
-	if (processor_ != nullptr) {
-		processor_->mutable_parameters()->dry_wet = q31ToUnipolar(v);
-	}
+	// Intentionally empty. Clouds is wired as a SEND, so the engine always runs
+	// fully wet (dry_wet is pinned to 1.0 at Init) and the Blend control is the
+	// return level, applied by GlobalEffectable::processClouds() when the wet
+	// signal is mixed back into the mix. Pushing it here as well would
+	// attenuate twice.
+	//
+	// Kept as a no-op rather than deleted so the setter surface still mirrors
+	// the nine parameters one-for-one, and so a future insert mode has an
+	// obvious place to reconnect it.
+	(void)v;
 }
 
 void CloudsAdapter::setSpread(q31_t v) {
@@ -243,6 +250,9 @@ void CloudsAdapter::process(std::span<StereoSample> buffer) {
 		// at the call site that we know the difference between the two.
 		processor_->set_silence(false);
 		processor_->set_bypass(false);
+		// Fully wet, always: see setBlend(). The dry path back to the mix is
+		// the untouched signal that never entered the send bus.
+		processor_->mutable_parameters()->dry_wet = 1.0f;
 		processor_->set_playback_mode(kPlaybackModeFor[util::to_underlying(mode_)]);
 		resetResamplerState();
 		needsInit_ = false;

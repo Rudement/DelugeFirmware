@@ -89,6 +89,26 @@ the adapter boundary instead. See `../clouds_adapter.h`.
 
 ## Wiring status
 
+**Clouds is a SEND, not an insert.** One instance, owned by the song, fed from
+a stereo bus that every sound, kit and audio clip can contribute to via a
+shared `UNPATCHED_CLOUDS_SEND` parameter. Structurally identical to the reverb
+send, and for the same reason: the engine is too expensive to run more than
+once. "Clouds across the whole mix" is just the song's own send turned up --
+there is no special case for it.
+
+Blend is the **return level**, applied when the wet signal is mixed back in.
+The engine itself runs permanently fully wet (`dry_wet = 1.0`); the dry path
+is simply the signal that never entered the send bus. `CloudsAdapter::setBlend`
+is a deliberate no-op -- pushing Blend to `dry_wet` as well would attenuate
+twice and make the control a square law.
+
+`UNPATCHED_CLOUDS_SEND` lives in the **shared** param block, not the global
+one, because a Sound needs it too. That shifts the numeric IDs of every
+unpatched param below it, which is safe: songs and MIDI-follow files both
+persist parameters by name via `paramNameForFile()`, never by index. Verified
+before making the change.
+
+
 The vendoring commit left this compiling but unreachable. It is now wired in
 as a standalone GlobalEffectable effect on `feat/clouds-fx-13`:
 

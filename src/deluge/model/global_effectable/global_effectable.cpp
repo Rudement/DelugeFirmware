@@ -18,6 +18,7 @@
 #include "model/global_effectable/global_effectable.h"
 #include "definitions_cxx.hpp"
 #include "dsp/clouds_adapter.h"
+#include "processing/engines/audio_engine.h"
 #include "dsp/stereo_sample.h"
 #include "gui/l10n/l10n.h"
 #include "gui/views/performance_view.h"
@@ -1286,14 +1287,8 @@ void GlobalEffectable::processFXForGlobalEffectable(std::span<StereoSample> buff
 
 void GlobalEffectable::processClouds(std::span<StereoSample> buffer, ParamManager* paramManager) {
 	if (cloudsMode == CloudsMode::OFF || cloudsFX == nullptr) {
-		// Nothing allocated and nothing to do -- the common case, and the
-		// reason Clouds is free when switched off.
 		return;
 	}
-
-	// Reclaim the working buffer (or take a fresh one, if it was stolen since
-	// the last block). If the allocator has nothing to give, pass the audio
-	// through dry rather than dropping the block.
 	if (!cloudsFX->acquireBuffer()) {
 		return;
 	}
@@ -1304,12 +1299,31 @@ void GlobalEffectable::processClouds(std::span<StereoSample> buffer, ParamManage
 	cloudsFX->setPitch(unpatchedParams->getValue(params::UNPATCHED_CLOUDS_PITCH));
 	cloudsFX->setDensity(unpatchedParams->getValue(params::UNPATCHED_CLOUDS_DENSITY));
 	cloudsFX->setTexture(unpatchedParams->getValue(params::UNPATCHED_CLOUDS_TEXTURE));
-	cloudsFX->setBlend(unpatchedParams->getValue(params::UNPATCHED_CLOUDS_BLEND));
 	cloudsFX->setSpread(unpatchedParams->getValue(params::UNPATCHED_CLOUDS_SPREAD));
 	cloudsFX->setFeedback(unpatchedParams->getValue(params::UNPATCHED_CLOUDS_FEEDBACK));
 	cloudsFX->setReverb(unpatchedParams->getValue(params::UNPATCHED_CLOUDS_REVERB));
+	// Blend is NOT pushed to the engine any more. As a send, Clouds runs fully
+	// wet internally and Blend is the return level applied when the wet signal
+	// is mixed back in below. Feeding it to dry_wet as well would attenuate
+	// twice and make the knob behave like a square law.
 
-	cloudsFX->process(buffer);
+	// Clouds now processes the SEND BUS, not the buffer it was handed. Every
+	// sound and clip has added its own contribution during output rendering
+	// (see ModControllableAudio::processReverbSendAndVolume), including the
+	// song itself, so "Clouds over the whole mix" is just the song's own send
+	// turned up. Processing is in place on the bus; the result is then mixed
+	// into `buffer` at the return level.
+	std::span<StereoSample> sendBus = AudioEngine::getCloudsSendBuffer(buffer.size());
+	cloudsFX->process(sendBus);
+
+	int32_t returnLevel = (unpatchedParams->getValue(params::UNPATCHED_CLOUDS_BLEND) >> 1) + 1073741824;
+	if (returnLevel <= 0) {
+		return;
+	}
+	for (size_t i = 0; i < buffer.size(); ++i) {
+		buffer[i].l = add_saturate(buffer[i].l, multiply_32x32_rshift32(sendBus[i].l, returnLevel) << 1);
+		buffer[i].r = add_saturate(buffer[i].r, multiply_32x32_rshift32(sendBus[i].r, returnLevel) << 1);
+	}
 }
 
 namespace modfx {
