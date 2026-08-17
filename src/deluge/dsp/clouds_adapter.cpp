@@ -20,6 +20,7 @@
 #include "clouds/dsp/frame.h"
 #include "clouds/dsp/granular_processor.h"
 #include "memory/general_memory_allocator.h"
+#include "processing/engines/audio_engine.h"
 
 #include <algorithm>
 #include <cstring>
@@ -156,6 +157,7 @@ void CloudsAdapter::setMode(CloudsMode mode) {
 	}
 	mode_ = mode;
 	fadeInRemaining_ = kFadeInSamples; // hide the reallocation discontinuity
+	heavyPreparePending_ = true;
 	if (processor_ != nullptr) {
 		// Upstream reallocates its internal players out of the working buffer
 		// when the playback mode changes, so this is only safe once Init has
@@ -257,6 +259,7 @@ void CloudsAdapter::process(std::span<StereoSample> buffer) {
 		processor_->set_playback_mode(kPlaybackModeFor[util::to_underlying(mode_)]);
 		resetResamplerState();
 		fadeInRemaining_ = kFadeInSamples;
+		heavyPreparePending_ = true;
 		needsInit_ = false;
 	}
 
@@ -297,6 +300,23 @@ void CloudsAdapter::process(std::span<StereoSample> buffer) {
 	}
 
 	// --- Stage 2: run whole native blocks through the vendored processor. ---
+	//
+	// Prepare() is cheap on most blocks, but on a mode change or a re-Init it
+	// takes its reset path: fourteen Init/Allocate calls -- diffuser, reverb,
+	// correlator, pitch shifter, and then the players or the phase vocoder or
+	// the resonator. Upstream runs Prepare() from its main loop precisely
+	// because of this; we have no choice but to run it here, inside the audio
+	// render, so tell the engine not to cull voices over the resulting spike.
+	//
+	// Without this, changing mode blew the audio deadline, the engine culled
+	// every voice, and the synth stayed silent until playback was stopped and
+	// restarted to re-trigger it. Which also made Resonestor look broken: a
+	// culled synth puts nothing into the send bus, and a resonator with no
+	// input has nothing to resonate.
+	if (heavyPreparePending_) {
+		AudioEngine::bypassCulling = true;
+		heavyPreparePending_ = false;
+	}
 	processor_->Prepare();
 	while (downCount_ >= clouds::kMaxBlockSize) {
 		clouds::ShortFrame shortIn[clouds::kMaxBlockSize];

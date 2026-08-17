@@ -179,6 +179,10 @@ private:
 	/// audible click. Ramping the return in over a few milliseconds costs
 	/// nothing and removes it.
 	int32_t fadeInRemaining_ = 0;
+
+	/// Set when the next Prepare() will take its expensive reallocation path,
+	/// so process() can tell the audio engine not to cull voices over it.
+	bool heavyPreparePending_ = true;
 	static constexpr int32_t kFadeInSamples = kSampleRate / 50; // 20 ms
 
 	/// Set when the buffer is (re)acquired, so the next process() re-Inits
