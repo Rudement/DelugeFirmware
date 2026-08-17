@@ -58,8 +58,13 @@ public:
 
 	deluge::modulation::params::Kind getParamKind();
 	uint32_t getParamIndex();
-	ParamSet* getParamSet() final;
-	ModelStackWithAutoParam* getModelStack(void* memory) final;
+	// NOT final: clouds_fx::SongParam overrides both so that a Clouds engine
+	// parameter always resolves to the song's param manager, whatever context
+	// the menu was opened from. There is one Clouds engine, so there is one
+	// set of its parameters, and they must be reachable from a synth clip
+	// whose own param set does not contain them.
+	ParamSet* getParamSet() override;
+	ModelStackWithAutoParam* getModelStack(void* memory) override;
 
 	int32_t getParamValue() {
 		readCurrentValue();

@@ -113,9 +113,12 @@ public:
 	}
 
 	ModelStackWithAutoParam* getModelStack(void* memory) final {
-		ModelStackWithThreeMainThings* modelStack = setupModelStackWithThreeMainThingsButNoNoteRow(
-		    memory, currentSong, &currentSong->globalEffectable, nullptr, &currentSong->paramManager);
-		return modelStack->getUnpatchedAutoParamFromId(getP());
+		// The established route to a song-global unpatched param -- the same one
+		// performance view and the automation arranger use. Hand-rolling the
+		// stack worked but passed a null timeline counter, which would have cost
+		// us automation on these params.
+		ModelStackWithThreeMainThings* modelStack = currentSong->setupModelStackWithSongAsTimelineCounter(memory);
+		return currentSong->getModelStackWithParam(modelStack, getP());
 	}
 
 	void readCurrentValue() final {
