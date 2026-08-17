@@ -71,6 +71,23 @@ CloudsAdapter::CloudsAdapter() {
 	// is acquired lazily by acquireBuffer().
 	void* memory = GeneralMemoryAllocator::get().allocLowSpeed(sizeof(clouds::GranularProcessor));
 	if (memory != nullptr) {
+		// ZERO IT FIRST. Upstream declares its GranularProcessor as a global
+		// in clouds.cc, so on the module it lives in .bss and every member
+		// starts at zero. It quietly depends on that: `silence_` is assigned
+		// by neither the (empty) constructor nor Init(), and Process() opens
+		// with
+		//
+		//     if (silence_ || reset_buffers_ || previous_playback_mode_ != ...)
+		//         fill(output, 0); return;
+		//
+		// so a garbage-nonzero silence_ means the engine outputs digital
+		// silence forever, with no other symptom. We placement-new into
+		// allocator memory that is not cleared, so .bss has to be reproduced
+		// by hand. parameters_.trigger/.gate/.granular.reverse are in the same
+		// position -- never assigned by the DSP, supplied by upstream's
+		// ui.cc, which is not vendored -- and this zeroing is what defines
+		// them too.
+		std::memset(memory, 0, sizeof(clouds::GranularProcessor));
 		processor_ = new (memory) clouds::GranularProcessor();
 	}
 }
@@ -220,6 +237,12 @@ void CloudsAdapter::process(std::span<StereoSample> buffer) {
 	if (needsInit_) {
 		processor_->Init(buffer_->large(), CloudsBuffer::kLargeBufferBytes, buffer_->small(),
 		                 CloudsBuffer::kSmallBufferBytes);
+		// Init() sets bypass_ but NOT silence_ -- see the constructor. Saying
+		// it explicitly here means a future re-vendor that reorders Init()
+		// cannot silently reintroduce the silent-engine bug, and it documents
+		// at the call site that we know the difference between the two.
+		processor_->set_silence(false);
+		processor_->set_bypass(false);
 		processor_->set_playback_mode(kPlaybackModeFor[util::to_underlying(mode_)]);
 		resetResamplerState();
 		needsInit_ = false;
