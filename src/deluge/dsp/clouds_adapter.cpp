@@ -336,12 +336,20 @@ void CloudsAdapter::process(std::span<StereoSample> buffer) {
 		sample.r = static_cast<q31_t>(std::clamp(outR, -1.0f, 1.0f) * 2147483647.0f);
 	}
 
-	// Unpin between blocks. This is the difference between the buffer being
-	// genuinely stealable and merely being allocated out of the stealable
-	// pool: GrainBuffer stays pinned for as long as grain FX is switched on,
-	// but it has an explicit shutdown countdown to hang that on and Clouds
-	// does not. The trade is that under real memory pressure Clouds loses its
-	// recording and rebuilds it -- audible, but recoverable, and better than
-	// 180 KB the allocator cannot touch while some sample load fails instead.
-	releaseBuffer();
+	// NOTE: the buffer is deliberately NOT released here.
+	//
+	// It used to be, on the theory that unpinning between blocks made the
+	// memory "genuinely" stealable rather than merely allocated from the
+	// stealable pool. That was wrong, and measurably so. Losing the buffer
+	// forces a re-Init, Prepare() then takes its reset_buffers_ path,
+	// reallocates the grain players and clears the recording buffer -- so
+	// every steal throws away the audio Clouds exists to granulate. Measured
+	// natively against the real engine: re-Init on every block drops wet
+	// output from 0.30 RMS to 0.069, a 4x loss, while the dry path is
+	// untouched and hides it.
+	//
+	// GrainBuffer stays pinned for as long as grain FX is on for exactly this
+	// reason. Clouds now does the same: pinned for the life of the adapter,
+	// and the adapter is destroyed the moment the mode goes OFF, which is
+	// what actually returns the 180 KB.
 }

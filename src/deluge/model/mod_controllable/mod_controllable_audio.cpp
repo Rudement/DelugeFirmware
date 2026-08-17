@@ -1978,6 +1978,7 @@ bool ModControllableAudio::setCloudsMode(CloudsMode mode) {
 
 void ModControllableAudio::disableClouds() {
 	if (cloudsFX != nullptr) {
+		cloudsFX->releaseBuffer();
 		cloudsFX->~CloudsAdapter();
 		delugeDealloc(cloudsFX);
 		cloudsFX = nullptr;

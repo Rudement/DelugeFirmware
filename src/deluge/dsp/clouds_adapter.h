@@ -126,9 +126,10 @@ public:
 	/// caller must skip processing this block.
 	bool acquireBuffer();
 
-	/// Unpin the buffer so the allocator may steal it. Called at the end of
-	/// every process(), so the memory is only untouchable for the duration of
-	/// one audio block rather than for as long as Clouds is switched on.
+	/// Unpin the buffer so the allocator may steal it. Called only when Clouds
+	/// is being switched off -- NOT per block. A steal costs the entire
+	/// recording, so the buffer stays pinned while the effect is live, the
+	/// same bargain GrainBuffer makes.
 	void releaseBuffer();
 
 	/// Called by CloudsBuffer::steal(). Drops our pointer without freeing:
