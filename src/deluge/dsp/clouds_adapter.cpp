@@ -155,6 +155,7 @@ void CloudsAdapter::setMode(CloudsMode mode) {
 		return;
 	}
 	mode_ = mode;
+	fadeInRemaining_ = kFadeInSamples; // hide the reallocation discontinuity
 	if (processor_ != nullptr) {
 		// Upstream reallocates its internal players out of the working buffer
 		// when the playback mode changes, so this is only safe once Init has
@@ -255,6 +256,7 @@ void CloudsAdapter::process(std::span<StereoSample> buffer) {
 		processor_->mutable_parameters()->dry_wet = 1.0f;
 		processor_->set_playback_mode(kPlaybackModeFor[util::to_underlying(mode_)]);
 		resetResamplerState();
+		fadeInRemaining_ = kFadeInSamples;
 		needsInit_ = false;
 	}
 
@@ -342,6 +344,14 @@ void CloudsAdapter::process(std::span<StereoSample> buffer) {
 		}
 		float outL = prevOutL_ + (curOutL_ - prevOutL_) * upsamplePhase_;
 		float outR = prevOutR_ + (curOutR_ - prevOutR_) * upsamplePhase_;
+		if (fadeInRemaining_ > 0) {
+			// Linear ramp 0 -> 1 across kFadeInSamples. Only ever runs for 20 ms
+			// after a mode change or a re-Init, so the cost is irrelevant.
+			float gain = 1.0f - (static_cast<float>(fadeInRemaining_) / static_cast<float>(kFadeInSamples));
+			outL *= gain;
+			outR *= gain;
+			--fadeInRemaining_;
+		}
 		sample.l = static_cast<q31_t>(std::clamp(outL, -1.0f, 1.0f) * 2147483647.0f);
 		sample.r = static_cast<q31_t>(std::clamp(outR, -1.0f, 1.0f) * 2147483647.0f);
 	}

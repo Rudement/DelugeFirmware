@@ -171,6 +171,16 @@ private:
 
 	CloudsMode mode_ = CloudsMode::GRANULAR;
 
+	/// Samples of fade-in remaining after a mode change or a re-Init.
+	///
+	/// Changing playback mode makes Prepare() take its reset path: it
+	/// reallocates the grain players and re-Inits the audio buffers, so the
+	/// engine's output jumps discontinuously. Straight into the mix that is an
+	/// audible click. Ramping the return in over a few milliseconds costs
+	/// nothing and removes it.
+	int32_t fadeInRemaining_ = 0;
+	static constexpr int32_t kFadeInSamples = kSampleRate / 50; // 20 ms
+
 	/// Set when the buffer is (re)acquired, so the next process() re-Inits
 	/// upstream against the new memory before touching it.
 	bool needsInit_ = true;

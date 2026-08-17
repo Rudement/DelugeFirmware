@@ -228,6 +228,37 @@ Blend setting, which looks exactly like a broken port. **The default is now
 menu 40 / density 0.80.** If Clouds ever appears silent again, check Density
 before anything else.
 
+## Two more parameters with non-obvious dead spots
+
+Density's dead zone (above) is not the only one. Both were found by running
+the engine natively rather than by reading it, and both silence a mode
+outright at the value a Deluge q31 default would naturally pick.
+
+**Spread at minimum silences Resonestor.** `stereo_spread` drives two settings
+from one control:
+
+```c
+set_stereo(ss < 0.5f ? 0.0f : (ss - 0.5f) * 2.0f);
+set_separation(ss > 0.5f ? 0.0f : (0.5f - ss) * 2.0f);
+```
+
+so `ss = 0` means `separation = 1.0`, and Resonestor emits nothing. Measured:
+at Spread 0 it is silent for *every* combination of density, reverb, feedback
+and distortion; at Spread 0.5 it produces output at the defaults. Spread now
+defaults to centre.
+
+**Blend/Return is distortion in Resonestor**, not a mix:
+`resonestor_.set_distortion(parameters_.dry_wet)`. Since the send pins
+`dry_wet` to 1.0, Resonestor currently runs at maximum distortion always.
+Resonestor is also excluded from the internal dry/wet crossfade entirely, so
+this costs no level -- but it is a control the user cannot reach. Wiring
+Return through to `dry_wet` in Resonestor mode only would restore it, and is
+worth doing.
+
+Also note Resonestor's feedback mapping cubes its input three times --
+effectively `density^27` -- so it does nothing below about 0.9 and then rises
+very steeply.
+
 ## Still not done
 
 1. The 44.1 kHz <-> 32 kHz resampler is still the plain linear interpolator,
