@@ -18,6 +18,7 @@
 #include "model/voice/voice_unison_part_source.h"
 #include "dsp/dx/dx7note.h"
 #include "dsp/dx/engine.h"
+#include "dsp/plaits_adapter.h"
 #include "memory/general_memory_allocator.h"
 #include "model/sample/sample_cache.h"
 #include "model/song/song.h"
@@ -75,6 +76,24 @@ bool VoiceUnisonPartSource::noteOn(Voice* voice, Source* source, VoiceSamplePlay
 		DxPatch* patch = source->ensureDxPatch();
 		dxVoice->init(*patch, voice->noteCodeAfterArpeggiation, velocity);
 	}
+	// Mirrors the DX7 branch above deliberately, including the nullptr-means-
+	// "no voice for you" contract: returning false stops this unison part
+	// rather than the whole Voice.
+	else if (synthMode != SynthMode::FM && source->oscType == OscType::PLAITS) {
+		if (!plaitsVoice) { // We might actually already have one, and just be restarting this voice
+			PlaitsEngine* engine = getPlaitsEngine();
+			if (!engine) {
+				return false;
+			}
+			plaitsVoice = engine->solicitPlaitsVoice();
+			if (!plaitsVoice) {
+				return false;
+			}
+		}
+
+		plaitsVoice->engineIndex = source->plaitsEngine;
+		plaitsVoice->init(voice->noteCodeAfterArpeggiation, velocity);
+	}
 	else {
 		if (oscRetriggerPhase != 0xFFFFFFFF) {
 			oscPos = getOscInitialPhaseForZero(source->oscType) + oscRetriggerPhase;
@@ -99,6 +118,11 @@ void VoiceUnisonPartSource::unassign(bool deletingSong) {
 	if (dxVoice != nullptr) {
 		dxEngine->dxVoiceUnassigned(dxVoice);
 		dxVoice = nullptr;
+	}
+
+	if (plaitsVoice != nullptr) {
+		plaitsEngine->plaitsVoiceUnassigned(plaitsVoice);
+		plaitsVoice = nullptr;
 	}
 
 	if (livePitchShifter != nullptr) {

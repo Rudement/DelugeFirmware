@@ -432,6 +432,10 @@ bool UnpatchedParamSet::shouldParamIndicateMiddleValue(ModelStackWithParamId con
 		case params::UNPATCHED_DELAY_AMOUNT:
 		case params::UNPATCHED_PAN:
 		case params::UNPATCHED_PITCH_ADJUST:
+		// Clouds' pitch shifter is centred on unity, so it wants the detent
+		// too. The other eight Clouds params are genuinely unipolar and are
+		// deliberately absent from this list.
+		case params::UNPATCHED_CLOUDS_PITCH:
 			return true;
 		}
 	}

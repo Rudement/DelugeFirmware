@@ -45,6 +45,41 @@ public:
 	MultiRangeArray ranges;
 
 	DxPatch* dxPatch;
+
+	/// Which Plaits model this source renders when oscType == PLAITS.
+	uint8_t plaitsEngine = kPlaitsDefaultEngine;
+	/// Take Plaits' AUX output instead of its main one.
+	bool plaitsAux = false;
+
+	/// Plaits' low-pass gate.
+	///
+	/// OFF is the original port behaviour: Plaits' LPG and internal decay are
+	/// bypassed and the Deluge's own envelopes do all the amplitude work. Right
+	/// for pads and anything sustained, and the safe default -- turning this on
+	/// by default would change how every existing Plaits preset sounds.
+	///
+	/// ON pings the LPG on each note-on, which is where the plucks, bongos and
+	/// blooming pads in the demo videos come from. On the module the LPG is
+	/// always in circuit unless you patch LEVEL, so ON is the more faithful
+	/// setting -- it is just not the more compatible one.
+	///
+	/// No effect on the eight self-enveloped engines (the three six-op FM
+	/// banks, Inharmonic String, Modal Resonator and the three drums): upstream
+	/// forces lpg_bypass for those regardless. plaitsDecay still reaches them.
+	bool plaitsLpg = false;
+
+	/// LPG decay, 0..50 to match the menu. Maps to Plaits' patch.decay.
+	///
+	/// Read even when plaitsLpg is off, because the self-enveloped engines use
+	/// patch.decay for their own envelopes -- this is what finally gives the
+	/// three drums a decay control instead of the hardcoded 0.5 they had.
+	uint8_t plaitsDecay = 25;
+
+	/// LPG colour, 0..50. Maps to patch.lpg_colour: how much the gate acts as a
+	/// filter (dark, VCF-like) versus a plain VCA (bright). Only read when
+	/// plaitsLpg is on.
+	uint8_t plaitsLpgColour = 25;
+
 	bool dxPatchChanged = false;
 	SampleRepeatMode repeatMode;
 

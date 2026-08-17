@@ -17,6 +17,7 @@
 
 #include "model/global_effectable/global_effectable.h"
 #include "definitions_cxx.hpp"
+#include "dsp/clouds_adapter.h"
 #include "dsp/stereo_sample.h"
 #include "gui/l10n/l10n.h"
 #include "gui/views/performance_view.h"
@@ -90,6 +91,32 @@ void GlobalEffectable::initParams(ParamManager* paramManager) {
 
 	unpatchedParams->params[params::UNPATCHED_LPF_MORPH].setCurrentValueBasicForSetup(NEGATIVE_ONE_Q31);
 	unpatchedParams->params[params::UNPATCHED_HPF_MORPH].setCurrentValueBasicForSetup(NEGATIVE_ONE_Q31);
+
+	// Clouds. These defaults are Mutable's own centre-detented panel
+	// positions -- everything mid-travel except Blend, which starts fully dry
+	// so that selecting a mode is audible as "nothing yet" rather than as an
+	// abrupt wall of grains, and Feedback/Reverb, which start off. In q31,
+	// 0 is the centre of the knob's travel and NEGATIVE_ONE_Q31 is the bottom.
+	unpatchedParams->params[params::UNPATCHED_CLOUDS_POSITION].setCurrentValueBasicForSetup(0);
+	unpatchedParams->params[params::UNPATCHED_CLOUDS_SIZE].setCurrentValueBasicForSetup(0);
+	unpatchedParams->params[params::UNPATCHED_CLOUDS_PITCH].setCurrentValueBasicForSetup(0);
+	// NOT centre, unlike the rest. Clouds treats Density as a meta parameter
+	// and deliberately emits NO grains around the middle of its travel:
+	// granular_processor.cc zeroes grain overlap for density in [0.47, 0.53],
+	// and in practice the audible dead zone is wider still because overlap
+	// stays near zero either side of it. A Deluge q31 default of 0 maps to
+	// menu position 25 of 50, i.e. density 0.50 -- the exact centre of that
+	// dead zone. Shipping that would mean Clouds is silent out of the box no
+	// matter how far up Blend is turned, which is indistinguishable from
+	// being broken. Confirmed on hardware: menu positions 26-30 emit nothing.
+	// 1288490152 is menu position 40, density 0.80, which produces grains
+	// comfortably louder than the dry signal.
+	unpatchedParams->params[params::UNPATCHED_CLOUDS_DENSITY].setCurrentValueBasicForSetup(1288490152);
+	unpatchedParams->params[params::UNPATCHED_CLOUDS_TEXTURE].setCurrentValueBasicForSetup(0);
+	unpatchedParams->params[params::UNPATCHED_CLOUDS_BLEND].setCurrentValueBasicForSetup(NEGATIVE_ONE_Q31);
+	unpatchedParams->params[params::UNPATCHED_CLOUDS_SPREAD].setCurrentValueBasicForSetup(NEGATIVE_ONE_Q31);
+	unpatchedParams->params[params::UNPATCHED_CLOUDS_FEEDBACK].setCurrentValueBasicForSetup(NEGATIVE_ONE_Q31);
+	unpatchedParams->params[params::UNPATCHED_CLOUDS_REVERB].setCurrentValueBasicForSetup(NEGATIVE_ONE_Q31);
 }
 
 void GlobalEffectable::initParamsForAudioClip(ParamManagerForTimeline* paramManager) {
@@ -845,6 +872,29 @@ void GlobalEffectable::writeParamAttributesToFile(Serializer& writer, ParamManag
 	                                       valuesForOverride);
 	unpatchedParams->writeParamAsAttribute(writer, "hpfMorph", params::UNPATCHED_HPF_MORPH, writeAutomation, false,
 	                                       valuesForOverride);
+	// Clouds. Written unconditionally alongside the other FX params rather
+	// than gated on cloudsMode != OFF: a user who dials in a texture, turns
+	// Clouds off to hear the dry signal, and saves would otherwise lose all
+	// nine settings. The mode attribute is what is gated; these are cheap.
+	unpatchedParams->writeParamAsAttribute(writer, "cloudsPosition", params::UNPATCHED_CLOUDS_POSITION,
+	                                       writeAutomation, false, valuesForOverride);
+	unpatchedParams->writeParamAsAttribute(writer, "cloudsSize", params::UNPATCHED_CLOUDS_SIZE, writeAutomation, false,
+	                                       valuesForOverride);
+	unpatchedParams->writeParamAsAttribute(writer, "cloudsPitch", params::UNPATCHED_CLOUDS_PITCH, writeAutomation,
+	                                       false, valuesForOverride);
+	unpatchedParams->writeParamAsAttribute(writer, "cloudsDensity", params::UNPATCHED_CLOUDS_DENSITY, writeAutomation,
+	                                       false, valuesForOverride);
+	unpatchedParams->writeParamAsAttribute(writer, "cloudsTexture", params::UNPATCHED_CLOUDS_TEXTURE, writeAutomation,
+	                                       false, valuesForOverride);
+	unpatchedParams->writeParamAsAttribute(writer, "cloudsBlend", params::UNPATCHED_CLOUDS_BLEND, writeAutomation,
+	                                       false, valuesForOverride);
+	unpatchedParams->writeParamAsAttribute(writer, "cloudsSpread", params::UNPATCHED_CLOUDS_SPREAD, writeAutomation,
+	                                       false, valuesForOverride);
+	unpatchedParams->writeParamAsAttribute(writer, "cloudsFeedback", params::UNPATCHED_CLOUDS_FEEDBACK, writeAutomation,
+	                                       false, valuesForOverride);
+	unpatchedParams->writeParamAsAttribute(writer, "cloudsReverb", params::UNPATCHED_CLOUDS_REVERB, writeAutomation,
+	                                       false, valuesForOverride);
+
 	unpatchedParams->writeParamAsAttribute(writer, "tempo", params::UNPATCHED_TEMPO, writeAutomation, false,
 	                                       valuesForOverride);
 
@@ -980,6 +1030,52 @@ bool GlobalEffectable::readParamTagFromFile(Deserializer& reader, char const* ta
 	else if (!strcmp(tagName, "tempo")) {
 		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_TEMPO, readAutomationUpToPos);
 		reader.exitTag("tempo");
+	}
+
+	else if (!strcmp(tagName, "cloudsPosition")) {
+		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_CLOUDS_POSITION,
+		                           readAutomationUpToPos);
+		reader.exitTag("cloudsPosition");
+	}
+	else if (!strcmp(tagName, "cloudsSize")) {
+		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_CLOUDS_SIZE,
+		                           readAutomationUpToPos);
+		reader.exitTag("cloudsSize");
+	}
+	else if (!strcmp(tagName, "cloudsPitch")) {
+		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_CLOUDS_PITCH,
+		                           readAutomationUpToPos);
+		reader.exitTag("cloudsPitch");
+	}
+	else if (!strcmp(tagName, "cloudsDensity")) {
+		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_CLOUDS_DENSITY,
+		                           readAutomationUpToPos);
+		reader.exitTag("cloudsDensity");
+	}
+	else if (!strcmp(tagName, "cloudsTexture")) {
+		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_CLOUDS_TEXTURE,
+		                           readAutomationUpToPos);
+		reader.exitTag("cloudsTexture");
+	}
+	else if (!strcmp(tagName, "cloudsBlend")) {
+		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_CLOUDS_BLEND,
+		                           readAutomationUpToPos);
+		reader.exitTag("cloudsBlend");
+	}
+	else if (!strcmp(tagName, "cloudsSpread")) {
+		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_CLOUDS_SPREAD,
+		                           readAutomationUpToPos);
+		reader.exitTag("cloudsSpread");
+	}
+	else if (!strcmp(tagName, "cloudsFeedback")) {
+		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_CLOUDS_FEEDBACK,
+		                           readAutomationUpToPos);
+		reader.exitTag("cloudsFeedback");
+	}
+	else if (!strcmp(tagName, "cloudsReverb")) {
+		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_CLOUDS_REVERB,
+		                           readAutomationUpToPos);
+		reader.exitTag("cloudsReverb");
 	}
 
 	else if (!strcmp(tagName, "volume")) {
@@ -1176,8 +1272,44 @@ void GlobalEffectable::processFXForGlobalEffectable(std::span<StereoSample> buff
 		disableGrain();
 	}
 
+	// Clouds runs at the head of the chain, ahead of mod FX, EQ, delay and
+	// reverb. It is a texture generator rather than a colouring effect: the
+	// musically useful arrangement is to grain the raw signal and then shape
+	// the result, not to grain something already drenched in delay. It is
+	// also the only stage here that is rate-converted, so keeping it first
+	// means only one resampling boundary in the whole chain.
+	processClouds(buffer, paramManager);
+
 	processFX(buffer, modFXTypeNow, modFXRate, modFXDepth, delayWorkingState, postFXVolume, paramManager,
 	          anySoundComingIn, verbAmount);
+}
+
+void GlobalEffectable::processClouds(std::span<StereoSample> buffer, ParamManager* paramManager) {
+	if (cloudsMode == CloudsMode::OFF || cloudsFX == nullptr) {
+		// Nothing allocated and nothing to do -- the common case, and the
+		// reason Clouds is free when switched off.
+		return;
+	}
+
+	// Reclaim the working buffer (or take a fresh one, if it was stolen since
+	// the last block). If the allocator has nothing to give, pass the audio
+	// through dry rather than dropping the block.
+	if (!cloudsFX->acquireBuffer()) {
+		return;
+	}
+
+	UnpatchedParamSet* unpatchedParams = paramManager->getUnpatchedParamSet();
+	cloudsFX->setPosition(unpatchedParams->getValue(params::UNPATCHED_CLOUDS_POSITION));
+	cloudsFX->setSize(unpatchedParams->getValue(params::UNPATCHED_CLOUDS_SIZE));
+	cloudsFX->setPitch(unpatchedParams->getValue(params::UNPATCHED_CLOUDS_PITCH));
+	cloudsFX->setDensity(unpatchedParams->getValue(params::UNPATCHED_CLOUDS_DENSITY));
+	cloudsFX->setTexture(unpatchedParams->getValue(params::UNPATCHED_CLOUDS_TEXTURE));
+	cloudsFX->setBlend(unpatchedParams->getValue(params::UNPATCHED_CLOUDS_BLEND));
+	cloudsFX->setSpread(unpatchedParams->getValue(params::UNPATCHED_CLOUDS_SPREAD));
+	cloudsFX->setFeedback(unpatchedParams->getValue(params::UNPATCHED_CLOUDS_FEEDBACK));
+	cloudsFX->setReverb(unpatchedParams->getValue(params::UNPATCHED_CLOUDS_REVERB));
+
+	cloudsFX->process(buffer);
 }
 
 namespace modfx {

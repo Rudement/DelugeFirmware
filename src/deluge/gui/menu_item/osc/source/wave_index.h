@@ -17,6 +17,7 @@
 #pragma once
 #include "gui/menu_item/formatted_title.h"
 #include "gui/menu_item/source/patched_param.h"
+#include "gui/ui/sound_editor.h"
 #include "processing/sound/sound.h"
 
 namespace deluge::gui::menu_item::osc::source {
@@ -25,13 +26,40 @@ public:
 	WaveIndex(l10n::String name, l10n::String title_format_str, int32_t newP, uint8_t source_id)
 	    : PatchedParam(name, newP, source_id), FormattedTitle(title_format_str, source_id + 1) {}
 
-	[[nodiscard]] std::string_view getTitle() const override { return FormattedTitle::title(); }
+	/// Plaits borrows this param for TIMBRE.
+	[[nodiscard]] bool isPlaitsControl() const {
+		return soundEditor.currentSound != nullptr
+		       && soundEditor.currentSound->sources[soundEditor.currentSourceIndex].oscType == OscType::PLAITS;
+	}
+
+	[[nodiscard]] std::string_view getName() const override {
+		if (isPlaitsControl()) {
+			return l10n::getView(l10n::String::STRING_FOR_PLAITS_TIMBRE);
+		}
+		return PatchedParam::getName();
+	}
+
+	[[nodiscard]] std::string_view getTitle() const override {
+		if (isPlaitsControl()) {
+			return getName();
+		}
+		return FormattedTitle::title();
+	}
 
 	bool isRelevant(ModControllableAudio* modControllable, int32_t whichThing) override {
 		const auto sound = static_cast<Sound*>(modControllable);
 		auto& source = sound->sources[source_id_];
-		return sound->getSynthMode() != SynthMode::FM && source.oscType == OscType::WAVETABLE
-		       && source.hasAtLeastOneAudioFileLoaded();
+		if (sound->getSynthMode() == SynthMode::FM) {
+			return false;
+		}
+		// Plaits borrows this param for TIMBRE, so it must be reachable even
+		// with no wavetable loaded. (Pulse width's gate already lets any
+		// non-sample osc type through, so this is the only one that needed
+		// opening up.)
+		if (source.oscType == OscType::PLAITS) {
+			return true;
+		}
+		return source.oscType == OscType::WAVETABLE && source.hasAtLeastOneAudioFileLoaded();
 	}
 
 	[[nodiscard]] RenderingStyle getRenderingStyle() const override { return SLIDER; }

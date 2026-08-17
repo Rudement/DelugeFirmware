@@ -1,0 +1,58 @@
+# Mutable Instruments Plaits DSP, vendored.
+#
+# Built as its own static library rather than folded into deluge_dsp for three
+# reasons, all of which matter if this ever needs re-vendoring from upstream:
+#
+#  1. deluge_dsp is a UNITY_BUILD. Concatenating 40 upstream translation units
+#     that each do `using namespace std;` into one TU is asking for collisions
+#     we would then have to fix in vendored files.
+#  2. Plaits needs GNU extensions on (M_PI is hidden under strict ANSI) and
+#     upstream's own -std, which is not the Deluge's C++23.
+#  3. Keeping the include root at this directory means every upstream
+#     `#include "plaits/..."` resolves unchanged, so the vendored tree stays
+#     byte-identical to upstream and re-vendoring is a copy rather than a
+#     merge.
+#
+# stmlib moved out to ../stmlib (its own target, stmlib_dsp) when Clouds
+# arrived and needed the same support code -- see ../stmlib/CMakeLists.txt
+# for why that has to be one compiled copy, not two. `#include "stmlib/..."`
+# still resolves unchanged; the include root below just gained a second entry
+# for it.
+#
+# Upstream: https://github.com/pichenettes/eurorack (plaits, firmware 1.2)
+# Licence: MIT, see LICENSE-MIT and PROVENANCE.md in this directory.
+
+file(GLOB_RECURSE plaits_SOURCES
+  CONFIGURE_DEPENDS
+  ${CMAKE_CURRENT_LIST_DIR}/plaits/*.cc
+)
+
+add_library(plaits_dsp STATIC ${plaits_SOURCES})
+
+# Include root is this directory, so "plaits/dsp/voice.h" resolves exactly as
+# it does upstream. "stmlib/stmlib.h" resolves via stmlib_dsp's own public
+# include directory, picked up through the PUBLIC link below.
+target_include_directories(plaits_dsp PUBLIC
+  ${CMAKE_CURRENT_LIST_DIR}
+)
+
+target_link_libraries(plaits_dsp PUBLIC stmlib_dsp)
+
+set_target_properties(plaits_dsp
+    PROPERTIES
+        CXX_STANDARD 17
+        CXX_STANDARD_REQUIRED ON
+        # ON, not OFF: strict ANSI hides M_PI, which stmlib/dsp/filter.h and
+        # plaits/dsp/oscillator/sine_oscillator.h both use.
+        CXX_EXTENSIONS ON
+)
+
+target_compile_options(plaits_dsp PRIVATE
+    ${DELUGE_COMMON_COMPILE_OPTIONS}
+    # Same rationale as deluge_dsp: unity/LTO interactions with arm/thumb.
+    "-fno-lto"
+    "-finline-functions"
+    "-marm"
+    # Upstream is warning-noisy by our standards and we do not want to edit it.
+    "-w"
+)

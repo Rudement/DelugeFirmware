@@ -19,6 +19,12 @@
 #include "aligned_buf.h"
 #include "fm_op_kernel.h"
 
+
+// Fixed-width integer types used below. Added defensively: deluge_dsp is a
+// unity build, so a header that relies on a neighbour in its chunk having
+// included this first compiles only by luck, and stops compiling as soon as
+// anything changes the chunk.
+#include <stdint.h>
 #define div_n(base, inv_n) ((int)((((int64_t)(base)) * (int64_t)(inv_n)) >> 30))
 
 // TRICKY: neon_fm_kernel claims (n%12)==8 not allowed.

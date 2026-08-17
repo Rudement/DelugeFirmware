@@ -19,6 +19,7 @@
 #include "ModFXProcessor.h"
 #include "definitions_cxx.hpp"
 #include "deluge/dsp/granular/GranularProcessor.h"
+#include "dsp/clouds_adapter.h"
 #include "deluge/model/settings/runtime_feature_settings.h"
 #include "dsp/eq_bands.hpp"
 #include "dsp/gristle.hpp"
@@ -95,6 +96,7 @@ ModControllableAudio::ModControllableAudio() {
 ModControllableAudio::~ModControllableAudio() {
 	// delay.discardBuffers(); // No! The DelayBuffers will themselves destruct and do this
 	delete grainFX;
+	disableClouds();
 }
 
 void ModControllableAudio::cloneFrom(ModControllableAudio* other) {
@@ -102,6 +104,12 @@ void ModControllableAudio::cloneFrom(ModControllableAudio* other) {
 	hpfMode = other->hpfMode;
 	clippingAmount = other->clippingAmount;
 	modFXType_ = other->modFXType_;
+	// Clouds' mode and freeze are copied; the adapter itself deliberately is
+	// not. It holds a live recording buffer and its own resampler phase, and
+	// the clone gets its own on first render via setCloudsMode() below. A
+	// shared pointer here would be a double free.
+	cloudsFreeze = other->cloudsFreeze;
+	setCloudsMode(other->cloudsMode);
 	bassFreq = other->bassFreq; // Eventually, these shouldn't be variables like this
 	trebleFreq = other->trebleFreq;
 	lowMidFreqLo = other->lowMidFreqLo;
@@ -624,6 +632,13 @@ inline void ModControllableAudio::doEQ(bool doBass, bool doTreble, bool doLowMid
 
 void ModControllableAudio::writeAttributesToFile(Serializer& writer) {
 	writer.writeAttribute("modFXType", (char*)fxTypeToString(modFXType_));
+	// Only written when Clouds is actually on, so songs that never touch it
+	// stay byte-identical to what earlier firmware wrote. stringToCloudsMode
+	// maps the absent attribute to OFF on the way back in.
+	if (cloudsMode != CloudsMode::OFF) {
+		writer.writeAttribute("cloudsMode", (char*)cloudsModeToString(cloudsMode));
+		writer.writeAttribute("cloudsFreeze", cloudsFreeze ? 1 : 0);
+	}
 	writer.writeAttribute("lpfMode", (char*)lpfTypeToString(lpfMode));
 	// Community Firmware parameters (always write them after the official ones, just before closing the parent tag)
 	writer.writeAttribute("hpfMode", (char*)lpfTypeToString(hpfMode));
@@ -1133,6 +1148,22 @@ Error ModControllableAudio::readTagFromFile(Deserializer& reader, char const* ta
 	else if (!strcmp(tagName, "clippingAmount")) {
 		clippingAmount = reader.readTagOrAttributeValueInt();
 		reader.exitTag("clippingAmount");
+	}
+
+	else if (!strcmp(tagName, "cloudsMode")) {
+		// setCloudsMode allocates, and can legitimately fail on a full heap.
+		// Failing here is not a load error -- the song still opens, Clouds is
+		// just off -- so its return value is deliberately not checked.
+		setCloudsMode(stringToCloudsMode(reader.readTagOrAttributeValue()));
+		reader.exitTag("cloudsMode");
+	}
+
+	else if (!strcmp(tagName, "cloudsFreeze")) {
+		cloudsFreeze = reader.readTagOrAttributeValueInt() != 0;
+		if (cloudsFX != nullptr) {
+			cloudsFX->setFreeze(cloudsFreeze);
+		}
+		reader.exitTag("cloudsFreeze");
 	}
 
 	// Arpeggiator
@@ -2151,6 +2182,45 @@ bool ModControllableAudio::enableGrain() {
 	}
 	return false;
 }
+bool ModControllableAudio::setCloudsMode(CloudsMode mode) {
+	if (mode == CloudsMode::OFF) {
+		disableClouds();
+		cloudsMode = CloudsMode::OFF;
+		return true;
+	}
+
+	if (cloudsFX == nullptr) {
+		// Not allocStealable: the adapter object itself is small and must not
+		// vanish underneath a render. Only its working buffer is stealable,
+		// and that is managed inside the adapter.
+		void* memory = GeneralMemoryAllocator::get().allocLowSpeed(sizeof(CloudsAdapter));
+		if (memory == nullptr) {
+			return false;
+		}
+		cloudsFX = new (memory) CloudsAdapter();
+		if (!cloudsFX->isValid()) {
+			// The upstream processor object failed to allocate; do not leave a
+			// half-built adapter behind for the render path to trip over.
+			disableClouds();
+			return false;
+		}
+	}
+
+	cloudsMode = mode;
+	cloudsFX->setMode(mode);
+	cloudsFX->setFreeze(cloudsFreeze);
+	return true;
+}
+
+void ModControllableAudio::disableClouds() {
+	if (cloudsFX != nullptr) {
+		cloudsFX->releaseBuffer();
+		cloudsFX->~CloudsAdapter();
+		delugeDealloc(cloudsFX);
+		cloudsFX = nullptr;
+	}
+}
+
 void ModControllableAudio::disableGrain() {
 	// grainFX is lazily allocated (null until GRAIN mod-FX is first used), but this is called whenever
 	// mod-FX is *not* grain — so null is the common case. Guard it like every other grainFX access.

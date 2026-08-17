@@ -18,6 +18,12 @@
 
 #include "stdint.h"
 
+
+// Fixed-width integer types used below. Added defensively: deluge_dsp is a
+// unity build, so a header that relies on a neighbour in its chunk having
+// included this first compiles only by luck, and stops compiling as soon as
+// anything changes the chunk.
+#include <stdint.h>
 struct FmOpParams {
 	int32_t level_in; // value to be computed (from level to gain[0])
 	int32_t gain_out; // computed value (gain[1] to gain[0])

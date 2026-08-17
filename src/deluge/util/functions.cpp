@@ -770,6 +770,9 @@ char const* oscTypeToString(OscType oscType) {
 	case OscType::DX7:
 		return "dx7";
 
+	case OscType::PLAITS:
+		return "plaits";
+
 	default:
 		__builtin_unreachable();
 	}
@@ -809,6 +812,9 @@ OscType stringToOscType(char const* string) {
 	}
 	else if (!strcmp(string, "dx7")) {
 		return OscType::DX7;
+	}
+	else if (!strcmp(string, "plaits")) {
+		return OscType::PLAITS;
 	}
 	else {
 		return OscType::TRIANGLE;
@@ -980,6 +986,50 @@ ModFXType stringToFXType(char const* string) {
 	else {
 		return ModFXType::NONE;
 	}
+}
+
+char const* cloudsModeToString(CloudsMode mode) {
+	switch (mode) {
+	case CloudsMode::GRANULAR:
+		return "granular";
+	case CloudsMode::STRETCH:
+		return "stretch";
+	case CloudsMode::DELAY:
+		return "loopingDelay";
+	case CloudsMode::SPECTRAL:
+		return "spectral";
+	case CloudsMode::OLIVERB:
+		return "oliverb";
+	case CloudsMode::RESONESTOR:
+		return "resonestor";
+	default:
+		return "off";
+	}
+}
+
+CloudsMode stringToCloudsMode(char const* string) {
+	if (!strcmp(string, "granular")) {
+		return CloudsMode::GRANULAR;
+	}
+	if (!strcmp(string, "stretch")) {
+		return CloudsMode::STRETCH;
+	}
+	if (!strcmp(string, "loopingDelay")) {
+		return CloudsMode::DELAY;
+	}
+	if (!strcmp(string, "spectral")) {
+		return CloudsMode::SPECTRAL;
+	}
+	if (!strcmp(string, "oliverb")) {
+		return CloudsMode::OLIVERB;
+	}
+	if (!strcmp(string, "resonestor")) {
+		return CloudsMode::RESONESTOR;
+	}
+	// Anything unrecognised -- including the absent attribute in every song
+	// saved before Clouds existed -- means off, which is also the state in
+	// which Clouds allocates nothing.
+	return CloudsMode::OFF;
 }
 
 char const* modFXParamToString(ModFXParam fxType) {
