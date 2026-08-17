@@ -235,6 +235,31 @@ void CloudsAdapter::setFreeze(bool frozen) {
 	}
 }
 
+void CloudsAdapter::prepareOffAudioThread() {
+	if (processor_ == nullptr) {
+		return;
+	}
+	if (!acquireBuffer()) {
+		return; // No memory; process() will pass audio through dry.
+	}
+	if (needsInit_) {
+		processor_->Init(buffer_->large(), CloudsBuffer::kLargeBufferBytes, buffer_->small(),
+		                 CloudsBuffer::kSmallBufferBytes);
+		processor_->set_silence(false);
+		processor_->set_bypass(false);
+		processor_->mutable_parameters()->dry_wet = 1.0f;
+		resetResamplerState();
+		needsInit_ = false;
+	}
+	processor_->set_playback_mode(kPlaybackModeFor[util::to_underlying(mode_)]);
+
+	// The expensive one. Runs here so the audio thread never sees it.
+	processor_->Prepare();
+
+	heavyPreparePending_ = false;
+	fadeInRemaining_ = kFadeInSamples;
+}
+
 void CloudsAdapter::process(std::span<StereoSample> buffer) {
 	// Both are required *here* specifically: isValid() only says the adapter
 	// is usable at all, and the working buffer is per-render state that the

@@ -157,6 +157,22 @@ public:
 	void setReverb(q31_t v);
 	void setFreeze(bool frozen);
 
+	/// Do everything expensive that a mode change implies -- acquire the
+	/// buffer, Init the processor if needed, set the playback mode and run the
+	/// first Prepare() -- from a non-audio thread.
+	///
+	/// Upstream drives Prepare() from its main loop for exactly this reason:
+	/// on a mode change it reallocates the grain players, the diffuser, the
+	/// reverb, the correlator and the pitch shifter, fourteen Init/Allocate
+	/// calls in all. Doing that inside an audio block overruns the render
+	/// deadline. Once this has run, the Prepare() in process() finds
+	/// reset_buffers_ clear and previous_playback_mode_ already matching, so
+	/// it takes its cheap path.
+	///
+	/// The CALLER must hold a critical section: this reallocates buffers that
+	/// process() reads.
+	void prepareOffAudioThread();
+
 	/// Render in place over `buffer`, at the Deluge's kSampleRate. Internally
 	/// resamples down to Clouds' native 32 kHz, runs whole
 	/// clouds::kMaxBlockSize blocks through the untouched upstream processor,

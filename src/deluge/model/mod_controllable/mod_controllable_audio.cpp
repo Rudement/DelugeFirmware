@@ -20,6 +20,7 @@
 #include "definitions_cxx.hpp"
 #include "deluge/dsp/granular/GranularProcessor.h"
 #include "dsp/clouds_adapter.h"
+#include "OSLikeStuff/timers_interrupts/timers_interrupts.h"
 #include "processing/engines/audio_engine.h"
 #include "deluge/model/settings/runtime_feature_settings.h"
 #include "dsp/stereo_sample.h"
@@ -125,6 +126,11 @@ void ModControllableAudio::cloneFrom(ModControllableAudio* other) {
 void ModControllableAudio::initParams(ParamManager* paramManager) {
 
 	UnpatchedParamSet* unpatchedParams = paramManager->getUnpatchedParamSet();
+
+	// Off. Without this it defaulted to q31 zero, which the send law reads as
+	// CENTRE -- so every sound and every clip in every song would have been
+	// feeding Clouds at 50% by default.
+	unpatchedParams->params[params::UNPATCHED_CLOUDS_SEND].setCurrentValueBasicForSetup(NEGATIVE_ONE_Q31);
 
 	unpatchedParams->params[params::UNPATCHED_BASS].setCurrentValueBasicForSetup(0);
 	unpatchedParams->params[params::UNPATCHED_TREBLE].setCurrentValueBasicForSetup(0);
@@ -2007,6 +2013,19 @@ bool ModControllableAudio::setCloudsMode(CloudsMode mode) {
 	cloudsMode = mode;
 	cloudsFX->setMode(mode);
 	cloudsFX->setFreeze(cloudsFreeze);
+
+	// Do the expensive part HERE, on the thread the menu runs on, rather than
+	// leaving it for the audio render to trip over. A mode change makes
+	// upstream's Prepare() take its reset path -- fourteen Init/Allocate calls
+	// -- and doing that inside an audio block blows the deadline, which is what
+	// made mode changes click and cut voices out.
+	//
+	// Guarded because the audio routine can otherwise be inside process() at
+	// the same time, and this reallocates the buffers it is reading.
+	{
+		CriticalSectionGuard guard;
+		cloudsFX->prepareOffAudioThread();
+	}
 	return true;
 }
 
