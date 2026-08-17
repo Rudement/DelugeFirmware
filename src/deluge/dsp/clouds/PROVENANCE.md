@@ -141,6 +141,40 @@ runtime from the stealable SDRAM pool and never appears in the image, which
 is the whole point of the `CloudsBuffer` design. `clouds_adapter.cpp`'s 708
 bytes of `.bss` is just the adapter's own resampler rings.
 
+### Where the CPU goes
+
+Measured by compiling the vendored engine natively and driving it through the
+adapter's exact plumbing. Absolute figures are host figures and mean nothing
+for the Deluge; the **ratios** are the transferable part.
+
+| mode | total | engine | resampler's share |
+|---|---|---|---|
+| Granular | 0.369% | 0.300% | **18.6%** |
+| Looping delay | 0.475% | 0.407% | 14.4% |
+| Resonestor | 0.678% | 0.610% | 10.1% |
+| Stretch | 0.745% | 0.677% | 9.2% |
+| Oliverb | 0.792% | 0.724% | 8.6% |
+| Spectral | 0.892% | 0.823% | 7.7% |
+
+Two things follow, and the first contradicts an assumption in the feasibility
+doc:
+
+- **Resampling is not trivial next to the engine.** The doc's question 1 asked
+  whether it would be; the answer is no. It is 8-19% of the whole stage, and
+  nearly a fifth of it in Granular, the cheapest and most-used mode.
+- **Therefore the polyphase swap has a real price.** Replacing 2-point linear
+  interpolation with a windowed-sinc kernel multiplies the per-sample work in
+  a stage that is already a fifth of the cost. Better audio, measurably more
+  CPU. That trade should be made with the device numbers in hand, not
+  assumed.
+
+Spectral costs 2.4x Granular, so mode choice matters more than anything else
+here.
+
+Caveat: these are x86 ratios. On Cortex-A9 with NEON the engine's float DSP
+vectorises well and the scalar resampler does not, so the resampler's share on
+hardware is more likely to be higher than these numbers than lower.
+
 ### Cost this introduces
 
 `kMaxNumUnpatchedParams` is the max across `UnpatchedSound` and
@@ -184,9 +218,9 @@ before anything else.
    low mids, poor in the top two octaves. Swap it before this is judged on
    audio quality. (Note also that Clouds' own 32 kHz rate puts Nyquist at
    16 kHz regardless of resampler quality.)
-2. CPU headroom. The code-size half of the feasibility doc's question 1 is
-   now answered (see "Measured cost" below); how much DSP time Clouds plus
-   the resampling actually eats at 44.1 kHz is not, and needs a device.
+2. Absolute CPU headroom on the device. The *relative* costs are measured
+   (see "Where the CPU goes" below); what fraction of the Deluge's budget one
+   instance eats still needs a device test.
 3. Gold-knob / shortcut-grid assignments and automation-view entries. The
    params are automatable but are not on the shortcut grid.
 4. Granular-specific sub-parameters upstream exposes (`granular.overlap`,
