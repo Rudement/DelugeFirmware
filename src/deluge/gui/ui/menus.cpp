@@ -831,20 +831,20 @@ HorizontalMenu globalDistortionMenu{
 clouds_fx::Mode cloudsModeMenu{STRING_FOR_CLOUDS_MODE, STRING_FOR_CLOUDS_MODE};
 clouds_fx::Freeze cloudsFreezeMenu{STRING_FOR_CLOUDS_FREEZE, STRING_FOR_CLOUDS_FREEZE};
 
-UnpatchedParam cloudsPositionMenu{STRING_FOR_CLOUDS_POSITION_SHORT, STRING_FOR_CLOUDS_POSITION,
+clouds_fx::SongParam cloudsPositionMenu{STRING_FOR_CLOUDS_POSITION_SHORT, STRING_FOR_CLOUDS_POSITION,
                                   params::UNPATCHED_CLOUDS_POSITION};
-UnpatchedParam cloudsSizeMenu{STRING_FOR_CLOUDS_SIZE_SHORT, STRING_FOR_CLOUDS_SIZE, params::UNPATCHED_CLOUDS_SIZE};
-UnpatchedParam cloudsPitchMenu{STRING_FOR_CLOUDS_PITCH_SHORT, STRING_FOR_CLOUDS_PITCH, params::UNPATCHED_CLOUDS_PITCH};
-UnpatchedParam cloudsDensityMenu{STRING_FOR_CLOUDS_DENSITY_SHORT, STRING_FOR_CLOUDS_DENSITY,
+clouds_fx::SongParam cloudsSizeMenu{STRING_FOR_CLOUDS_SIZE_SHORT, STRING_FOR_CLOUDS_SIZE, params::UNPATCHED_CLOUDS_SIZE};
+clouds_fx::SongParam cloudsPitchMenu{STRING_FOR_CLOUDS_PITCH_SHORT, STRING_FOR_CLOUDS_PITCH, params::UNPATCHED_CLOUDS_PITCH};
+clouds_fx::SongParam cloudsDensityMenu{STRING_FOR_CLOUDS_DENSITY_SHORT, STRING_FOR_CLOUDS_DENSITY,
                                  params::UNPATCHED_CLOUDS_DENSITY};
-UnpatchedParam cloudsTextureMenu{STRING_FOR_CLOUDS_TEXTURE_SHORT, STRING_FOR_CLOUDS_TEXTURE,
+clouds_fx::SongParam cloudsTextureMenu{STRING_FOR_CLOUDS_TEXTURE_SHORT, STRING_FOR_CLOUDS_TEXTURE,
                                  params::UNPATCHED_CLOUDS_TEXTURE};
-UnpatchedParam cloudsBlendMenu{STRING_FOR_CLOUDS_BLEND_SHORT, STRING_FOR_CLOUDS_BLEND, params::UNPATCHED_CLOUDS_BLEND};
-UnpatchedParam cloudsSpreadMenu{STRING_FOR_CLOUDS_SPREAD_SHORT, STRING_FOR_CLOUDS_SPREAD,
+clouds_fx::SongParam cloudsBlendMenu{STRING_FOR_CLOUDS_BLEND_SHORT, STRING_FOR_CLOUDS_BLEND, params::UNPATCHED_CLOUDS_BLEND};
+clouds_fx::SongParam cloudsSpreadMenu{STRING_FOR_CLOUDS_SPREAD_SHORT, STRING_FOR_CLOUDS_SPREAD,
                                 params::UNPATCHED_CLOUDS_SPREAD};
-UnpatchedParam cloudsFeedbackMenu{STRING_FOR_CLOUDS_FEEDBACK_SHORT, STRING_FOR_CLOUDS_FEEDBACK,
+clouds_fx::SongParam cloudsFeedbackMenu{STRING_FOR_CLOUDS_FEEDBACK_SHORT, STRING_FOR_CLOUDS_FEEDBACK,
                                   params::UNPATCHED_CLOUDS_FEEDBACK};
-UnpatchedParam cloudsReverbMenu{STRING_FOR_CLOUDS_REVERB_SHORT, STRING_FOR_CLOUDS_REVERB,
+clouds_fx::SongParam cloudsReverbMenu{STRING_FOR_CLOUDS_REVERB_SHORT, STRING_FOR_CLOUDS_REVERB,
                                 params::UNPATCHED_CLOUDS_REVERB};
 
 // The per-source send. UNPATCHED_CLOUDS_SEND is a *shared* param, so this one
@@ -856,7 +856,11 @@ UnpatchedParam cloudsSendMenu{STRING_FOR_CLOUDS_SEND_SHORT, STRING_FOR_CLOUDS_SE
 // the single song-level instance -- but it does need somewhere to set how much
 // of itself to send. This one-item page is that somewhere, and it goes in the
 // Sound horizontal chain, which is what 1.3 actually navigates.
-HorizontalMenu cloudsSendPageForSound{STRING_FOR_CLOUDS, {&cloudsSendMenu}};
+// Deliberately NOT a cut-down "send only" page. There is one engine, so its
+// nine parameters are the same object no matter where you open them from --
+// and being able to dial them while listening to the synth you are sending is
+// the whole point. Only Send is per-source; everything else edits the shared
+// instance via clouds_fx::SongParam.
 
 HorizontalMenu cloudsMenu{
     STRING_FOR_CLOUDS,
@@ -2019,7 +2023,7 @@ deluge::vector<HorizontalMenu*> horizontalMenusChainForSound = {
 	&reverbMenuGroup, &delayMenu, &soundDistortionMenu,
 	&sidechainMenu, &audioCompMenu, &stutterMenu,
 	&arpMenuGroup, &randomizerMenu,
-	&cloudsSendPageForSound
+	&cloudsMenu
 };
 
 deluge::vector<HorizontalMenu*> horizontalMenusChainForKit = {

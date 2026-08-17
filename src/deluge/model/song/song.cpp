@@ -2532,6 +2532,11 @@ void Song::renderAudio(std::span<StereoSample> outputBuffer, int32_t* reverbBuff
 
 	// don't bother checking if sound is coming in - its just to save resources and if nothing is being rendered we
 	// don't need to
+	// Clouds return. One instance, owned here, fed by the send bus that every
+	// sound and clip contributed to during output rendering above. Must be the
+	// song's globalEffectable specifically -- see GlobalEffectable::processClouds.
+	globalEffectable.processClouds(outputBuffer, &paramManager);
+
 	globalEffectable.processFXForGlobalEffectable(outputBuffer, &volumePostFX, &paramManager, delayWorkingState, true,
 	                                              reverbSendAmount >> 3);
 

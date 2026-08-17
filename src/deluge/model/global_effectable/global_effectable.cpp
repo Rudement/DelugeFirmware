@@ -1273,18 +1273,20 @@ void GlobalEffectable::processFXForGlobalEffectable(std::span<StereoSample> buff
 		disableGrain();
 	}
 
-	// Clouds runs at the head of the chain, ahead of mod FX, EQ, delay and
-	// reverb. It is a texture generator rather than a colouring effect: the
-	// musically useful arrangement is to grain the raw signal and then shape
-	// the result, not to grain something already drenched in delay. It is
-	// also the only stage here that is rate-converted, so keeping it first
-	// means only one resampling boundary in the whole chain.
-	processClouds(buffer, paramManager);
-
 	processFX(buffer, modFXTypeNow, modFXRate, modFXDepth, delayWorkingState, postFXVolume, paramManager,
 	          anySoundComingIn, verbAmount);
 }
 
+// Called ONLY from Song::renderAudio, on the song's own globalEffectable.
+//
+// It used to be called from processFXForGlobalEffectable, which was wrong:
+// that runs for the song AND for every kit AND every audio clip, and cloudsFX
+// is a per-ModControllableAudio member, so each of them would have spun up its
+// own engine and all of them would have consumed the same send bus. Multiple
+// instances is exactly what the send architecture exists to avoid.
+//
+// `paramManager` is always the song's, for the same reason: there is one
+// instance, so there is one set of engine parameters.
 void GlobalEffectable::processClouds(std::span<StereoSample> buffer, ParamManager* paramManager) {
 	if (cloudsMode == CloudsMode::OFF || cloudsFX == nullptr) {
 		return;

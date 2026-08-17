@@ -23,6 +23,9 @@
 #include "hid/display/display.h"
 #include "dsp/clouds_adapter.h"
 #include "model/mod_controllable/mod_controllable_audio.h"
+#include "gui/menu_item/unpatched_param.h"
+#include "model/model_stack.h"
+#include "model/song/song.h"
 
 // NOT `clouds`: the vendored DSP already occupies a global `clouds::`
 // namespace, and menus.cpp has `using namespace gui::menu_item;`, which would
@@ -37,12 +40,12 @@ public:
 	using Selection::Selection;
 
 	void readCurrentValue() override {
-		this->setValue(soundEditor.currentModControllable->cloudsMode);
+		this->setValue(currentSong->globalEffectable.cloudsMode);
 	}
 
 	void writeCurrentValue() override {
 		auto mode = this->getValue<CloudsMode>();
-		if (!soundEditor.currentModControllable->setCloudsMode(mode)) {
+		if (!currentSong->globalEffectable.setCloudsMode(mode)) {
 			// Allocation failed. setCloudsMode leaves the mode OFF in that
 			// case, so tell the user rather than showing a mode that is not
 			// actually running.
@@ -75,20 +78,49 @@ class Freeze final : public Toggle {
 public:
 	using Toggle::Toggle;
 
-	void readCurrentValue() override { this->setValue(soundEditor.currentModControllable->cloudsFreeze); }
+	void readCurrentValue() override { this->setValue(currentSong->globalEffectable.cloudsFreeze); }
 
 	void writeCurrentValue() override {
 		bool frozen = this->getValue();
-		soundEditor.currentModControllable->cloudsFreeze = frozen;
-		if (soundEditor.currentModControllable->cloudsFX != nullptr) {
-			soundEditor.currentModControllable->cloudsFX->setFreeze(frozen);
+		currentSong->globalEffectable.cloudsFreeze = frozen;
+		if (currentSong->globalEffectable.cloudsFX != nullptr) {
+			currentSong->globalEffectable.cloudsFX->setFreeze(frozen);
 		}
 	}
 
 	/// Pointless while the engine is off, and actively confusing: freezing a
 	/// buffer that is not being recorded into does nothing audible.
 	bool isRelevant(ModControllableAudio* modControllable, int32_t whichThing) override {
-		return modControllable != nullptr && modControllable->cloudsMode != CloudsMode::OFF;
+		return currentSong != nullptr && currentSong->globalEffectable.cloudsMode != CloudsMode::OFF;
+	}
+};
+
+/// One of the nine engine parameters. Always edits the SONG's param manager,
+/// whatever context the menu was opened from.
+///
+/// This is what makes Clouds controllable from a synth clip. There is exactly
+/// one engine, so there is exactly one set of engine parameters, and a plain
+/// UnpatchedParam would read and write soundEditor.currentParamManager -- the
+/// synth's own, where these UNPATCHED_GLOBAL ids are out of range. Only the
+/// Send amount is per-source, and that one is a normal UnpatchedParam because
+/// UNPATCHED_CLOUDS_SEND lives in the shared block.
+class SongParam final : public UnpatchedParam {
+public:
+	using UnpatchedParam::UnpatchedParam;
+
+	[[nodiscard]] ParamSet* getParamSet() final {
+		return currentSong->paramManager.getUnpatchedParamSet();
+	}
+
+	ModelStackWithAutoParam* getModelStack(void* memory) final {
+		ModelStackWithThreeMainThings* modelStack = setupModelStackWithThreeMainThingsButNoNoteRow(
+		    memory, currentSong, &currentSong->globalEffectable, nullptr, &currentSong->paramManager);
+		return modelStack->getUnpatchedAutoParamFromId(getP());
+	}
+
+	void readCurrentValue() final {
+		this->setValue(computeCurrentValueForStandardMenuItem(
+		    currentSong->paramManager.getUnpatchedParamSet()->getValue(getP())));
 	}
 };
 
