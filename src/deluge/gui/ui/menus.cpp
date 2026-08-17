@@ -1539,6 +1539,10 @@ Submenu soundFXMenu{
         &modFXMenu,
         &soundDistortionMenu,
         &noiseMenu,
+        // The same page every other context gets. Only Send is this sound's
+        // own; the engine controls edit the single shared instance, which is
+        // the point -- you can dial Clouds while playing the synth feeding it.
+        &cloudsMenu,
     },
 };
 
