@@ -100,7 +100,18 @@ void GlobalEffectable::initParams(ParamManager* paramManager) {
 	unpatchedParams->params[params::UNPATCHED_CLOUDS_POSITION].setCurrentValueBasicForSetup(0);
 	unpatchedParams->params[params::UNPATCHED_CLOUDS_SIZE].setCurrentValueBasicForSetup(0);
 	unpatchedParams->params[params::UNPATCHED_CLOUDS_PITCH].setCurrentValueBasicForSetup(0);
-	unpatchedParams->params[params::UNPATCHED_CLOUDS_DENSITY].setCurrentValueBasicForSetup(0);
+	// NOT centre, unlike the rest. Clouds treats Density as a meta parameter
+	// and deliberately emits NO grains around the middle of its travel:
+	// granular_processor.cc zeroes grain overlap for density in [0.47, 0.53],
+	// and in practice the audible dead zone is wider still because overlap
+	// stays near zero either side of it. A Deluge q31 default of 0 maps to
+	// menu position 25 of 50, i.e. density 0.50 -- the exact centre of that
+	// dead zone. Shipping that would mean Clouds is silent out of the box no
+	// matter how far up Blend is turned, which is indistinguishable from
+	// being broken. Confirmed on hardware: menu positions 26-30 emit nothing.
+	// 1288490152 is menu position 40, density 0.80, which produces grains
+	// comfortably louder than the dry signal.
+	unpatchedParams->params[params::UNPATCHED_CLOUDS_DENSITY].setCurrentValueBasicForSetup(1288490152);
 	unpatchedParams->params[params::UNPATCHED_CLOUDS_TEXTURE].setCurrentValueBasicForSetup(0);
 	unpatchedParams->params[params::UNPATCHED_CLOUDS_BLEND].setCurrentValueBasicForSetup(NEGATIVE_ONE_Q31);
 	unpatchedParams->params[params::UNPATCHED_CLOUDS_SPREAD].setCurrentValueBasicForSetup(NEGATIVE_ONE_Q31);

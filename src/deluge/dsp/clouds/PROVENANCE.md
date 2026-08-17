@@ -152,6 +152,28 @@ That is the main thing to measure on hardware before this goes further; if it
 proves too expensive the fix is a Clouds-only param array rather than
 extending the shared one.
 
+## Density has a dead zone -- this is upstream behaviour, not a fault
+
+`ProcessGranular()` treats Density as a meta parameter and zeroes grain
+overlap across the middle of its range:
+
+```c
+if (density >= 0.53f)      overlap = (density - 0.53f) * 2.12f;
+else if (density <= 0.47f) overlap = (0.47f - density) * 2.12f;
+else                       overlap = 0.0f;   // no grains
+```
+
+The audible dead zone is wider than that band, because overlap stays near
+zero for a while either side. Measured against the engine compiled natively,
+with everything else centred: silent from roughly 0.40 to 0.75, and confirmed
+on hardware as menu positions 26-30 of 50.
+
+This cost a long debugging session, because a Deluge q31 default of 0 maps to
+density 0.50 -- dead centre. Clouds was therefore silent out of the box at any
+Blend setting, which looks exactly like a broken port. **The default is now
+menu 40 / density 0.80.** If Clouds ever appears silent again, check Density
+before anything else.
+
 ## Still not done
 
 1. The 44.1 kHz <-> 32 kHz resampler is still the plain linear interpolator,
