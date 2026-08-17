@@ -1015,8 +1015,6 @@ PLACE_SDRAM_DATA Language english{
         {STRING_FOR_DEFAULT_HORIZONTAL_MENU, "Horizontal Menu"},
         {STRING_FOR_CHORD_KEYBOARD_MODE_ROW, "Chord Row Mode"},
         {STRING_FOR_CHORD_KEYBOARD_MODE_COLUMN, "Chord Column Mode"},
-        // Clouds. The mode names are Mutable's own, except DELAY, which
-        // upstream calls "looping delay" -- too long for the 7SEG.
         {STRING_FOR_CLOUDS, "Clouds"},
         {STRING_FOR_CLOUDS_MODE, "Clouds Mode"},
         {STRING_FOR_CLOUDS_MODE_GRANULAR, "Granular"},
