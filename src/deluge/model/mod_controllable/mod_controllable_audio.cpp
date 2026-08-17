@@ -2011,19 +2011,17 @@ bool ModControllableAudio::setCloudsMode(CloudsMode mode) {
 	}
 
 	cloudsMode = mode;
-	cloudsFX->setMode(mode);
-	cloudsFX->setFreeze(cloudsFreeze);
 
-	// Do the expensive part HERE, on the thread the menu runs on, rather than
-	// leaving it for the audio render to trip over. A mode change makes
-	// upstream's Prepare() take its reset path -- fourteen Init/Allocate calls
-	// -- and doing that inside an audio block blows the deadline, which is what
-	// made mode changes click and cut voices out.
-	//
-	// Guarded because the audio routine can otherwise be inside process() at
-	// the same time, and this reallocates the buffers it is reading.
+	// The WHOLE sequence has to be inside the critical section, not just the
+	// prepare. setMode() changes the engine's playback mode; until Prepare()
+	// has caught up, any Prepare() call sees playback_mode_changed and takes
+	// the reset path -- fourteen Init/Allocate calls. Guarding only the
+	// prepare left exactly that window open for the audio thread to fall into,
+	// which is why the first attempt at this changed nothing.
 	{
 		CriticalSectionGuard guard;
+		cloudsFX->setMode(mode);
+		cloudsFX->setFreeze(cloudsFreeze);
 		cloudsFX->prepareOffAudioThread();
 	}
 	return true;
