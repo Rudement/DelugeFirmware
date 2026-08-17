@@ -22,7 +22,6 @@
 #include "memory/general_memory_allocator.h"
 
 #include <algorithm>
-#include <cmath>
 #include <cstring>
 #include <iterator>
 #include <new>
@@ -235,71 +234,6 @@ void CloudsAdapter::process(std::span<StereoSample> buffer) {
 		return; // Dry passthrough: caller's buffer is left exactly as it came in.
 	}
 
-#if CLOUDS_DIAGNOSTIC_BUILD
-	// ======================= TEMPORARY - REVERT ME =======================
-	// v2. The previous version was flawed: setMode() calls set_playback_mode()
-	// straight from the lookup table, so the "Spectral" slot ran as real
-	// Spectral rather than Granular-with-forced-params, and therefore did not
-	// separate the engine mode from the parameter values. Every diag slot now
-	// forces PLAYBACK_MODE_GRANULAR every block, so the ONLY thing that varies
-	// between them is which parameters are used.
-	//
-	//   Granular    untouched control -- menu params, normal path
-	//   Stretch     440 Hz tone, proves this is the new build
-	//   Oliverb     granular + MENU params        <- same as Granular, but with
-	//                                                the mode forced. Differs
-	//                                                only if mode selection is
-	//                                                the problem.
-	//   Spectral    granular + ALL params forced  <- known good natively
-	//   Delay       granular + menu params, DENSITY forced to 0.9
-	//   Resonestor  granular + menu params, BLEND forced to 1.0
-	//
-	// Reading it: if Spectral sings and Oliverb is silent, the parameter path
-	// is broken. Whichever of Delay/Resonestor then sings names the specific
-	// parameter that is not arriving.
-	if (mode_ == CloudsMode::STRETCH) {
-		constexpr float kTwoPi = 6.28318530718f;
-		for (StereoSample& sample : buffer) {
-			float v = 0.25f * std::sin(diagPhase_);
-			diagPhase_ += kTwoPi * 440.0f / static_cast<float>(kSampleRate);
-			if (diagPhase_ > kTwoPi) {
-				diagPhase_ -= kTwoPi;
-			}
-			sample.l = sample.r = static_cast<q31_t>(v * 2147483647.0f);
-		}
-		return;
-	}
-	if (mode_ != CloudsMode::GRANULAR) {
-		// Force the engine mode every block, defeating setMode().
-		processor_->set_playback_mode(clouds::PLAYBACK_MODE_GRANULAR);
-		clouds::Parameters* q = processor_->mutable_parameters();
-		switch (mode_) {
-		case CloudsMode::SPECTRAL: // everything forced
-			q->position = 0.5f;
-			q->size = 0.5f;
-			q->pitch = 0.0f;
-			q->density = 0.9f;
-			q->texture = 0.5f;
-			q->dry_wet = 1.0f;
-			q->stereo_spread = 0.0f;
-			q->feedback = 0.0f;
-			q->reverb = 0.0f;
-			q->freeze = false;
-			break;
-		case CloudsMode::DELAY: // menu params, density overridden
-			q->density = 0.9f;
-			break;
-		case CloudsMode::RESONESTOR: // menu params, blend overridden
-			q->dry_wet = 1.0f;
-			break;
-		default: // OLIVERB: menu params, nothing overridden
-			break;
-		}
-	}
-	// =====================================================================
-#endif
-	constexpr bool diagBypassEngine = false;
-
 	if (needsInit_) {
 		processor_->Init(buffer_->large(), CloudsBuffer::kLargeBufferBytes, buffer_->small(),
 		                 CloudsBuffer::kSmallBufferBytes);
@@ -309,9 +243,7 @@ void CloudsAdapter::process(std::span<StereoSample> buffer) {
 		// at the call site that we know the difference between the two.
 		processor_->set_silence(false);
 		processor_->set_bypass(false);
-		processor_->set_playback_mode(CLOUDS_DIAG_FORCED_PARAMS(mode_)
-		                                  ? clouds::PLAYBACK_MODE_GRANULAR
-		                                  : kPlaybackModeFor[util::to_underlying(mode_)]);
+		processor_->set_playback_mode(kPlaybackModeFor[util::to_underlying(mode_)]);
 		resetResamplerState();
 		needsInit_ = false;
 	}
@@ -365,12 +297,7 @@ void CloudsAdapter::process(std::span<StereoSample> buffer) {
 			shortIn[i].r = static_cast<int16_t>(std::clamp(f.r, -1.0f, 1.0f) * 32767.0f);
 		}
 
-		if (!diagBypassEngine) {
-			processor_->Process(shortIn, shortOut, clouds::kMaxBlockSize);
-		}
-		else {
-			std::memcpy(shortOut, shortIn, sizeof(shortIn));
-		}
+		processor_->Process(shortIn, shortOut, clouds::kMaxBlockSize);
 
 		for (size_t i = 0; i < clouds::kMaxBlockSize; ++i) {
 			if (upCount_ < kRingFrames) {
