@@ -70,6 +70,7 @@
 #include "gui/menu_item/integer_range.h"
 #include "gui/menu_item/key_range.h"
 #include "gui/menu_item/keyboard/layout.h"
+#include "gui/menu_item/kit/split.h"
 #include "gui/menu_item/lfo/rate.h"
 #include "gui/menu_item/lfo/sync.h"
 #include "gui/menu_item/lfo/type.h"
@@ -1308,10 +1309,31 @@ menu_item::Submenu soundEditorRootMenuSongView{
     },
 };
 
+// Splits a kit clip into one single-sound kit (and clip) per row that has notes. Destructive and not
+// undoable, so the action sits one level down - stepping into the submenu is the confirmation.
+menu_item::kit::SplitPerform splitKitPerformMenu{STRING_FOR_SPLIT_KIT};
+
+menu_item::kit::Split splitKitMenu{
+    STRING_FOR_SPLIT_KIT,
+    {
+        &splitKitPerformMenu,
+    },
+};
+
+// 1.3 hangs this off an existing kitGlobalFXActionsMenu. That submenu does not exist on this line, so it is
+// created here with the same name and string, holding the split on its own.
+menu_item::Submenu kitGlobalFXActionsMenu{
+    STRING_FOR_ACTIONS,
+    {
+        &splitKitMenu,
+    },
+};
+
 // Root menu for Kit Global FX
 menu_item::Submenu soundEditorRootMenuKitGlobalFX{
     STRING_FOR_KIT_GLOBAL_FX,
     {
+        &kitGlobalFXActionsMenu,
         &kitClipMasterMenu,
         &audioCompMenu,
         &globalFiltersMenu,

@@ -195,6 +195,10 @@ void RuntimeFeatureSettings::init() {
 	SetupOnOffSetting(settings[RuntimeFeatureSettingType::EnableGridViewLoopPads],
 	                  STRING_FOR_COMMUNITY_FEATURE_GRID_VIEW_LOOP_PADS, "enableGridViewLoopPads",
 	                  RuntimeFeatureStateToggle::Off);
+
+	// Kit Split
+	SetupOnOffSetting(settings[RuntimeFeatureSettingType::KitSplit], STRING_FOR_COMMUNITY_FEATURE_KIT_SPLIT,
+	                  "kitSplit", RuntimeFeatureStateToggle::Off);
 }
 
 void RuntimeFeatureSettings::readSettingsFromFile(StorageManager& bdsm) {

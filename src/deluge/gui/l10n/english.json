@@ -492,6 +492,7 @@
         "STRING_FOR_COMMUNITY_FEATURE_ALTERNATIVE_PLAYBACK_START_BEHAVIOUR": "Alternative Playback Start Behaviour",
         "STRING_FOR_COMMUNITY_FEATURE_ACCESSIBILITY_SHORTCUTS": "Accessibility Shortcuts",
         "STRING_FOR_COMMUNITY_FEATURE_GRID_VIEW_LOOP_PADS": "Grid View Loop Layer Pads",
+        "STRING_FOR_COMMUNITY_FEATURE_KIT_SPLIT": "Kit Split",
 
         "STRING_FOR_TRACK_STILL_HAS_CLIPS_IN_SESSION": "Track still has clips in session",
         "STRING_FOR_DELETE_ALL_TRACKS_CLIPS_FIRST": "Delete all track's clips first",
@@ -878,6 +879,14 @@
         "STRING_FOR_SONG_MACRO_KIND_NONE": "Kind: None",
 
         "STRING_FOR_ACTIONS": "Actions",
+        "STRING_FOR_SPLIT_KIT": "Split Kit",
+        "STRING_FOR_SPLIT_KIT_DONE": "Kit split",
+        "STRING_FOR_SPLIT_KIT_NEEDS_ROWS": "Need 2+ rows with notes",
+        "STRING_FOR_SPLIT_KIT_SYNC_CLIP": "Can't split the sync-scaling clip",
+        "STRING_FOR_SPLIT_KIT_STOP_PLAYBACK": "Stop playback first",
+        "STRING_FOR_SPLIT_KIT_FAILED": "Split failed",
+        "STRING_FOR_SPLIT_KIT_TOO_MANY": "Too many rows to split",
+        "STRING_FOR_SPLIT_KIT_IN_ARRANGER": "Clip is used in the arranger",
         "STRING_FOR_SET_CLIP_LENGTH_EQUAL_TO_SAMPLE_LENGTH": "Set Clip Length Equal to Sample Length",
         "STRING_FOR_CLIP_LENGTH_ADJUSTED": "Clip Length Adjusted",
 
