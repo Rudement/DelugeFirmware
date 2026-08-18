@@ -39,6 +39,7 @@
 #include "util/firmware_version.h"
 
 using namespace deluge;
+using namespace deluge::processing::engines;
 namespace params = deluge::modulation::params;
 
 GlobalEffectable::GlobalEffectable() {
