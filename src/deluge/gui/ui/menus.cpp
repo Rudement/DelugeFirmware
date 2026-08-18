@@ -1,7 +1,6 @@
 #include "../menu_item/randomizer/midi_cv/note_probability.h"
 #include "gui/l10n/strings.h"
 #include "gui/menu_item/active_scales.h"
-#include "gui/menu_item/clouds/mode.h"
 #include "gui/menu_item/arpeggiator/arp_unpatched_param.h"
 #include "gui/menu_item/arpeggiator/chord_type.h"
 #include "gui/menu_item/arpeggiator/include_in_kit_arp.h"
@@ -33,6 +32,7 @@
 #include "gui/menu_item/battery/level.h"
 #include "gui/menu_item/bend_range/main.h"
 #include "gui/menu_item/bend_range/per_finger.h"
+#include "gui/menu_item/clouds/mode.h"
 #include "gui/menu_item/colour.h"
 #include "gui/menu_item/cv/cv2Mapping.h"
 #include "gui/menu_item/cv/selection.h"
@@ -89,6 +89,7 @@
 #include "gui/menu_item/integer_range.h"
 #include "gui/menu_item/key_range.h"
 #include "gui/menu_item/keyboard/layout.h"
+#include "gui/menu_item/kit/split.h"
 #include "gui/menu_item/lfo/sync.h"
 #include "gui/menu_item/lfo/type.h"
 #include "gui/menu_item/master_transpose.h"
@@ -1535,14 +1536,8 @@ menu_item::Submenu dxMenu{STRING_FOR_DX_1, dxMenuItems};
 // Order follows the module's own front panel: what the engine sounds like
 // first, then what the gate does to it, then which output you take.
 std::array<MenuItem*, 8> plaitsMenuItems = {
-    &plaitsEngineSelect,
-    &plaitsHarmonicsMenu,
-    &plaitsTimbreMenu,
-    &plaitsMorphMenu,
-    &plaitsLpgToggle,
-    &plaitsDecayMenu,
-    &plaitsLpgColourMenu,
-    &plaitsAuxToggle,
+    &plaitsEngineSelect, &plaitsHarmonicsMenu, &plaitsTimbreMenu,    &plaitsMorphMenu,
+    &plaitsLpgToggle,    &plaitsDecayMenu,     &plaitsLpgColourMenu, &plaitsAuxToggle,
 };
 menu_item::Submenu plaitsMenu{STRING_FOR_PLAITS, plaitsMenuItems};
 
@@ -1918,10 +1913,22 @@ menu_item::Submenu soundEditorRootMenuSongView{
     },
 };
 
+// Splits a kit clip into one single-sound kit (and clip) per row that has notes. Destructive and not undoable,
+// so the action sits one level down - stepping into the submenu is the confirmation.
+menu_item::kit::SplitPerform splitKitPerformMenu{STRING_FOR_SPLIT_KIT};
+
+menu_item::kit::Split splitKitMenu{
+    STRING_FOR_SPLIT_KIT,
+    {
+        &splitKitPerformMenu,
+    },
+};
+
 menu_item::Submenu kitGlobalFXActionsMenu{
     STRING_FOR_ACTIONS,
     {
         &editNameMenu,
+        &splitKitMenu,
         &kitGlobalFXStemExportMenu,
     },
 };
