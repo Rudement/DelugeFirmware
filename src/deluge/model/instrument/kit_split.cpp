@@ -32,10 +32,13 @@
 #include "model/note/note_row.h"
 #include "model/song/song.h"
 #include "modulation/params/param_manager.h"
+#include "modulation/params/param_set.h"
 #include "playback/playback_handler.h"
 #include "processing/engines/audio_engine.h"
 #include "storage/storage_manager.h"
 #include "util/d_string.h"
+
+namespace params = deluge::modulation::params;
 
 namespace deluge::model::kit_split {
 
@@ -165,6 +168,17 @@ int32_t performSplit(InstrumentClip* src) {
 		}
 	}
 
+	// Volume and pan are the two kit-global params that do NOT get reset along with the rest - see Pass 3.
+	// Snapshot them before anything is allowed to move. Both neutral defaults are 0, so a source Clip somehow
+	// holding no param collections falls through to exactly what initParams() would have left behind anyway.
+	int32_t srcVolume = 0;
+	int32_t srcPan = 0;
+	if (src->paramManager.containsAnyParamCollectionsIncludingExpression()) {
+		UnpatchedParamSet* srcUnpatched = src->paramManager.getUnpatchedParamSet();
+		srcVolume = srcUnpatched->getValue(params::UNPATCHED_VOLUME);
+		srcPan = srcUnpatched->getValue(params::UNPATCHED_PAN);
+	}
+
 	// Can't undo past this.
 	actionLogger.deleteAllLogs();
 
@@ -282,6 +296,18 @@ int32_t performSplit(InstrumentClip* src) {
 			break;
 		}
 		GlobalEffectableForClip::initParams(&newParamManager);
+
+		// Volume and pan are the exception to that reset. They are not wet effects that stack - they are this
+		// output's gain and its position, and each new Kit holds exactly one Drum. Carrying the source's values
+		// across therefore hands every Drum the same level and placement it had before the split, and the mix
+		// comes out where it started. Leaving them neutral is the thing that changes the sound: a kit sitting at
+		// 43 becomes N kits at the halfway default. Delay, reverb, filter and mod FX stay neutral above,
+		// because those genuinely would multiply N ways.
+		//
+		// Values only - automation on the source's volume or pan is not carried across.
+		UnpatchedParamSet* newUnpatched = newParamManager.getUnpatchedParamSet();
+		newUnpatched->params[params::UNPATCHED_VOLUME].setCurrentValueBasicForSetup(srcVolume);
+		newUnpatched->params[params::UNPATCHED_PAN].setCurrentValueBasicForSetup(srcPan);
 
 		// Move the Drum, don't copy it.
 		//
