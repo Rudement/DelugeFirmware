@@ -171,6 +171,12 @@ int32_t performSplit(InstrumentClip* src) {
 	// Volume and pan are the two kit-global params that do NOT get reset along with the rest - see Pass 3.
 	// Snapshot them before anything is allowed to move. Both neutral defaults are 0, so a source Clip somehow
 	// holding no param collections falls through to exactly what initParams() would have left behind anyway.
+	// changeInstrument() -> setInstrument() -> setAudioInstrument() force-clears affectEntire whenever the new
+	// Output is a Kit. That is the right default for a conversion, where you have just landed in a kit and want
+	// the drums - and the wrong one here, where the user was in affect-entire on the source and every kit we make
+	// holds a single sound. Snapshot it alongside the params and put it back once the swap is done.
+	bool srcAffectEntire = src->affectEntire;
+
 	int32_t srcVolume = 0;
 	int32_t srcPan = 0;
 	if (src->paramManager.containsAnyParamCollectionsIncludingExpression()) {
@@ -342,6 +348,14 @@ int32_t performSplit(InstrumentClip* src) {
 				break;
 			}
 		}
+
+		// Put back what setAudioInstrument() cleared, and give the new Kit its one Drum as the selected one -
+		// createNewInstrument() leaves selectedDrum null. Without both of these,
+		// InstrumentClip::getActiveModControllable() takes its !affectEntire branch, finds no selected SoundDrum
+		// and returns nothing at all: the gold knobs come up unlit and neither the kit FX nor the drum's own
+		// params can be reached or heard.
+		clone->affectEntire = srcAffectEntire;
+		newKit->selectedDrum = drum;
 
 		// Now that the Drum is safely on its new Kit, drop the matching row from the source, so nothing is left
 		// pointing at a Drum that has moved away. rowIndices ascend and we walk n downwards, so this always
