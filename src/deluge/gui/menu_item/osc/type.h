@@ -20,12 +20,14 @@
 #include "gui/menu_item/selection.h"
 #include "gui/menu_item/submenu.h"
 #include "gui/ui/sound_editor.h"
+#include "model/settings/runtime_feature_settings.h"
 #include "model/song/song.h"
 #include "processing/engines/audio_engine.h"
 #include "processing/sound/sound.h"
 #include "processing/source.h"
 #include "util/comparison.h"
 
+#include <algorithm>
 #include <hid/display/oled.h>
 
 extern gui::menu_item::Submenu dxMenu;
@@ -38,29 +40,62 @@ public:
 	    : Selection(name), FormattedTitle(title_format_str, source_id + 1), sourceId_{source_id} {};
 	void beginSession(MenuItem* navigatedBackwardFrom) override { Selection::beginSession(navigatedBackwardFrom); }
 
-	/// DX7 and Plaits are both source-0-only and unavailable in kits. One
-	/// predicate on purpose: the option list hides both or neither, and the
-	/// index arithmetic below depends on that.
-	bool mayUseDx() const { return !soundEditor.editingKit() && sourceId_ == 0; }
+	/// DX7 and Plaits are both source-0-only and unavailable in kits.
+	bool mayUseSourceZeroOnlyTypes() const { return !soundEditor.editingKit() && sourceId_ == 0; }
+	bool mayUseDx() const { return mayUseSourceZeroOnlyTypes(); }
+	bool mayUsePlaits() const {
+		return mayUseSourceZeroOnlyTypes()
+		       && runtimeFeatureSettings.isOn(RuntimeFeatureSettingType::EnablePlaitsEngine);
+	}
 
-	/// How many enum entries the option list hides when mayUseDx() is false:
-	/// OscType::DX7 and OscType::PLAITS, which are adjacent. The ONLY number to
-	/// bump if a third source-0-only type is added beside them.
-	static constexpr int32_t kNumSourceZeroOnlyOscTypes = 2;
+	/// The OscTypes currently on offer, in the order getOptions() lists them.
+	///
+	/// This used to be a fixed +/-2 index shift that assumed DX7 and PLAITS were hidden together, and
+	/// said so in a comment warning you not to add a third. Plaits can now be switched off on its own
+	/// from Community Features, so the mapping is looked up instead of computed. Add a type in both
+	/// this list and getOptions(), in the same position, and nothing else needs touching.
+	deluge::vector<OscType> offeredTypes() const {
+		deluge::vector<OscType> types = {OscType::SINE,       OscType::TRIANGLE, OscType::SQUARE,
+		                                 OscType::ANALOG_SQUARE, OscType::SAW,   OscType::ANALOG_SAW_2,
+		                                 OscType::WAVETABLE};
+		if (soundEditor.currentSound->getSynthMode() == SynthMode::RINGMOD) {
+			return types;
+		}
+		types.emplace_back(OscType::SAMPLE);
+		if (mayUseDx()) {
+			types.emplace_back(OscType::DX7);
+		}
+		if (mayUsePlaits()) {
+			types.emplace_back(OscType::PLAITS);
+		}
+		if (AudioEngine::micPluggedIn || AudioEngine::lineInPluggedIn) {
+			types.emplace_back(OscType::INPUT_L);
+			types.emplace_back(OscType::INPUT_R);
+			types.emplace_back(OscType::INPUT_STEREO);
+		}
+		else {
+			types.emplace_back(OscType::INPUT_STEREO);
+		}
+		return types;
+	}
 
 	void readCurrentValue() override {
-		int32_t rawVal = static_cast<int32_t>(soundEditor.currentSound->sources[sourceId_].oscType);
-		if (!mayUseDx() && rawVal > static_cast<int32_t>(OscType::PLAITS)) {
-			rawVal -= kNumSourceZeroOnlyOscTypes;
-		}
-		setValue(rawVal);
+		const OscType current = soundEditor.currentSound->sources[sourceId_].oscType;
+		const auto types = offeredTypes();
+		const auto it = std::ranges::find(types, current);
+		// A type that is no longer offered (Plaits switched off under a song already using it) has no row
+		// to sit on. Show the first entry rather than an out-of-range index; the sound itself is untouched
+		// unless the user actually picks something.
+		setValue(it == types.end() ? 0 : static_cast<int32_t>(std::distance(types.begin(), it)));
 	}
 	void writeCurrentValue() override {
 		OscType oldValue = soundEditor.currentSound->sources[sourceId_].oscType;
-		auto newValue = getValue<OscType>();
-		if (!mayUseDx() && static_cast<int32_t>(newValue) >= static_cast<int32_t>(OscType::DX7)) {
-			newValue = static_cast<OscType>(static_cast<int32_t>(newValue) + kNumSourceZeroOnlyOscTypes);
+		const auto types = offeredTypes();
+		const int32_t index = getValue();
+		if (index < 0 || index >= static_cast<int32_t>(types.size())) {
+			return;
 		}
+		OscType newValue = types[index];
 
 		const auto needs_unassignment = {
 		    OscType::INPUT_L,
@@ -108,6 +143,9 @@ public:
 
 		if (mayUseDx()) {
 			options.emplace_back(l10n::getView(STRING_FOR_DX7));
+		}
+
+		if (mayUsePlaits()) {
 			options.emplace_back(l10n::getView(STRING_FOR_PLAITS));
 		}
 

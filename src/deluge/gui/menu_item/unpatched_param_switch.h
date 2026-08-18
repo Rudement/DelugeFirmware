@@ -46,7 +46,9 @@ namespace deluge::gui::menu_item {
  * the menu will confidently show OFF while the effect is audible, which is precisely the class
  * of bug the master switch was added to remove.
  */
-class UnpatchedParamSwitch final : public UnpatchedParam {
+// Not final: gui/menu_item/runtime_feature/gated.h wraps menu items to hide them behind a community
+// feature toggle, and the Gristleizer on/off switch is one of them.
+class UnpatchedParamSwitch : public UnpatchedParam {
 public:
 	using UnpatchedParam::UnpatchedParam;
 

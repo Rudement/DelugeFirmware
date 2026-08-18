@@ -18,6 +18,7 @@
 #pragma once
 
 #include "gui/menu_item/eq/eq_unpatched_param.h"
+#include "model/settings/runtime_feature_settings.h"
 #include "util/d_stringbuf.h"
 
 namespace deluge::gui::menu_item::eq {
@@ -37,6 +38,16 @@ public:
 	EqGainParam(l10n::String name, int32_t newP, Band band) : EqUnpatchedParam(name, newP), band_{band} {}
 
 	void getNotificationValue(StringBuf& value) override;
+
+	/// The mid bands are the Rudement addition; bass and treble are stock and always stay. Hiding the
+	/// menu does not touch the DSP, so a song using the mids still sounds the same with them hidden.
+	bool isRelevant(ModControllableAudio* modControllable, int32_t whichThing) override {
+		if ((band_ == Band::LOW_MID || band_ == Band::HIGH_MID)
+		    && !runtimeFeatureSettings.isOn(RuntimeFeatureSettingType::FourBandEq)) {
+			return false;
+		}
+		return EqUnpatchedParam::isRelevant(modControllable, whichThing);
+	}
 
 private:
 	Band band_;

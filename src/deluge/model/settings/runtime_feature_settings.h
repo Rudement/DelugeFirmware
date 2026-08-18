@@ -68,6 +68,11 @@ enum RuntimeFeatureSettingType : uint32_t {
 	ShowBatteryLevel,
 	RoundedCorners,
 	KitSplit,
+	FourBandEq,
+	EnablePlaitsEngine,
+	EnableCloudsFX,
+	EnableGristleizer,
+	EnableSear,
 	MaxElement // Keep as boundary
 };
 

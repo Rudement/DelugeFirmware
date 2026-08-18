@@ -208,6 +208,18 @@ void RuntimeFeatureSettings::init() {
 	// Kit Split
 	SetupOnOffSetting(settings[RuntimeFeatureSettingType::KitSplit], STRING_FOR_COMMUNITY_FEATURE_KIT_SPLIT,
 	                  "kitSplit", RuntimeFeatureStateToggle::Off);
+
+	// The Rudement additions. On by default - the toggle is there to take them away, not to opt in.
+	SetupOnOffSetting(settings[RuntimeFeatureSettingType::FourBandEq], STRING_FOR_COMMUNITY_FEATURE_FOUR_BAND_EQ,
+	                  "fourBandEq", RuntimeFeatureStateToggle::On);
+	SetupOnOffSetting(settings[RuntimeFeatureSettingType::EnablePlaitsEngine], STRING_FOR_COMMUNITY_FEATURE_PLAITS,
+	                  "enablePlaitsEngine", RuntimeFeatureStateToggle::On);
+	SetupOnOffSetting(settings[RuntimeFeatureSettingType::EnableCloudsFX], STRING_FOR_COMMUNITY_FEATURE_CLOUDS,
+	                  "enableCloudsFX", RuntimeFeatureStateToggle::On);
+	SetupOnOffSetting(settings[RuntimeFeatureSettingType::EnableGristleizer], STRING_FOR_COMMUNITY_FEATURE_GRISTLEIZER,
+	                  "enableGristleizer", RuntimeFeatureStateToggle::On);
+	SetupOnOffSetting(settings[RuntimeFeatureSettingType::EnableSear], STRING_FOR_COMMUNITY_FEATURE_SEAR,
+	                  "enableSear", RuntimeFeatureStateToggle::On);
 }
 
 void RuntimeFeatureSettings::factoryReset(bool showPopup) {

@@ -90,6 +90,7 @@
 #include "gui/menu_item/key_range.h"
 #include "gui/menu_item/keyboard/layout.h"
 #include "gui/menu_item/kit/split.h"
+#include "gui/menu_item/runtime_feature/gated.h"
 #include "gui/menu_item/lfo/sync.h"
 #include "gui/menu_item/lfo/type.h"
 #include "gui/menu_item/master_transpose.h"
@@ -540,27 +541,39 @@ PLACE_SDRAM_BSS eq::EqMenu eqMenu{
 // ON IS FIRST DELIBERATELY. It is the only control that can make the other nine inaudible, so it
 // is the one you must be able to find without paging. Moving it costs nothing functionally but
 // puts the switch two pages inside the effect it switches.
-UnpatchedParamSwitch gristleOnMenu{STRING_FOR_ON, STRING_FOR_GRISTLE_ON, params::UNPATCHED_GRISTLE_ON};
-UnpatchedParam gristleRateMenu{STRING_FOR_RATE, STRING_FOR_GRISTLE_RATE, params::UNPATCHED_GRISTLE_RATE,
+
+// Community-feature gating. Switching one of these off in Settings -> Community Features hides its
+// menus; the DSP is untouched, so songs that already use the feature still play the same.
+namespace rf = deluge::gui::menu_item::runtime_feature;
+using GristleParam = rf::Gated<UnpatchedParam, RuntimeFeatureSettingType::EnableGristleizer>;
+using GristleSwitch = rf::Gated<UnpatchedParamSwitch, RuntimeFeatureSettingType::EnableGristleizer>;
+using GristleMenu = rf::Gated<HorizontalMenu, RuntimeFeatureSettingType::EnableGristleizer>;
+using CloudsParam = rf::Gated<UnpatchedParam, RuntimeFeatureSettingType::EnableCloudsFX>;
+using CloudsMenu = rf::Gated<HorizontalMenu, RuntimeFeatureSettingType::EnableCloudsFX>;
+using SearPatched = rf::Gated<patched_param::Integer, RuntimeFeatureSettingType::EnableSear>;
+using SearUnpatched = rf::Gated<UnpatchedParam, RuntimeFeatureSettingType::EnableSear>;
+
+GristleSwitch gristleOnMenu{STRING_FOR_ON, STRING_FOR_GRISTLE_ON, params::UNPATCHED_GRISTLE_ON};
+GristleParam gristleRateMenu{STRING_FOR_RATE, STRING_FOR_GRISTLE_RATE, params::UNPATCHED_GRISTLE_RATE,
                                RenderingStyle::BAR};
-UnpatchedParam gristleDepthMenu{STRING_FOR_DEPTH, STRING_FOR_GRISTLE_DEPTH, params::UNPATCHED_GRISTLE_DEPTH,
+GristleParam gristleDepthMenu{STRING_FOR_DEPTH, STRING_FOR_GRISTLE_DEPTH, params::UNPATCHED_GRISTLE_DEPTH,
                                 RenderingStyle::BAR};
-UnpatchedParam gristleShapeMenu{STRING_FOR_SHAPE, STRING_FOR_GRISTLE_SHAPE, params::UNPATCHED_GRISTLE_SHAPE,
+GristleParam gristleShapeMenu{STRING_FOR_SHAPE, STRING_FOR_GRISTLE_SHAPE, params::UNPATCHED_GRISTLE_SHAPE,
                                 RenderingStyle::BAR};
-UnpatchedParam gristleBiasMenu{STRING_FOR_BIAS, STRING_FOR_GRISTLE_BIAS, params::UNPATCHED_GRISTLE_BIAS,
+GristleParam gristleBiasMenu{STRING_FOR_BIAS, STRING_FOR_GRISTLE_BIAS, params::UNPATCHED_GRISTLE_BIAS,
                                RenderingStyle::BAR};
-UnpatchedParam gristleModeMenu{STRING_FOR_MODE, STRING_FOR_GRISTLE_MODE, params::UNPATCHED_GRISTLE_MODE,
+GristleParam gristleModeMenu{STRING_FOR_MODE, STRING_FOR_GRISTLE_MODE, params::UNPATCHED_GRISTLE_MODE,
                                RenderingStyle::BAR};
-UnpatchedParam gristleFreqMenu{STRING_FOR_FREQUENCY, STRING_FOR_GRISTLE_FREQ, params::UNPATCHED_GRISTLE_FREQ,
+GristleParam gristleFreqMenu{STRING_FOR_FREQUENCY, STRING_FOR_GRISTLE_FREQ, params::UNPATCHED_GRISTLE_FREQ,
                                RenderingStyle::BAR};
-UnpatchedParam gristleResMenu{STRING_FOR_RESONANCE, STRING_FOR_GRISTLE_RES, params::UNPATCHED_GRISTLE_RES,
+GristleParam gristleResMenu{STRING_FOR_RESONANCE, STRING_FOR_GRISTLE_RES, params::UNPATCHED_GRISTLE_RES,
                               RenderingStyle::BAR};
-UnpatchedParam gristleDirtMenu{STRING_FOR_DIRT, STRING_FOR_GRISTLE_DIRT, params::UNPATCHED_GRISTLE_DIRT,
+GristleParam gristleDirtMenu{STRING_FOR_DIRT, STRING_FOR_GRISTLE_DIRT, params::UNPATCHED_GRISTLE_DIRT,
                                RenderingStyle::BAR};
-UnpatchedParam gristleLevelMenu{STRING_FOR_LEVEL, STRING_FOR_GRISTLE_LEVEL, params::UNPATCHED_GRISTLE_LEVEL,
+GristleParam gristleLevelMenu{STRING_FOR_LEVEL, STRING_FOR_GRISTLE_LEVEL, params::UNPATCHED_GRISTLE_LEVEL,
                                 RenderingStyle::BAR};
 
-HorizontalMenu gristleMenu{
+GristleMenu gristleMenu{
     STRING_FOR_GRISTLE,
     {
         &gristleOnMenu,
@@ -704,9 +717,9 @@ PLACE_SDRAM_BSS UnpatchedParam bitcrushMenu{STRING_FOR_BITCRUSH, params::UNPATCH
 PLACE_SDRAM_BSS patched_param::Integer foldMenu{STRING_FOR_WAVEFOLD, STRING_FOR_WAVEFOLD, params::LOCAL_FOLD,
                                                 RenderingStyle::BAR};
 // Sear: patched drive (per voice) plus its unpatched tilt tone control.
-PLACE_SDRAM_BSS patched_param::Integer searMenu{STRING_FOR_SEAR, STRING_FOR_SEAR, params::LOCAL_SEAR,
+PLACE_SDRAM_BSS SearPatched searMenu{STRING_FOR_SEAR, STRING_FOR_SEAR, params::LOCAL_SEAR,
                                                 RenderingStyle::BAR};
-PLACE_SDRAM_BSS UnpatchedParam searToneMenu{STRING_FOR_SEAR_TONE, params::UNPATCHED_SEAR_TONE, RenderingStyle::BAR};
+PLACE_SDRAM_BSS SearUnpatched searToneMenu{STRING_FOR_SEAR_TONE, params::UNPATCHED_SEAR_TONE, RenderingStyle::BAR};
 
 PLACE_SDRAM_BSS HorizontalMenu soundDistortionMenu{
     STRING_FOR_DISTORTION,
@@ -927,26 +940,26 @@ PLACE_SDRAM_BSS HorizontalMenu globalDistortionMenu{
 PLACE_SDRAM_BSS clouds_fx::Mode cloudsModeMenu{STRING_FOR_CLOUDS_MODE, STRING_FOR_CLOUDS_MODE};
 PLACE_SDRAM_BSS clouds_fx::Freeze cloudsFreezeMenu{STRING_FOR_CLOUDS_FREEZE, STRING_FOR_CLOUDS_FREEZE};
 
-PLACE_SDRAM_BSS UnpatchedParam cloudsPositionMenu{STRING_FOR_CLOUDS_POSITION_SHORT, STRING_FOR_CLOUDS_POSITION,
+PLACE_SDRAM_BSS CloudsParam cloudsPositionMenu{STRING_FOR_CLOUDS_POSITION_SHORT, STRING_FOR_CLOUDS_POSITION,
                                                   params::UNPATCHED_CLOUDS_POSITION};
-PLACE_SDRAM_BSS UnpatchedParam cloudsSizeMenu{STRING_FOR_CLOUDS_SIZE_SHORT, STRING_FOR_CLOUDS_SIZE,
+PLACE_SDRAM_BSS CloudsParam cloudsSizeMenu{STRING_FOR_CLOUDS_SIZE_SHORT, STRING_FOR_CLOUDS_SIZE,
                                               params::UNPATCHED_CLOUDS_SIZE};
-PLACE_SDRAM_BSS UnpatchedParam cloudsPitchMenu{STRING_FOR_CLOUDS_PITCH_SHORT, STRING_FOR_CLOUDS_PITCH,
+PLACE_SDRAM_BSS CloudsParam cloudsPitchMenu{STRING_FOR_CLOUDS_PITCH_SHORT, STRING_FOR_CLOUDS_PITCH,
                                                params::UNPATCHED_CLOUDS_PITCH};
-PLACE_SDRAM_BSS UnpatchedParam cloudsDensityMenu{STRING_FOR_CLOUDS_DENSITY_SHORT, STRING_FOR_CLOUDS_DENSITY,
+PLACE_SDRAM_BSS CloudsParam cloudsDensityMenu{STRING_FOR_CLOUDS_DENSITY_SHORT, STRING_FOR_CLOUDS_DENSITY,
                                                  params::UNPATCHED_CLOUDS_DENSITY};
-PLACE_SDRAM_BSS UnpatchedParam cloudsTextureMenu{STRING_FOR_CLOUDS_TEXTURE_SHORT, STRING_FOR_CLOUDS_TEXTURE,
+PLACE_SDRAM_BSS CloudsParam cloudsTextureMenu{STRING_FOR_CLOUDS_TEXTURE_SHORT, STRING_FOR_CLOUDS_TEXTURE,
                                                  params::UNPATCHED_CLOUDS_TEXTURE};
-PLACE_SDRAM_BSS UnpatchedParam cloudsBlendMenu{STRING_FOR_CLOUDS_BLEND_SHORT, STRING_FOR_CLOUDS_BLEND,
+PLACE_SDRAM_BSS CloudsParam cloudsBlendMenu{STRING_FOR_CLOUDS_BLEND_SHORT, STRING_FOR_CLOUDS_BLEND,
                                                params::UNPATCHED_CLOUDS_BLEND};
-PLACE_SDRAM_BSS UnpatchedParam cloudsSpreadMenu{STRING_FOR_CLOUDS_SPREAD_SHORT, STRING_FOR_CLOUDS_SPREAD,
+PLACE_SDRAM_BSS CloudsParam cloudsSpreadMenu{STRING_FOR_CLOUDS_SPREAD_SHORT, STRING_FOR_CLOUDS_SPREAD,
                                                 params::UNPATCHED_CLOUDS_SPREAD};
-PLACE_SDRAM_BSS UnpatchedParam cloudsFeedbackMenu{STRING_FOR_CLOUDS_FEEDBACK_SHORT, STRING_FOR_CLOUDS_FEEDBACK,
+PLACE_SDRAM_BSS CloudsParam cloudsFeedbackMenu{STRING_FOR_CLOUDS_FEEDBACK_SHORT, STRING_FOR_CLOUDS_FEEDBACK,
                                                   params::UNPATCHED_CLOUDS_FEEDBACK};
-PLACE_SDRAM_BSS UnpatchedParam cloudsReverbMenu{STRING_FOR_CLOUDS_REVERB_SHORT, STRING_FOR_CLOUDS_REVERB,
+PLACE_SDRAM_BSS CloudsParam cloudsReverbMenu{STRING_FOR_CLOUDS_REVERB_SHORT, STRING_FOR_CLOUDS_REVERB,
                                                 params::UNPATCHED_CLOUDS_REVERB};
 
-PLACE_SDRAM_BSS HorizontalMenu cloudsMenu{
+PLACE_SDRAM_BSS CloudsMenu cloudsMenu{
     STRING_FOR_CLOUDS,
     {
         &cloudsModeMenu,

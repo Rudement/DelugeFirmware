@@ -23,6 +23,7 @@
 #include "hid/display/display.h"
 #include "dsp/clouds_adapter.h"
 #include "model/mod_controllable/mod_controllable_audio.h"
+#include "model/settings/runtime_feature_settings.h"
 
 // NOT `clouds`: the vendored DSP already occupies a global `clouds::`
 // namespace, and menus.cpp has `using namespace gui::menu_item;`, which would
@@ -34,6 +35,11 @@ namespace deluge::gui::menu_item::clouds_fx {
 /// ~180 KB working buffer rather than merely muting it.
 class Mode final : public Selection {
 public:
+	/// Hidden along with the rest of Clouds when the community feature is switched off. The effect
+	/// itself keeps running, so a song already using Clouds is unaffected by hiding its menus.
+	bool isRelevant(ModControllableAudio* modControllable, int32_t whichThing) override {
+		return runtimeFeatureSettings.isOn(RuntimeFeatureSettingType::EnableCloudsFX);
+	}
 	using Selection::Selection;
 
 	void readCurrentValue() override {
@@ -86,9 +92,11 @@ public:
 	}
 
 	/// Pointless while the engine is off, and actively confusing: freezing a
-	/// buffer that is not being recorded into does nothing audible.
+	/// buffer that is not being recorded into does nothing audible. Also goes when the community
+	/// feature is switched off, along with the rest of Clouds.
 	bool isRelevant(ModControllableAudio* modControllable, int32_t whichThing) override {
-		return modControllable != nullptr && modControllable->cloudsMode != CloudsMode::OFF;
+		return runtimeFeatureSettings.isOn(RuntimeFeatureSettingType::EnableCloudsFX) && modControllable != nullptr
+		       && modControllable->cloudsMode != CloudsMode::OFF;
 	}
 };
 

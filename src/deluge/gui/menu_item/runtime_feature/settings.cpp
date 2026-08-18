@@ -74,6 +74,11 @@ SettingToggle menuTrimFromStartOfAudioClip(RuntimeFeatureSettingType::TrimFromSt
 SettingToggle menuShowBatteryLevel(RuntimeFeatureSettingType::ShowBatteryLevel);
 RoundedCornersSettingToggle menuRoundedCorners(RuntimeFeatureSettingType::RoundedCorners);
 SettingToggle menuKitSplit(RuntimeFeatureSettingType::KitSplit);
+SettingToggle menuFourBandEq(RuntimeFeatureSettingType::FourBandEq);
+SettingToggle menuEnablePlaitsEngine(RuntimeFeatureSettingType::EnablePlaitsEngine);
+SettingToggle menuEnableCloudsFX(RuntimeFeatureSettingType::EnableCloudsFX);
+SettingToggle menuEnableGristleizer(RuntimeFeatureSettingType::EnableGristleizer);
+SettingToggle menuEnableSear(RuntimeFeatureSettingType::EnableSear);
 
 std::array<MenuItem*, RuntimeFeatureSettingType::MaxElement - kNonTopLevelSettings> subMenuEntries{
     &menuDrumRandomizer,
@@ -100,7 +105,12 @@ std::array<MenuItem*, RuntimeFeatureSettingType::MaxElement - kNonTopLevelSettin
     &menuRoundedCorners,
     &menuTrimFromStartOfAudioClip,
     &menuShowBatteryLevel,
-    &menuKitSplit};
+    &menuKitSplit,
+    &menuFourBandEq,
+    &menuEnablePlaitsEngine,
+    &menuEnableCloudsFX,
+    &menuEnableGristleizer,
+    &menuEnableSear};
 
 Settings::Settings(l10n::String name, l10n::String title) : menu_item::Submenu(name, title, subMenuEntries) {
 }
