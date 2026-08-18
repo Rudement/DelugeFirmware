@@ -378,14 +378,24 @@ void ParamManagerForTimeline::processCurrentPos(ModelStackWithThreeMainThings* m
 
 		FOR_EACH_AUTOMATED_PARAM_COLLECTION_DEFINITELY_SOME_START
 
-		summary->paramCollection->processCurrentPos(modelStackWithParamCollection, ticksSkipped, reversed, didPingpong,
-		                                            true);
-		// if we can't interpolate by samples then we'll interpolate by ticks here instead
-		// Reads BOTH words, not just [0]. The unpatched shared block is 40 params now, so for a
-		// Sound (41 total) the arp probability and spread params live in word 1; word 0 alone
-		// would silently stop tick-interpolating them.
+		// If we can't interpolate by samples then we'll interpolate by ticks instead. This has to happen *before*
+		// processCurrentPos(), because that may reach a node and set up a new increment for the span we're about to
+		// begin - whereas the ticks we've skipped belong to the span we've just finished. Applying them to the new
+		// increment sends the value far past its target (a whole inter-node gap's worth of a few-tick ramp), which for
+		// MIDI output means expression values well outside 0-127.
+		//
+		// containsInterpolation() reads BOTH words, not just [0]. The unpatched shared block is 40 params now, so for
+		// a Sound (41 total) the arp probability and spread params live in word 1; word 0 alone would silently stop
+		// tick-interpolating them.
 		if (!mayInterpolate && summary->containsInterpolation()) {
 			summary->paramCollection->tickTicks(ticksSkipped, modelStackWithParamCollection);
+		}
+
+		summary->paramCollection->processCurrentPos(modelStackWithParamCollection, ticksSkipped, reversed, didPingpong,
+		                                            true);
+		// Re-check after processCurrentPos(): if a node has just started some interpolation, we need to come back every
+		// tick to advance it. Both words again, for the same reason as above.
+		if (!mayInterpolate && summary->containsInterpolation()) {
 			ticksTilNextEvent = 0;
 		}
 		ticksTilNextEvent = std::min(ticksTilNextEvent, summary->paramCollection->ticksTilNextEvent);
