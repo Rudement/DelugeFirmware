@@ -124,6 +124,7 @@ OutputType getCurrentOutputType() {
 }
 
 using namespace deluge;
+using namespace deluge::processing::engines;
 
 Song::Song() : backedUpParamManagers(sizeof(BackedUpParamManager)) {
 	outputClipInstanceListIsCurrentlyInvalid = false;
