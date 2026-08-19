@@ -16,6 +16,7 @@
  */
 
 #include "model/mod_controllable/mod_controllable_audio.h"
+#include "OSLikeStuff/timers_interrupts/timers_interrupts.h"
 #include "ModFXProcessor.h"
 #include "definitions_cxx.hpp"
 #include "deluge/dsp/granular/GranularProcessor.h"
@@ -2207,8 +2208,19 @@ bool ModControllableAudio::setCloudsMode(CloudsMode mode) {
 	}
 
 	cloudsMode = mode;
-	cloudsFX->setMode(mode);
-	cloudsFX->setFreeze(cloudsFreeze);
+
+	// The WHOLE sequence has to be inside the critical section, not just the
+	// prepare. setMode() changes the engine's playback mode; until Prepare()
+	// has caught up, any Prepare() call sees playback_mode_changed and takes
+	// the reset path -- fourteen Init/Allocate calls. Guarding only the
+	// prepare left exactly that window open for the audio thread to fall into,
+	// which is why the first attempt at this changed nothing.
+	{
+		CriticalSectionGuard guard;
+		cloudsFX->setMode(mode);
+		cloudsFX->setFreeze(cloudsFreeze);
+		cloudsFX->prepareOffAudioThread();
+	}
 	return true;
 }
 

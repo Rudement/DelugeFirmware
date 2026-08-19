@@ -114,7 +114,16 @@ void GlobalEffectable::initParams(ParamManager* paramManager) {
 	unpatchedParams->params[params::UNPATCHED_CLOUDS_DENSITY].setCurrentValueBasicForSetup(1288490152);
 	unpatchedParams->params[params::UNPATCHED_CLOUDS_TEXTURE].setCurrentValueBasicForSetup(0);
 	unpatchedParams->params[params::UNPATCHED_CLOUDS_BLEND].setCurrentValueBasicForSetup(NEGATIVE_ONE_Q31);
-	unpatchedParams->params[params::UNPATCHED_CLOUDS_SPREAD].setCurrentValueBasicForSetup(NEGATIVE_ONE_Q31);
+	// Centre, not minimum -- and this one is load-bearing. In Resonestor mode
+	// stereo_spread drives two things at once:
+	//     set_stereo(ss < 0.5 ? 0 : (ss - 0.5) * 2)
+	//     set_separation(ss > 0.5 ? 0 : (0.5 - ss) * 2)
+	// so ss = 0 means separation = 1.0, which silences the mode outright.
+	// Measured against the real engine: at Spread 0 Resonestor is silent for
+	// every combination of density, reverb, feedback and distortion; at Spread
+	// 0.5 it produces output at the defaults. Centre is also the neutral
+	// setting for the granular modes, so nothing else is compromised.
+	unpatchedParams->params[params::UNPATCHED_CLOUDS_SPREAD].setCurrentValueBasicForSetup(0);
 	unpatchedParams->params[params::UNPATCHED_CLOUDS_FEEDBACK].setCurrentValueBasicForSetup(NEGATIVE_ONE_Q31);
 	unpatchedParams->params[params::UNPATCHED_CLOUDS_REVERB].setCurrentValueBasicForSetup(NEGATIVE_ONE_Q31);
 }
