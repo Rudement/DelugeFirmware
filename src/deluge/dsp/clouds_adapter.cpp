@@ -250,6 +250,24 @@ void CloudsAdapter::prepareOffAudioThread() {
 	// The expensive one. Runs here so the audio thread never sees it.
 	processor_->Prepare();
 
+	// Moving the work off the audio thread is only half of it. The caller holds a
+	// critical section across this whole sequence, so the audio thread is *stalled*
+	// for its duration rather than overrunning inside it -- and a stall of this
+	// length reads to the engine as a missed deadline just the same. It then culls
+	// every voice, and the synth stays silent until the transport is stopped and
+	// restarted to retrigger it, which is exactly the symptom this was supposed to
+	// cure. It also makes Resonestor look broken a second time over: a culled synth
+	// feeds it nothing, and a resonator with no input has nothing to resonate.
+	//
+	// Suppress culling for the routine that resumes after the stall. AudioEngine
+	// clears the flag itself at the end of that routine, so this does not leak.
+	//
+	// Note that clearing heavyPreparePending_ below is what removes the in-render
+	// Prepare() -- and with it the only other place bypassCulling was ever set. The
+	// two have to move together; setting one without the other is what left this
+	// broken after the fixes were restored.
+	AudioEngine::bypassCulling = true;
+
 	heavyPreparePending_ = false;
 	fadeInRemaining_ = kFadeInSamples;
 }
