@@ -202,11 +202,39 @@ private:
 	/// Call Prepare() at most this often. The Deluge's render block varies from
 	/// 4 to 128 samples, so calling Prepare() once per block means anywhere
 	/// from 344 Hz to 11 kHz. Upstream calls it from its main loop, on the
-	/// order of 1 kHz. Stretch and Oliverb do real work in there every call --
-	/// LoadCorrelator() plus EvaluateSomeCandidates() -- so at small block
-	/// sizes we were doing that up to ten times more often than upstream ever
-	/// intended, which is why Stretch specifically ran out of CPU.
-	static constexpr int32_t kSamplesBetweenPrepares = 32;
+	/// order of 1 kHz.
+	///
+	/// 32 samples is 1378 Hz at 44.1 kHz, i.e. still upstream's rate -- which is
+	/// fine on upstream's main loop and not fine here, because we have to run
+	/// Prepare() inside the audio render where a spike threatens the deadline.
+	/// Measured natively, per 32-frame block:
+	///
+	///     mode        Process()   Prepare()
+	///     Granular      5.63 us     0.03 us
+	///     Stretch       6.90 us     5.59 us
+	///     Delay         8.18 us     0.03 us
+	///     Spectral      3.51 us    12.48 us
+	///     Oliverb      11.21 us     3.68 us
+	///     Resonestor   12.09 us     0.04 us
+	///
+	/// Spectral is the cheapest mode to run and the most expensive to prepare, by
+	/// a factor of three and a half over its own Process(). That is the whole
+	/// reason it fell over on hardware while Granular was fine.
+	///
+	/// The work Prepare() does is incremental by design, so calling it less often
+	/// costs convergence speed rather than correctness -- and measurement says
+	/// there is a great deal of headroom. Output RMS against a 220 Hz tone,
+	/// varying only the Prepare rate:
+	///
+	///     rate      1000 Hz   250 Hz   125 Hz    31 Hz
+	///     Spectral   0.3274   0.3282   0.3279   0.3273
+	///     Stretch    0.1400   0.1401   0.1398   0.0898
+	///
+	/// Spectral is indifferent all the way down. Stretch is flat to 125 Hz and
+	/// only starts losing overlap material below that. 256 samples is 172 Hz at
+	/// 44.1 kHz: an eightfold cut in prepare cost, inside the range where both
+	/// measured identical to running it every block.
+	static constexpr int32_t kSamplesBetweenPrepares = 256;
 
 	/// Set when the next Prepare() will take its expensive reallocation path,
 	/// so process() can tell the audio engine not to cull voices over it.
