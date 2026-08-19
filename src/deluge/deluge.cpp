@@ -16,6 +16,7 @@
  */
 
 #include "deluge.h"
+#include "dsp/clouds_adapter.h"
 
 #include "RZA1/sdhi/inc/sdif.h"
 #include "definitions_cxx.hpp"
@@ -599,6 +600,13 @@ void registerTasks() {
 	// handles animations and checks on the timers for any infrequent actions
 	// long term this should probably be made into an idle task
 	addRepeatingTask([]() { uiTimerManager.routine(); }, p++, 0.0001, 0.0007, 0.01, "ui routine", RESOURCE_NONE);
+
+	// Clouds' periodic Prepare(). It belongs here rather than in the audio render:
+	// for Spectral, Stretch and Oliverb it is a spike of up to 634 us measured on a
+	// desktop, which is larger than the whole render deadline at most block sizes.
+	// It early-outs unless a hop is actually due, so running it often is cheap.
+	addRepeatingTask([]() { CloudsAdapter::tickAllPrepares(); }, p++, 0.0005, 0.002, 0.02,
+	                 "clouds prepare", RESOURCE_NONE);
 
 	// addRepeatingTask([]() { AudioEngine::routineWithClusterLoading(true); }, 0, 1 / 44100., 16 / 44100., 32 / 44100.,
 	// true); addRepeatingTask(&(AudioEngine::routine), 0, 16 / 44100., 64 / 44100., true);

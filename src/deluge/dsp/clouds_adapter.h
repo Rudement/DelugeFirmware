@@ -173,6 +173,35 @@ public:
 	/// process() reads.
 	void prepareOffAudioThread();
 
+	/// Run the periodic part of Prepare() for every live adapter, from a non-audio
+	/// task.
+	///
+	/// Prepare() is not uniformly cheap. Measured natively, per call:
+	///
+	///     mode          mean      worst    spikes
+	///     Granular      0.03 us    0.29 us   never
+	///     Stretch       5.51 us  127.85 us   1 in 10
+	///     Delay         0.03 us    0.28 us   never
+	///     Spectral     12.87 us  633.91 us   1 in 32
+	///     Oliverb       3.43 us  127.73 us   1 in 40
+	///     Resonestor    0.03 us    0.24 us   never
+	///
+	/// Spectral, Stretch and Oliverb are not slow on average -- they are spiky.
+	/// STFT::Buffer() returns immediately unless a hop is due and then runs a whole
+	/// 4096-point FFT; the WSOLA correlator is the same shape. 634 us on a desktop
+	/// lands inside a render block whose entire deadline is 2.9 ms at the largest
+	/// block size and 90 us at the smallest, and ARM will be several times slower
+	/// again. No rate limit fixes that: lowering the rate does not lower the spike,
+	/// it just moves which block dies.
+	///
+	/// So it goes where upstream has always run it -- off the audio path, from the
+	/// main loop. The early-out means calling this often is nearly free, and the
+	/// ready_/done_ handshake inside STFT is what makes it safe to run alongside
+	/// Process() without a lock. Taking a critical section here instead would be no
+	/// better than staying in the render: the audio thread would simply stall for
+	/// the same 634 us rather than overrun by it.
+	static void tickAllPrepares();
+
 	/// Render in place over `buffer`, at the Deluge's kSampleRate. Internally
 	/// resamples down to Clouds' native 32 kHz, runs whole
 	/// clouds::kMaxBlockSize blocks through the untouched upstream processor,
@@ -196,45 +225,10 @@ private:
 	/// nothing and removes it.
 	int32_t fadeInRemaining_ = 0;
 
-	/// Samples of audio since Prepare() was last called, so its rate can be
-	/// bounded independently of the render block size.
-	int32_t samplesSincePrepare_ = 0;
-	/// Call Prepare() at most this often. The Deluge's render block varies from
-	/// 4 to 128 samples, so calling Prepare() once per block means anywhere
-	/// from 344 Hz to 11 kHz. Upstream calls it from its main loop, on the
-	/// order of 1 kHz.
-	///
-	/// 32 samples is 1378 Hz at 44.1 kHz, i.e. still upstream's rate -- which is
-	/// fine on upstream's main loop and not fine here, because we have to run
-	/// Prepare() inside the audio render where a spike threatens the deadline.
-	/// Measured natively, per 32-frame block:
-	///
-	///     mode        Process()   Prepare()
-	///     Granular      5.63 us     0.03 us
-	///     Stretch       6.90 us     5.59 us
-	///     Delay         8.18 us     0.03 us
-	///     Spectral      3.51 us    12.48 us
-	///     Oliverb      11.21 us     3.68 us
-	///     Resonestor   12.09 us     0.04 us
-	///
-	/// Spectral is the cheapest mode to run and the most expensive to prepare, by
-	/// a factor of three and a half over its own Process(). That is the whole
-	/// reason it fell over on hardware while Granular was fine.
-	///
-	/// The work Prepare() does is incremental by design, so calling it less often
-	/// costs convergence speed rather than correctness -- and measurement says
-	/// there is a great deal of headroom. Output RMS against a 220 Hz tone,
-	/// varying only the Prepare rate:
-	///
-	///     rate      1000 Hz   250 Hz   125 Hz    31 Hz
-	///     Spectral   0.3274   0.3282   0.3279   0.3273
-	///     Stretch    0.1400   0.1401   0.1398   0.0898
-	///
-	/// Spectral is indifferent all the way down. Stretch is flat to 125 Hz and
-	/// only starts losing overlap material below that. 256 samples is 172 Hz at
-	/// 44.1 kHz: an eightfold cut in prepare cost, inside the range where both
-	/// measured identical to running it every block.
-	static constexpr int32_t kSamplesBetweenPrepares = 256;
+	/// Live adapters, so tickAllPrepares() can find them. Intrusive and
+	/// singly-linked: there are only ever a handful, and this costs one pointer.
+	static CloudsAdapter* firstAdapter_;
+	CloudsAdapter* nextAdapter_ = nullptr;
 
 	/// Set when the next Prepare() will take its expensive reallocation path,
 	/// so process() can tell the audio engine not to cull voices over it.

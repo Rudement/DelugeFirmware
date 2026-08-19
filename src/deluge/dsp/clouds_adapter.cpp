@@ -67,7 +67,27 @@ void CloudsBuffer::steal(char const* errorCode) {
 	owner_->bufferStolen();
 }
 
+CloudsAdapter* CloudsAdapter::firstAdapter_ = nullptr;
+
+void CloudsAdapter::tickAllPrepares() {
+	for (CloudsAdapter* a = firstAdapter_; a != nullptr; a = a->nextAdapter_) {
+		// needsInit_ means the next render will re-Init and prepare for itself, and
+		// heavyPreparePending_ means a mode change already has one queued. Preparing
+		// under either would be preparing an engine that is about to be rebuilt.
+		if (a->processor_ == nullptr || a->buffer_ == nullptr || a->needsInit_ || a->heavyPreparePending_) {
+			continue;
+		}
+		if (a->mode_ == CloudsMode::OFF) {
+			continue;
+		}
+		a->processor_->Prepare();
+	}
+}
+
 CloudsAdapter::CloudsAdapter() {
+	nextAdapter_ = firstAdapter_;
+	firstAdapter_ = this;
+
 	// The processor object itself is small (it holds pointers into the two
 	// working buffers, not the buffers); the 180 KB lives in CloudsBuffer and
 	// is acquired lazily by acquireBuffer().
@@ -95,6 +115,12 @@ CloudsAdapter::CloudsAdapter() {
 }
 
 CloudsAdapter::~CloudsAdapter() {
+	for (CloudsAdapter** link = &firstAdapter_; *link != nullptr; link = &(*link)->nextAdapter_) {
+		if (*link == this) {
+			*link = nextAdapter_;
+			break;
+		}
+	}
 	if (buffer_ != nullptr) {
 		buffer_->~CloudsBuffer();
 		delugeDealloc(buffer_);
@@ -356,20 +382,12 @@ void CloudsAdapter::process(std::span<StereoSample> buffer) {
 		AudioEngine::bypassCulling = true;
 		heavyPreparePending_ = false;
 		processor_->Prepare();
-		samplesSincePrepare_ = 0;
 	}
 	else {
-		// Rate-limited. The work Prepare() does for Stretch and Oliverb is
-		// incremental by design -- EvaluateSomeCandidates() is meant to be
-		// spread over successive calls -- so calling it less often costs
-		// convergence speed, not correctness. Calling it once per render block
-		// meant up to 11 kHz at the smallest block sizes, which is what made
-		// Stretch drop out.
-		samplesSincePrepare_ += static_cast<int32_t>(buffer.size());
-		if (samplesSincePrepare_ >= kSamplesBetweenPrepares) {
-			samplesSincePrepare_ = 0;
-			processor_->Prepare();
-		}
+		// Nothing. The periodic Prepare() now runs from tickAllPrepares() on a
+		// non-audio task, because for Spectral, Stretch and Oliverb it is a
+		// several-hundred-microsecond spike that no render block can absorb. See
+		// the measurements on tickAllPrepares().
 	}
 	while (downCount_ >= clouds::kMaxBlockSize) {
 		clouds::ShortFrame shortIn[clouds::kMaxBlockSize];
