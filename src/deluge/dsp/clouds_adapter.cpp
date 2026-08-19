@@ -77,7 +77,17 @@ void CloudsAdapter::tickAllPrepares() {
 		if (a->processor_ == nullptr || a->buffer_ == nullptr || a->needsInit_ || a->heavyPreparePending_) {
 			continue;
 		}
-		if (a->mode_ == CloudsMode::OFF) {
+		// Only three modes have anything periodic to do. Prepare()'s tail is:
+		//
+		//     if (SPECTRAL)                 phase_vocoder_.Buffer();
+		//     else if (STRETCH || OLIVERB)  LoadCorrelator(); EvaluateSomeCandidates();
+		//
+		// For Granular, Delay and Resonestor there is no else branch -- calling this
+		// is a measured 0.03 us of doing nothing. Skip them outright rather than
+		// waking the engine hundreds of times a second to find that out, which is
+		// load the Deluge did not carry before this task existed.
+		if (a->mode_ != CloudsMode::SPECTRAL && a->mode_ != CloudsMode::STRETCH
+		    && a->mode_ != CloudsMode::OLIVERB) {
 			continue;
 		}
 		a->processor_->Prepare();

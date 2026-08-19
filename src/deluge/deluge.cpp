@@ -605,7 +605,7 @@ void registerTasks() {
 	// for Spectral, Stretch and Oliverb it is a spike of up to 634 us measured on a
 	// desktop, which is larger than the whole render deadline at most block sizes.
 	// It early-outs unless a hop is actually due, so running it often is cheap.
-	addRepeatingTask([]() { CloudsAdapter::tickAllPrepares(); }, p++, 0.0005, 0.002, 0.02,
+	addRepeatingTask([]() { CloudsAdapter::tickAllPrepares(); }, p++, 0.002, 0.005, 0.05,
 	                 "clouds prepare", RESOURCE_NONE);
 
 	// addRepeatingTask([]() { AudioEngine::routineWithClusterLoading(true); }, 0, 1 / 44100., 16 / 44100., 32 / 44100.,
