@@ -32,9 +32,9 @@ namespace deluge::gui::menu_item::cv_output {
 
 /// Whether the AUX menus should be shown at all.
 ///
-/// Two separate reasons to hide: the hardware cannot carry audio on the CV sockets, or the user
+/// Two separate reasons to hide: the build does not offer the sends at all, or the user
 /// switched AUX Sends off in SETTINGS > COMMUNITY FEATURES. Every menu in this file asks this
-/// rather than cvOutputsAvailable() directly, so the toggle takes the whole feature out of the
+/// rather than cvSendMenusVisible() directly, so the toggle takes the whole feature out of the
 /// menus in one place -- the per-Clip sends on the three roots, and SETTINGS > AUX.
 ///
 /// Like the other Rudement toggles, this hides the door and not the room. The sends are real
@@ -43,7 +43,7 @@ namespace deluge::gui::menu_item::cv_output {
 /// their entries in the shortcut grids and the automation lists. What goes away is the menu
 /// surface.
 inline bool auxMenusVisible() {
-	return cvOutputsAvailable() && runtimeFeatureSettings.isOn(RuntimeFeatureSettingType::EnableAuxSends);
+	return cvSendMenusVisible() && runtimeFeatureSettings.isOn(RuntimeFeatureSettingType::EnableAuxSends);
 }
 
 /// SETTINGS > OUTPUT LEVEL. Absent on models where the CV sockets cannot carry audio.

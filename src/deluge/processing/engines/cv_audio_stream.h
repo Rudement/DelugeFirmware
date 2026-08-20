@@ -28,10 +28,30 @@ namespace deluge::processing::engines {
 /// boot. That lets the transfer engine feed it continuously with no processor involvement,
 /// so the sockets can carry audio rather than only the occasional note voltage.
 
-/// False on OLED models, where the DAC shares its SPI channel with the display and
-/// this cannot work. Everything that acts on a Clip's sends checks this first, so
-/// on an OLED model every Clip behaves as if it were routed to MAIN alone.
+/// Whether the sockets can actually carry audio on this hardware.
+///
+/// The DAC and the display sit on the same RSPI channel -- SPI_CHANNEL_CV and
+/// SPI_CHANNEL_OLED_MAIN are both 0 -- and on an OLED model boot hands the DAC's
+/// chip-select to software (deluge.cpp) so the two can take turns on the bus. A
+/// free-running stream owns that bus outright, so unless something arbitrates it the
+/// display never gets a word in. See cvStreamYieldBegin().
+///
+/// This is the *processing* gate: the capture path checks it, and where it is false every
+/// Clip behaves as if routed to MAIN alone. Menu visibility is a separate question --
+/// see cvSendMenusVisible().
 bool cvOutputsAvailable();
+
+/// Whether the AUX menus appear.
+///
+/// Deliberately not cvOutputsAvailable(). The sends are ordinary params: they are stored in
+/// the song file by name, they automate, and they LEARN to a knob. Songs move between
+/// machines, so tying the menus to whether the *local* sockets can stream makes those
+/// params uneditable on a machine you might be authoring on, and leaves any automation
+/// lane on them with no visible source.
+///
+/// These two were one predicate while the feature was 7-seg-only, which is why the whole
+/// thing disappeared on OLED rather than merely falling silent.
+bool cvSendMenusVisible();
 
 /// True while the CV sockets are being streamed to.
 bool cvStreamIsRunning();
