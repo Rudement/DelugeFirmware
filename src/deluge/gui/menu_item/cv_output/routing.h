@@ -29,11 +29,11 @@ using namespace deluge::processing::engines;
 
 namespace deluge::gui::menu_item::cv_output {
 
-/// SETTINGS > OUTPUT LEVEL. Absent on models where the CV sockets cannot carry audio.
+/// SETTINGS > OUTPUT LEVEL.
 class LevelSubmenu final : public Submenu {
 public:
 	using Submenu::Submenu;
-	bool isRelevant(ModControllableAudio* modControllable, int32_t whichThing) override { return cvOutputsAvailable(); }
+	bool isRelevant(ModControllableAudio* modControllable, int32_t whichThing) override { return cvSendMenusVisible(); }
 };
 
 /// The Clip whose routing the CLIP OUTPUT menu is editing. Set before the menu is
@@ -79,7 +79,7 @@ class SendWhenSplit final : public UnpatchedParam {
 public:
 	using UnpatchedParam::UnpatchedParam;
 	bool isRelevant(ModControllableAudio* modControllable, int32_t whichThing) override {
-		return cvOutputsAvailable() && cvGetStereoSplit();
+		return cvSendMenusVisible() && cvGetStereoSplit();
 	}
 };
 
@@ -91,7 +91,7 @@ class SendWhenNotSplit final : public UnpatchedParam {
 public:
 	using UnpatchedParam::UnpatchedParam;
 	bool isRelevant(ModControllableAudio* modControllable, int32_t whichThing) override {
-		return cvOutputsAvailable() && !cvGetStereoSplit();
+		return cvSendMenusVisible() && !cvGetStereoSplit();
 	}
 };
 
@@ -120,7 +120,7 @@ public:
 		}
 	}
 
-	bool isRelevant(ModControllableAudio* modControllable, int32_t whichThing) override { return cvOutputsAvailable(); }
+	bool isRelevant(ModControllableAudio* modControllable, int32_t whichThing) override { return cvSendMenusVisible(); }
 };
 
 /// The per-Clip sends as they appear on the SOUND root menu.
@@ -135,7 +135,7 @@ class SendsSubmenu final : public Submenu {
 public:
 	using Submenu::Submenu;
 	bool isRelevant(ModControllableAudio* modControllable, int32_t whichThing) override {
-		return cvOutputsAvailable() && getCurrentOutputType() != OutputType::KIT;
+		return cvSendMenusVisible() && getCurrentOutputType() != OutputType::KIT;
 	}
 };
 
@@ -153,7 +153,7 @@ public:
 		// different param than it was a moment ago.
 		view.setKnobIndicatorLevels();
 	}
-	bool isRelevant(ModControllableAudio* modControllable, int32_t whichThing) override { return cvOutputsAvailable(); }
+	bool isRelevant(ModControllableAudio* modControllable, int32_t whichThing) override { return cvSendMenusVisible(); }
 };
 
 /// AUX MASTER for one socket, 0-50. Steps are a fixed number of decibels rather than a fixed
@@ -193,7 +193,7 @@ public:
 	/// With the pair patched as one stereo destination there is one master, so CV2's entry has
 	/// nothing to set and hides itself -- the same collapse the sends do.
 	bool isRelevant(ModControllableAudio* modControllable, int32_t whichThing) override {
-		return cvOutputsAvailable() && (socket == 0 || !cvGetStereoSplit());
+		return cvSendMenusVisible() && (socket == 0 || !cvGetStereoSplit());
 	}
 
 private:

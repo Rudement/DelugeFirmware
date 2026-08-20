@@ -244,6 +244,10 @@ bool cvOutputsAvailable() {
 	return !deluge::hid::display::have_oled_screen;
 }
 
+bool cvSendMenusVisible() {
+	return true;
+}
+
 bool cvStreamIsRunning() {
 	return cvStreamRunning;
 }
