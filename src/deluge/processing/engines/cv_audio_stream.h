@@ -28,18 +28,58 @@ namespace deluge::processing::engines {
 /// boot. That lets the transfer engine feed it continuously with no processor involvement,
 /// so the sockets can carry audio rather than only the occasional note voltage.
 
-/// Whether the sockets can actually carry audio on this hardware.
+/// Whether the sockets can carry audio on this hardware.
 ///
-/// The DAC and the display sit on the same RSPI channel -- SPI_CHANNEL_CV and
-/// SPI_CHANNEL_OLED_MAIN are both 0 -- and on an OLED model boot hands the DAC's
-/// chip-select to software (deluge.cpp) so the two can take turns on the bus. A
-/// free-running stream owns that bus outright, so unless something arbitrates it the
-/// display never gets a word in. See cvStreamYieldBegin().
+/// True on every model. It was false on OLED until the bus arbitration below existed: the
+/// DAC and the display sit on the same RSPI channel -- SPI_CHANNEL_CV and
+/// SPI_CHANNEL_OLED_MAIN are both 0 -- and boot hands the DAC's chip-select to software
+/// there (deluge.cpp) precisely so the two can take turns. A free-running stream owns that
+/// bus outright, which is why it had to be kept off it entirely. It now gives the bus back
+/// on demand; see cvStreamYieldBusToDisplay().
 ///
-/// This is the *processing* gate: the capture path checks it, and where it is false every
-/// Clip behaves as if routed to MAIN alone. Menu visibility is a separate question --
-/// see cvSendMenusVisible().
+/// Kept as a function rather than deleted. It is the one place the processing path asks
+/// this question, the capture path still reads it, and a model that genuinely could not
+/// stream would answer here.
 bool cvOutputsAvailable();
+
+/// Records the SPI block as boot configured it for the DAC.
+///
+/// Call once, after R_RSPI_Create/R_RSPI_Start on SPI_CHANNEL_CV and before anything else
+/// touches the channel -- on an OLED model setupOLED() reconfigures it for 8-bit display
+/// writes within a few lines, and those are not the values to hand back to.
+///
+/// Needed because the display's own setup only writes the registers it cares about. The
+/// clock divider is not one of them: the stream runs the bus at its own rate, and without
+/// this the display would inherit whatever the stream last set.
+void cvStreamRecordBootSpiConfig();
+
+/// Hands the shared SPI bus to the display.
+///
+/// Only OLED models have anything to hand it to, and only there does this do any work.
+/// Stops the transfer engine, remembers where in the ring it stopped, puts the SPI block
+/// back the way boot left it, and parks the DAC's chip-select high as a GPIO so display
+/// data on the shared bus is not also clocked into the converter.
+///
+/// Idempotent, and a no-op while the stream is not running. Reached from interrupt
+/// context, so every wait on the hardware here is bounded rather than open.
+///
+/// The sockets hold their last voltage for as long as the display keeps the bus. That is
+/// what this feature costs on OLED, and it is not constant: OLED::sendMainImage() sends
+/// nothing while nothing on screen has changed, so a still screen costs nothing at all and
+/// a redraw costs one gap.
+void cvStreamYieldBusToDisplay();
+
+/// Takes the bus back and resumes from where the transfer engine stopped, rather than from
+/// the top of the ring -- so the gap is exactly as long as the display needed, with no
+/// audio replayed and none skipped past.
+///
+/// Marks a phase resync rather than letting the rate loop nurse the lead back. The loop
+/// can only trim by +-0.3%, so a millisecond of missed time takes seconds to shed and a
+/// busy screen would outrun it -- the lead would climb until the pump's own resync
+/// threshold fired, turning many small gaps into one large discontinuity plus a delay that
+/// grew the whole time. Resyncing here instead drops the frames that would have played
+/// during the gap: bounded, and it does not accumulate.
+void cvStreamTakeBusBack();
 
 /// Whether the AUX menus appear.
 ///

@@ -16,18 +16,22 @@
  */
 
 #include "processing/engines/cv_audio_stream.h"
+#include "OSLikeStuff/timers_interrupts/timers_interrupts.h"
 #include "definitions_cxx.hpp"
 #include "hid/display/display.h"
 #include "processing/engines/audio_engine.h"
+#include "processing/engines/cv_audio_stream_c_interface.h"
 #include "util/functions.h"
 #include <cmath>
 #include <cstring>
 
 extern "C" {
 #include "RZA1/cache/cache.h"
+#include "RZA1/gpio/gpio.h"
 #include "RZA1/system/iodefine.h"
 #include "RZA1/system/iodefines/rspi_iodefine.h"
 #include "drivers/dmac/dmac.h"
+#include "drivers/oled/oled.h"
 }
 
 namespace deluge::processing::engines {
@@ -98,6 +102,45 @@ const uint32_t cvStreamDmaLinkDescriptor[] __attribute__((aligned(CACHE_LINE_SIZ
     0,                                                                                  // Extension
     (uint32_t)cvStreamDmaLinkDescriptor                                                 // Next link: itself
 };
+
+/// Rebuilt on every resume: one partial pass from wherever the transfer engine stopped to
+/// the end of the ring, then a link into the permanent descriptor above, which links to
+/// itself and carries on forever. Only the source and the size differ from it -- the header
+/// is copied, so the descriptor is still write-back-disabled and the hardware still never
+/// modifies either of them.
+///
+/// This exists so a resume can pick up mid-ring. Restarting at the top instead would replay
+/// whatever of the previous pass had not been reached yet -- up to a whole ring, 46 ms of
+/// already-played audio -- for a gap that was under a millisecond.
+///
+/// Written by the CPU and read by the transfer engine, so it lives in the same SDRAM the
+/// ring does and gets the same flush.
+PLACE_SDRAM_DATA uint32_t cvStreamResumeDescriptor[8] __attribute__((aligned(CACHE_LINE_SIZE)));
+
+/// Where in the ring the transfer engine stopped, from its own current-source-address
+/// register. Set when the bus is given up, read when it is taken back.
+uint32_t cvStreamResumeSource = 0;
+
+/// True while the display has the shared bus. Only ever true on an OLED model.
+bool cvStreamYielded = false;
+
+/// Set whenever the stream has been off the bus, so the next pump puts the write pointer
+/// back where it belongs instead of letting the missed time turn into delay.
+bool cvStreamResyncPending = false;
+
+/// The SPI block as boot configured it for the DAC, captured before the display's own setup
+/// could overwrite it. Restored every time the bus is handed over.
+uint8_t cvStreamBootSpbr = 1;
+uint8_t cvStreamBootSpdcr = 0x60u;
+uint8_t cvStreamBootSpbfcr = 0b00100010;
+uint16_t cvStreamBootSpcmd0 = 0b0000001100000010;
+bool cvStreamBootSpiCaptured = false;
+
+/// Bound on every wait for the hardware below, because they run in interrupt context. A
+/// 32-bit word at the streaming rate takes about 10 us and these spins are far longer than
+/// that; reaching one means the hardware is not going to answer, and pressing on -- at
+/// worst one lost or truncated DAC word, which is a tick -- beats hanging an interrupt.
+constexpr uint32_t kCvBusWaitSpins = 20000;
 
 bool cvStereoSplitGlobal = false;
 bool cvStreamRunning = false;
@@ -241,7 +284,10 @@ inline uint32_t cvWord(uint32_t channel, int32_t sample) {
 } // namespace
 
 bool cvOutputsAvailable() {
-	return !deluge::hid::display::have_oled_screen;
+	// Was !have_oled_screen. The display and the DAC share RSPI channel 0, so a stream that
+	// could not give the bus back had to be kept off OLED models entirely; it gives the bus
+	// back now, so both models can stream. See cvStreamYieldBusToDisplay().
+	return true;
 }
 
 bool cvSendMenusVisible() {
@@ -447,6 +493,16 @@ void cvStreamPump(uint32_t numSamples) {
 		return;
 	}
 
+	// Off the bus while the display has it. Drop the window rather than write it into a ring
+	// nothing is currently reading: the read pointer is frozen, so anything written now would
+	// emerge late by however long the display took, and every window after it would inherit
+	// that same delay. Dropping costs the gap and nothing beyond it.
+	if (cvStreamYielded) {
+		cvStreamResyncPending = true;
+		cvSourceValid[0] = cvSourceValid[1] = false;
+		return;
+	}
+
 	const uint32_t readFrame =
 	    ((DMACn(CV_STREAM_DMA_CHANNEL).CRSA_n - (uint32_t)cvStreamBuffer) >> 3) & (kCvFramesPerChannel - 1);
 	const uint32_t lead = (cvStreamWriteFrame - readFrame) & (kCvFramesPerChannel - 1);
@@ -463,7 +519,11 @@ void cvStreamPump(uint32_t numSamples) {
 	// The rate estimate is deliberately KEPT. Only the phase is broken here; the ratio is a
 	// property of two crystals and is still correct, and throwing it away made the loop
 	// re-acquire from nominal every time this fired.
-	if (leadError > kCvResyncThreshold || leadError < -kCvResyncThreshold) {
+	// cvStreamResyncPending forces the same treatment after the bus has been away, where the
+	// lead is wrong by exactly the time the display held it and there is nothing to converge
+	// on -- the phase simply moved.
+	if (cvStreamResyncPending || leadError > kCvResyncThreshold || leadError < -kCvResyncThreshold) {
+		cvStreamResyncPending = false;
 		cvStreamWriteFrame = ((uint32_t)readFrame + (uint32_t)targetLead) & (kCvFramesPerChannel - 1);
 		cvResamplePos = 0.0f;
 		for (uint32_t socket = 0; socket < 2; socket++) {
@@ -597,14 +657,170 @@ void cvStreamPump(uint32_t numSamples) {
 	}
 }
 
-void cvStreamStart() {
-	// The DAC shares this SPI channel with the display on OLED models, where boot
-	// hands the chip-select to software and screen data is already using the bus.
-	// Nothing here would work, so don't start.
+namespace {
+
+/// Puts the SPI block and the DAC's chip-select into the shape the stream needs, then sets
+/// the transfer engine running from cvStreamResumeSource.
+void cvStreamEngageBus() {
 	if (deluge::hid::display::have_oled_screen) {
-		return;
+		// Hardware chip-select. Boot leaves this pin a GPIO on OLED models so the display and
+		// the DAC can take turns on the bus, but the stream needs a select pulse per 32-bit
+		// word -- roughly 94,000 a second -- and only the SPI block itself can do that. It goes
+		// back to being a GPIO the moment the bus is handed over.
+		setPinMux(SPI_SSL.port, SPI_SSL.pin, 3);
 	}
 
+	RSPI(SPI_CHANNEL_CV).SPCR &= ~(1 << 6); // disable while reconfiguring
+
+	// 32-bit frames. On 7SEG boot's settings are still in place and these write what is
+	// already there; on OLED the display path leaves the block set up for 8-bit writes, so
+	// this is what puts it back to talking to a converter.
+	RSPI(SPI_CHANNEL_CV).SPDCR = 0x60u;
+	RSPI(SPI_CHANNEL_CV).SPCMD0 = 0b0000001100000010;
+	// Both FIFOs flushed before the trigger levels are set. Anything left in them belongs to
+	// whoever had the bus last and is the wrong width for what follows.
+	RSPI(SPI_CHANNEL_CV).SPBFCR.BYTE = 0b00100010 | (1 << 7) | (1 << 6);
+	RSPI(SPI_CHANNEL_CV).SPBFCR.BYTE = 0b00100010;
+
+	RSPI(SPI_CHANNEL_CV).SPBR = 9;         // ~3.3 MHz -> ~47 kHz per socket
+	RSPI(SPI_CHANNEL_CV).SPCR |= (1 << 1); // transmit only
+	RSPI(SPI_CHANNEL_CV).SPCR |= (1 << 6);
+
+	const uint32_t bufferStart = (uint32_t)cvStreamBuffer;
+	const uint32_t bufferEnd = bufferStart + sizeof(cvStreamBuffer);
+	if (cvStreamResumeSource > bufferStart && cvStreamResumeSource < bufferEnd) {
+		// Mid-ring. One partial pass to the end, then into the permanent descriptor.
+		for (uint32_t word = 0; word < 8; word++) {
+			cvStreamResumeDescriptor[word] = cvStreamDmaLinkDescriptor[word];
+		}
+		cvStreamResumeDescriptor[1] = cvStreamResumeSource;
+		cvStreamResumeDescriptor[3] = bufferEnd - cvStreamResumeSource;
+		cvStreamResumeDescriptor[7] = (uint32_t)cvStreamDmaLinkDescriptor;
+		invalidate_range_all_caches((uintptr_t)cvStreamResumeDescriptor,
+		                            (uintptr_t)cvStreamResumeDescriptor + sizeof(cvStreamResumeDescriptor));
+		initDMAWithLinkDescriptor(CV_STREAM_DMA_CHANNEL, cvStreamResumeDescriptor, DMARS_FOR_RSPI_TX);
+	}
+	else {
+		// At the top of the ring, or an address that is not in it at all -- which the hardware
+		// should never report, but if it does, starting cleanly beats following it.
+		initDMAWithLinkDescriptor(CV_STREAM_DMA_CHANNEL, cvStreamDmaLinkDescriptor, DMARS_FOR_RSPI_TX);
+	}
+	dmaChannelStart(CV_STREAM_DMA_CHANNEL);
+}
+
+/// Stops the transfer engine, notes where it stopped, and leaves the SPI block and the
+/// chip-select as boot had them so somebody else can use the bus.
+void cvStreamReleaseBus() {
+	// Stop the transfer engine before touching the SPI block, or it keeps writing into a
+	// register being reconfigured.
+	DMACn(CV_STREAM_DMA_CHANNEL).CHCTRL_n |= DMAC0_CHCTRL_n_CLREN;
+
+	// It finishes the unit it is on rather than dropping it, so wait for it to actually go
+	// inactive before reading the address it reached.
+	for (uint32_t spins = 0; spins < kCvBusWaitSpins; spins++) {
+		if (!(DMACn(CV_STREAM_DMA_CHANNEL).CHSTAT_n & DMAC0_CHSTAT_n_TACT)) {
+			break;
+		}
+	}
+	cvStreamResumeSource = DMACn(CV_STREAM_DMA_CHANNEL).CRSA_n;
+
+	// Then let the word already in the SPI block finish, so the converter gets all 32 bits
+	// and its select pulse before the pin stops being a select. A word cut off partway is a
+	// wrong sample latched at full scale, which is a click rather than a gap.
+	for (uint32_t spins = 0; spins < kCvBusWaitSpins; spins++) {
+		if (RSPI(SPI_CHANNEL_CV).SPSR.BIT.TEND) {
+			break;
+		}
+	}
+
+	RSPI(SPI_CHANNEL_CV).SPCR &= ~(1 << 6); // disable while reconfiguring
+	// Flush both FIFOs. Whatever is still queued is 32-bit converter data, and the next user
+	// of this bus is writing bytes to a display.
+	RSPI(SPI_CHANNEL_CV).SPBFCR.BYTE = cvStreamBootSpbfcr | (1 << 7) | (1 << 6);
+	RSPI(SPI_CHANNEL_CV).SPBFCR.BYTE = cvStreamBootSpbfcr;
+	RSPI(SPI_CHANNEL_CV).SPBR = cvStreamBootSpbr;
+	RSPI(SPI_CHANNEL_CV).SPDCR = cvStreamBootSpdcr;
+	RSPI(SPI_CHANNEL_CV).SPCMD0 = cvStreamBootSpcmd0;
+	RSPI(SPI_CHANNEL_CV).SPCR &= ~(1 << 1); // full duplex again, not transmit-only
+	RSPI(SPI_CHANNEL_CV).SPCR |= (1 << 6);
+
+	if (deluge::hid::display::have_oled_screen) {
+		// Park the select high as a GPIO, the way boot left it, so the display's data is not
+		// also clocked into the converter. Driven before it is made an output, so it cannot
+		// glitch low on the way.
+		setOutputState(SPI_SSL.port, SPI_SSL.pin, true);
+		setPinAsOutput(SPI_SSL.port, SPI_SSL.pin);
+	}
+	// On 7SEG the pin stays the hardware select it has been since boot: nothing else is on
+	// this bus there, and turning it into a GPIO would break the note-voltage path, which
+	// relies on the SPI block pulsing it.
+}
+
+} // namespace
+
+void cvStreamRecordBootSpiConfig() {
+	if (cvStreamBootSpiCaptured) {
+		return;
+	}
+	cvStreamBootSpbr = RSPI(SPI_CHANNEL_CV).SPBR;
+	cvStreamBootSpdcr = RSPI(SPI_CHANNEL_CV).SPDCR;
+	cvStreamBootSpbfcr = RSPI(SPI_CHANNEL_CV).SPBFCR.BYTE;
+	cvStreamBootSpcmd0 = RSPI(SPI_CHANNEL_CV).SPCMD0;
+	cvStreamBootSpiCaptured = true;
+}
+
+void cvStreamYieldBusToDisplay() {
+	// Unguarded, and first, because this is the answer almost every time: no send is active,
+	// and this is on the path every CV note voltage and every display frame takes. Disabling
+	// interrupts to find that out would put a cost on the ordinary case that the feature does
+	// not earn -- and gate timing is measured against that path. Racing a start is not a risk:
+	// cvStreamStart() settles for itself, with interrupts off, whether the bus is already
+	// somebody else's.
+	if (!cvStreamRunning) {
+		return;
+	}
+	{
+		// Interrupts off for the flag, not for the hardware work below it. The waits in
+		// cvStreamReleaseBus() are bounded in iterations rather than in time, and holding
+		// interrupts off for their worst case would cost far more than the handover saves.
+		//
+		// The flag alone is enough. Claiming it here means a second caller -- an interrupt
+		// landing mid-handover -- turns back rather than reprogramming the block underneath
+		// this one. And a release cannot overlap a take: oled_low_level.c claims the bus
+		// before a transfer and gives it back after, so the two are already ordered by the
+		// transfer between them.
+		//
+		// Set before releasing, not after, for the same reason: a pump running concurrently
+		// must see that the ring is no longer being read.
+		CriticalSectionGuard guard;
+		if (!cvStreamRunning || cvStreamYielded) {
+			return;
+		}
+		cvStreamYielded = true;
+	}
+	cvStreamReleaseBus();
+}
+
+void cvStreamTakeBusBack() {
+	if (!cvStreamRunning) {
+		return;
+	}
+	{
+		CriticalSectionGuard guard;
+		if (!cvStreamRunning || !cvStreamYielded) {
+			return;
+		}
+		// Marked before the flag clears, so a pump landing between the two still resyncs
+		// rather than trusting a lead measured against a channel that is not running. Such a
+		// pump reads the address the transfer engine stopped at, which is exactly where
+		// cvStreamEngageBus() is about to resume from -- so the two agree.
+		cvStreamResyncPending = true;
+		cvStreamYielded = false;
+	}
+	cvStreamEngageBus();
+}
+
+void cvStreamStart() {
 	for (uint32_t frame = 0; frame < kCvFramesPerChannel; frame++) {
 		cvStreamBuffer[frame * 2] = cvWord(0, 0);
 		cvStreamBuffer[frame * 2 + 1] = cvWord(1, 0);
@@ -613,17 +829,6 @@ void cvStreamStart() {
 	// so an L1-only flush leaves the words the DMA is about to read sitting in L2 and the
 	// converter is fed whatever RAM happened to hold. Every other DMA user here does the same.
 	invalidate_range_all_caches((uintptr_t)cvStreamBuffer, (uintptr_t)cvStreamBuffer + sizeof(cvStreamBuffer));
-
-	// Boot already sets 32-bit frames, master mode, transmit requests and the
-	// hardware chip-select. Change only the clock -- twice as fast as for one
-	// channel, since every sample now costs two frames.
-	RSPI(SPI_CHANNEL_CV).SPCR &= ~(1 << 6);
-	RSPI(SPI_CHANNEL_CV).SPBR = 9;         // ~3.3 MHz -> ~47 kHz per socket
-	RSPI(SPI_CHANNEL_CV).SPCR |= (1 << 1); // transmit only
-	RSPI(SPI_CHANNEL_CV).SPCR |= (1 << 6);
-
-	initDMAWithLinkDescriptor(CV_STREAM_DMA_CHANNEL, cvStreamDmaLinkDescriptor, DMARS_FOR_RSPI_TX);
-	dmaChannelStart(CV_STREAM_DMA_CHANNEL);
 
 	// Start already at the target lead rather than at zero. The buffer was just filled with
 	// the centre value, so the DMA reads silence until the writer catches up, and the loop
@@ -640,23 +845,68 @@ void cvStreamStart() {
 	cvRate = kCvNominalRate;
 	cvLeadAvg = 0.0f;
 	cvResamplePos = 0.0f;
-	cvStreamRunning = true;
+
+	// From the top of the ring, which is where a fresh start reads from and what the lead
+	// above was set against.
+	cvStreamResumeSource = (uint32_t)cvStreamBuffer;
+
+	bool engageNow;
+	{
+		// With interrupts off, because the handover happens in one. Reading
+		// spiBusCurrentlySending and settling what to do about it have to be one step: a
+		// transfer completing in between would call cvStreamTakeBusBack() while this function
+		// still had cvStreamYielded false, find nothing to do, and leave the stream parked
+		// until whatever redrew the screen next happened to release the bus again.
+		CriticalSectionGuard guard;
+		cvStreamResyncPending = false;
+		cvStreamRunning = true;
+
+		// On an OLED model the display may be part-way through a frame on this same bus right
+		// now. Come up already yielded and let whoever holds it hand it over when they are
+		// finished, rather than reprogramming the SPI block underneath a transfer in flight.
+		cvStreamYielded = deluge::hid::display::have_oled_screen && spiBusCurrentlySending;
+		engageNow = !cvStreamYielded;
+	}
+
+	if (engageNow) {
+		cvStreamEngageBus();
+	}
 }
 
 void cvStreamStop() {
-	// Stop the transfer engine before touching the SPI block, or it keeps writing
-	// into a register we are reconfiguring.
-	DMACn(CV_STREAM_DMA_CHANNEL).CHCTRL_n |= DMAC0_CHCTRL_n_CLREN;
+	// Put the SPI back exactly as boot left it, rather than clearing it: the CV sockets go
+	// back to being note-voltage outputs when nothing is routed here, and that path uses this
+	// same channel. If the display already has the bus there is nothing of ours on it to take
+	// off, and reconfiguring the block would be reaching into somebody else's transfer.
+	//
+	// This used to write SPBR = 1 directly, "boot's rate for the 30 MHz request" -- true on
+	// 7SEG and wrong on OLED, where boot asks for 10 MHz and gets 3. It restores what was
+	// actually captured now.
+	bool releaseNow;
+	{
+		// Cleared first, so a handover landing in an interrupt from here on finds no stream to
+		// move and leaves the bus alone.
+		CriticalSectionGuard guard;
+		releaseNow = cvStreamRunning && !cvStreamYielded;
+		cvStreamRunning = false;
+		cvStreamYielded = false;
+		cvStreamResyncPending = false;
+	}
 
-	// Put the SPI back exactly as boot left it, rather than clearing it: the CV
-	// sockets go back to being note-voltage outputs when nothing is routed here,
-	// and that path uses this same channel.
-	RSPI(SPI_CHANNEL_CV).SPCR &= ~(1 << 6); // disable while reconfiguring
-	RSPI(SPI_CHANNEL_CV).SPBR = 1;          // boot's rate for the 30 MHz request
-	RSPI(SPI_CHANNEL_CV).SPCR &= ~(1 << 1); // full duplex again, not transmit-only
-	RSPI(SPI_CHANNEL_CV).SPCR |= (1 << 6);  // re-enable
-
-	cvStreamRunning = false;
+	if (releaseNow) {
+		cvStreamReleaseBus();
+	}
 }
 
 } // namespace deluge::processing::engines
+
+// The C-callable half of the handover. Thin on purpose: the arbitration decision belongs to
+// oled_low_level.c, which is the only place that knows when the shared bus is genuinely
+// idle, and the mechanism belongs here.
+extern "C" void cvStreamYieldBegin(void) {
+	deluge::processing::engines::cvStreamYieldBusToDisplay();
+}
+
+extern "C" void cvStreamYieldEnd(void) {
+	deluge::processing::engines::cvStreamTakeBusBack();
+}
