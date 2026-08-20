@@ -220,6 +220,8 @@ void RuntimeFeatureSettings::init() {
 	                  "enableGristleizer", RuntimeFeatureStateToggle::On);
 	SetupOnOffSetting(settings[RuntimeFeatureSettingType::EnableSear], STRING_FOR_COMMUNITY_FEATURE_SEAR,
 	                  "enableSear", RuntimeFeatureStateToggle::On);
+	SetupOnOffSetting(settings[RuntimeFeatureSettingType::EnableAuxSends], STRING_FOR_COMMUNITY_FEATURE_AUX_SENDS,
+	                  "enableAuxSends", RuntimeFeatureStateToggle::On);
 }
 
 void RuntimeFeatureSettings::factoryReset(bool showPopup) {

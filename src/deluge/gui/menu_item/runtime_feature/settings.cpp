@@ -79,6 +79,7 @@ SettingToggle menuEnablePlaitsEngine(RuntimeFeatureSettingType::EnablePlaitsEngi
 SettingToggle menuEnableCloudsFX(RuntimeFeatureSettingType::EnableCloudsFX);
 SettingToggle menuEnableGristleizer(RuntimeFeatureSettingType::EnableGristleizer);
 SettingToggle menuEnableSear(RuntimeFeatureSettingType::EnableSear);
+SettingToggle menuEnableAuxSends(RuntimeFeatureSettingType::EnableAuxSends);
 
 std::array<MenuItem*, RuntimeFeatureSettingType::MaxElement - kNonTopLevelSettings> subMenuEntries{
     &menuDrumRandomizer,
@@ -110,7 +111,8 @@ std::array<MenuItem*, RuntimeFeatureSettingType::MaxElement - kNonTopLevelSettin
     &menuEnablePlaitsEngine,
     &menuEnableCloudsFX,
     &menuEnableGristleizer,
-    &menuEnableSear};
+    &menuEnableSear,
+    &menuEnableAuxSends};
 
 Settings::Settings(l10n::String name, l10n::String title) : menu_item::Submenu(name, title, subMenuEntries) {
 }

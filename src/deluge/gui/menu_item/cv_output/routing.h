@@ -22,6 +22,7 @@
 #include "gui/views/view.h"
 #include "model/clip/clip.h"
 #include "model/song/song.h"
+#include "model/settings/runtime_feature_settings.h"
 #include "modulation/params/param_set.h"
 #include "processing/engines/cv_audio_stream.h"
 
@@ -29,11 +30,27 @@ using namespace deluge::processing::engines;
 
 namespace deluge::gui::menu_item::cv_output {
 
+/// Whether the AUX menus should be shown at all.
+///
+/// Two separate reasons to hide: the hardware cannot carry audio on the CV sockets, or the user
+/// switched AUX Sends off in SETTINGS > COMMUNITY FEATURES. Every menu in this file asks this
+/// rather than cvOutputsAvailable() directly, so the toggle takes the whole feature out of the
+/// menus in one place -- the per-Clip sends on the three roots, and SETTINGS > AUX.
+///
+/// Like the other Rudement toggles, this hides the door and not the room. The sends are real
+/// params and the capture keeps running, so a song saved with audio going to the sockets still
+/// does that with the menus switched off; the sends stay automatable and LEARN-able, and keep
+/// their entries in the shortcut grids and the automation lists. What goes away is the menu
+/// surface.
+inline bool auxMenusVisible() {
+	return cvOutputsAvailable() && runtimeFeatureSettings.isOn(RuntimeFeatureSettingType::EnableAuxSends);
+}
+
 /// SETTINGS > OUTPUT LEVEL. Absent on models where the CV sockets cannot carry audio.
 class LevelSubmenu final : public Submenu {
 public:
 	using Submenu::Submenu;
-	bool isRelevant(ModControllableAudio* modControllable, int32_t whichThing) override { return cvOutputsAvailable(); }
+	bool isRelevant(ModControllableAudio* modControllable, int32_t whichThing) override { return auxMenusVisible(); }
 };
 
 /// The Clip whose routing the CLIP OUTPUT menu is editing. Set before the menu is
@@ -79,7 +96,7 @@ class SendWhenSplit final : public UnpatchedParam {
 public:
 	using UnpatchedParam::UnpatchedParam;
 	bool isRelevant(ModControllableAudio* modControllable, int32_t whichThing) override {
-		return cvOutputsAvailable() && cvGetStereoSplit();
+		return auxMenusVisible() && cvGetStereoSplit();
 	}
 };
 
@@ -91,7 +108,7 @@ class SendWhenNotSplit final : public UnpatchedParam {
 public:
 	using UnpatchedParam::UnpatchedParam;
 	bool isRelevant(ModControllableAudio* modControllable, int32_t whichThing) override {
-		return cvOutputsAvailable() && !cvGetStereoSplit();
+		return auxMenusVisible() && !cvGetStereoSplit();
 	}
 };
 
@@ -120,7 +137,7 @@ public:
 		}
 	}
 
-	bool isRelevant(ModControllableAudio* modControllable, int32_t whichThing) override { return cvOutputsAvailable(); }
+	bool isRelevant(ModControllableAudio* modControllable, int32_t whichThing) override { return auxMenusVisible(); }
 };
 
 /// The per-Clip sends as they appear on the SOUND root menu.
@@ -135,7 +152,7 @@ class SendsSubmenu final : public Submenu {
 public:
 	using Submenu::Submenu;
 	bool isRelevant(ModControllableAudio* modControllable, int32_t whichThing) override {
-		return cvOutputsAvailable() && getCurrentOutputType() != OutputType::KIT;
+		return auxMenusVisible() && getCurrentOutputType() != OutputType::KIT;
 	}
 };
 
@@ -153,7 +170,7 @@ public:
 		// different param than it was a moment ago.
 		view.setKnobIndicatorLevels();
 	}
-	bool isRelevant(ModControllableAudio* modControllable, int32_t whichThing) override { return cvOutputsAvailable(); }
+	bool isRelevant(ModControllableAudio* modControllable, int32_t whichThing) override { return auxMenusVisible(); }
 };
 
 /// AUX MASTER for one socket, 0-50. Steps are a fixed number of decibels rather than a fixed
@@ -193,7 +210,7 @@ public:
 	/// With the pair patched as one stereo destination there is one master, so CV2's entry has
 	/// nothing to set and hides itself -- the same collapse the sends do.
 	bool isRelevant(ModControllableAudio* modControllable, int32_t whichThing) override {
-		return cvOutputsAvailable() && (socket == 0 || !cvGetStereoSplit());
+		return auxMenusVisible() && (socket == 0 || !cvGetStereoSplit());
 	}
 
 private:
