@@ -78,6 +78,7 @@ enum RuntimeFeatureSettingType : uint32_t {
 	GridColumnReorder,
 	ChordBrush,
 	RetrospectiveCapture,
+	EnableAuxSends,
 	MaxElement // Keep as boundary
 };
 

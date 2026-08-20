@@ -20,6 +20,7 @@ exactly as saved. This is deliberate, and is how the stock `Enable DX7 Engine` t
 | Gristleizer | `GRIS` | On | The Gristleizer menu |
 | Sear | `SEAR` | On | The Sear drive and tone controls |
 | Kit Split | `SPLT` | **Off** | `Kit Global FX > Actions > Split Kit` |
+| AUX Sends | `AUX` | On | The `AUX` menus and `SETTINGS > AUX` |
 
 ---
 
@@ -138,6 +139,38 @@ Source: `src/deluge/model/instrument/kit_split.cpp`, `src/deluge/gui/menu_item/k
 
 ---
 
+## AUX Sends
+
+An assignable audio send bus on the CV output sockets, ported from sticknobills'
+`AUX-Sends-1.0.1`. The two CV sockets carry audio instead of pitch voltage, so a track can be sent
+out to an external mixer, pedal or recorder while still going to the main outs.
+
+A new `AUX` submenu appears on the Kit-global, Audio Clip and Sound roots:
+
+- `MAIN` — toggle. Whether this Clip still reaches the main outputs.
+- `CV Send`, when `SETTINGS > AUX > Split` is off — one send, because the pair is one stereo
+  destination and placement across it comes from the Clip's own pan.
+- `CV1 Send` / `CV2 Send`, when Split is on — two sends, because the pair is then two independent
+  mono aux buses, which is what every mixer does.
+
+These are real params: automatable, LEARN-able, assignable to a gold knob, and present in the
+shortcut grids.
+
+`SETTINGS > AUX` holds what belongs to the rig rather than to a clip — `CV1 Level`, `CV2 Level` and
+`Stereo Split`. It is deliberately not inside `SETTINGS > CV`, which is about pitch voltages.
+
+On the Sound root the menu hides itself when that root is doubling as the Drum editor: every Drum
+carries its own copy of the shared send params, but the capture can only isolate a whole track, so
+those per-Drum copies could never do anything. The kit-wide send in `KIT GLOBAL FX` is the one that
+works. The firmware already does this for portamento.
+
+7-segment only, matching the original release — no OLED support was added in the port.
+
+Source: `src/deluge/processing/engines/cv_audio_stream.cpp`,
+`src/deluge/gui/menu_item/cv_output/routing.h`
+
+---
+
 ## How the gating works
 
 `src/deluge/gui/menu_item/runtime_feature/gated.h` wraps any `MenuItem` so it disappears from its parent
@@ -148,3 +181,9 @@ items; containers are gated as well so they also drop out of ordinary submenu li
 Three items are gated in place rather than wrapped, because they are `final`: the two EQ param classes,
 where only the `LOW_MID` and `HIGH_MID` bands are hidden, and the Clouds `Freeze` toggle, which already
 had an `isRelevant()` for the engine-off case that the check folds into.
+
+`AUX Sends` is gated differently again, and more cheaply: every menu class in
+`cv_output/routing.h` is `final`, but they all already asked one shared predicate,
+`cvOutputsAvailable()`, before showing themselves. That call became `auxMenusVisible()`, which is the
+hardware check *and* the feature check, so one helper takes the whole feature out of the menus — the
+sends on all three roots and `SETTINGS > AUX` alike.
