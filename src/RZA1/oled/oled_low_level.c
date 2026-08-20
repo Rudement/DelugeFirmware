@@ -27,6 +27,7 @@
 #include "RZA1/uart/sio_char.h"
 #include "deluge/drivers/dmac/dmac.h"
 #include "deluge/drivers/rspi/rspi.h"
+#include "deluge/processing/engines/cv_audio_stream_c_interface.h"
 #include "deluge/processing/engines/cv_engine_c_interface.h"
 #include "deluge/util/cfunctions.h"
 
@@ -55,6 +56,10 @@ void enqueueCVMessage(int channel, uint32_t message)
     if (!spiBusCurrentlySending)
     {
         spiBusCurrentlySending = true;
+        // Take the bus off the AUX send stream first, if it has it. Only the converter's own
+        // configuration words reach here while a stream is running: note voltages are dropped
+        // in that case, because a socket carrying audio has no pitch to carry.
+        cvStreamYieldBegin();
         sendPriorityCVIfPending();
     }
     EXIT_CRITICAL_SECTION();
@@ -219,6 +224,11 @@ void sendSPITransferFromQueue()
 {
     spiBusCurrentlySending = true;
 
+    // The AUX send stream drives this bus continuously while it runs, so take it back before
+    // putting anything else on it. A no-op on 7SEG, and a no-op here whenever no send is
+    // active, which is the ordinary case.
+    cvStreamYieldBegin();
+
     // A waiting CV word jumps ahead of any queued OLED frames.
     if (sendPriorityCVIfPending())
     {
@@ -287,6 +297,8 @@ void cvSPITransferComplete(uint32_t sense)
     {
         spiBusCurrentlySending = false;
         cv_sending             = false;
+        // Nothing else wants the bus: the AUX send stream can have it back.
+        cvStreamYieldEnd();
     }
 }
 
@@ -306,7 +318,14 @@ void oledDeselectionComplete()
     if (oledFrameQueueWritePos != oledFrameQueueReadPos)
     {
         sendSPITransferFromQueue();
+        return;
     }
+
+    // Bus genuinely idle. This is the point the AUX send stream is waiting for, and the only
+    // place a frame-driven yield is ever undone -- oledTransferComplete() chains straight into
+    // the next queued frame without releasing, which is what keeps a burst of frames to one
+    // gap in the audio rather than one per frame.
+    cvStreamYieldEnd();
 }
 
 void oledLowLevelTimerCallback()
