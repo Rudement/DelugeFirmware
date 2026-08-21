@@ -43,6 +43,7 @@
 #include "model/voice/voice_vector.h"
 #include "modulation/patch/patch_cable_set.h"
 #include "processing/audio_output.h"
+#include "processing/engines/cv_audio_stream.h"
 #include "processing/engines/cv_engine.h"
 #include "processing/live/live_input_buffer.h"
 #include "processing/metronome/metronome.h"
@@ -87,6 +88,7 @@ uint32_t disableInterrupts[] = {INTC_ID_SPRI0,
                                 INTC_ID_SDHI1_1};
 
 using namespace deluge;
+using namespace deluge::processing::engines;
 
 extern bool inSpamMode;
 extern bool anythingProbablyPressed;
@@ -583,6 +585,11 @@ void renderAudioForStemExport(size_t numSamples);
 	numSamplesLastTime = numSamples;
 	renderAudio(numSamples);
 
+	// Once per rendered window, with the window's real length. Must stay paired with
+	// renderAudio: the capture that feeds it happens in there, and pumping without a fresh
+	// capture emits silence while still advancing the stream.
+	cvStreamPump(numSamples);
+
 	scheduleMidiGateOutISR(saddrPosAtStart, unadjustedNumSamplesBeforeLappingPlayHead,
 	                       timeWithinWindowAtWhichMIDIOrGateOccurs);
 
@@ -1031,6 +1038,13 @@ int32_t getNumSamplesLeftToOutputFromPreviousRender() {
 
 // Returns whether we got to the end
 bool doSomeOutputting() {
+
+	// The CV pump does not belong here. This function runs up to three times per rendered
+	// window (see the while loop in routine()), fed "samples still waiting to be output"
+	// rather than "samples just rendered" -- pumping on a second pass would stream silence
+	// into the ring and still advance the write pointer, feeding the rate loop frames that
+	// carried nothing. The pump runs exactly once per render, from routine_(), paired with
+	// the capture inside Song::renderAudio (before master volume and master FX).
 
 	// Copy to actual output buffer, and apply heaps of gain too, with clipping
 	int32_t numSamplesOutputted = 0;
