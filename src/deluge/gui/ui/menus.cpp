@@ -485,8 +485,9 @@ Submenu soundDistortionMenu{
 // CV aux sends -------------------------------------------------------------------------
 
 // The per-Clip send amounts. Real params, so they are automatable, LEARN-able and
-// assignable to a gold knob, and they live wherever the Clip's other params do. Hidden on
-// OLED with the rest of the CV audio feature.
+// assignable to a gold knob, and they live wherever the Clip's other params do. Visible on
+// every model -- see cvSendMenusVisible(); whether the sockets can carry the audio is a
+// separate question from whether the params can be edited.
 //
 // The menu changes shape with SPLT, because the rig does. One stereo destination gets one
 // level and takes its placement from the clip's own pan; two mono destinations are two
