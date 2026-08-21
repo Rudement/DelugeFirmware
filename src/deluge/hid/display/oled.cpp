@@ -40,6 +40,7 @@
 
 extern "C" {
 #include "RZA1/oled/oled_low_level.h"
+#include "processing/engines/cv_audio_stream_c_interface.h"
 #include "RZA1/rspi/rspi.h"
 #include "RZA1/uart/sio_char.h"
 #include "drivers/oled/oled.h"
@@ -1244,6 +1245,12 @@ checkTimeTilTimeout:
 }
 
 void OLED::freezeWithError(char const* text) {
+	// Everything below drives the shared SPI bus synchronously, with interrupts no longer to
+	// be relied on. Take it off the AUX send stream first: nothing is going to come back and
+	// hand it over politely from here. The sockets hold their last voltage, which is the least
+	// of the situation's problems.
+	cvStreamYieldBegin();
+
 	OLED::clearMainImage();
 	int32_t yPixel = OLED_MAIN_TOPMOST_PIXEL;
 	main.drawString("Error:", 0, yPixel, kTextSpacingX, kTextSizeYUpdated, 0, OLED_MAIN_WIDTH_PIXELS);

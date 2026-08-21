@@ -198,16 +198,19 @@ void CVEngine::sendVoltageOut(uint8_t channel, uint16_t voltage) {
 	uint32_t output = (uint32_t)(0b00110000 | (1 << channel)) << 24;
 	output |= (uint32_t)voltage << 8;
 	// if we have a physical oled then we need to send via the pic
-	if (deluge::hid::display::have_oled_screen) {
-		enqueueCVMessage(channel, output);
-	}
-	else if (deluge::processing::engines::cvStreamIsRunning()) {
-		// The audio stream's DMA is continuously driving this same SPI data register to feed
-		// the CV sockets. A direct write here would race it and land as one wrong sample in
-		// the stream, audible as a click on whichever socket the DMA happened to be mid-word
-		// on. A CV/gate note and an active send are mutually exclusive uses of the same DAC
-		// channel, so drop the note-voltage write rather than corrupt the stream.
+	// Checked before the display split, not after. The stream drives this same converter
+	// continuously on both channels, and on either model a note voltage written now does
+	// damage: on 7SEG it goes straight into the SPI data register the transfer engine is
+	// feeding and lands as one wrong sample, audible as a click on whichever socket was
+	// mid-word; on OLED it takes the shared bus away for a word and costs a gap. Either way
+	// there is no pitch to express, because the socket is carrying audio. A CV/gate note and
+	// an active send are mutually exclusive uses of the same converter channel, so drop the
+	// write rather than damage the stream.
+	if (deluge::processing::engines::cvStreamIsRunning()) {
 		cvOutPending = false;
+	}
+	else if (deluge::hid::display::have_oled_screen) {
+		enqueueCVMessage(channel, output);
 	}
 	else {
 		R_RSPI_SendBasic32(SPI_CHANNEL_CV, output);

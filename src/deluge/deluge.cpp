@@ -62,6 +62,7 @@
 #include "playback/mode/arrangement.h"
 #include "playback/mode/session.h"
 #include "processing/engines/audio_engine.h"
+#include "processing/engines/cv_audio_stream.h"
 #include "processing/engines/cv_engine.h"
 #include "scheduler_api.h"
 #include "storage/audio/audio_file_manager.h"
@@ -708,6 +709,11 @@ extern "C" int32_t deluge_main(void) {
 	R_RSPI_Start(SPI_CHANNEL_CV);
 	setPinMux(SPI_CLK.port, SPI_CLK.pin, 3);   // CLK
 	setPinMux(SPI_MOSI.port, SPI_MOSI.pin, 3); // MOSI
+
+	// Here, and not later: setupOLED() a few lines below reconfigures this same channel for
+	// 8-bit display writes, and those are not the settings the converter wants back. The AUX
+	// send stream borrows the block and has to be able to return it exactly as it is now.
+	deluge::processing::engines::cvStreamRecordBootSpiConfig();
 
 	if (have_oled) {
 		// If OLED sharing SPI channel, have to manually control SSL pin.
