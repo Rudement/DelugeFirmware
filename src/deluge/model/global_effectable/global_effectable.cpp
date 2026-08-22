@@ -112,11 +112,15 @@ void GlobalEffectable::initParams(ParamManager* paramManager) {
 	// stereo_spread drives two things at once:
 	//     set_stereo(ss < 0.5 ? 0 : (ss - 0.5) * 2)
 	//     set_separation(ss > 0.5 ? 0 : (0.5 - ss) * 2)
-	// so ss = 0 means separation = 1.0, which silences the mode outright.
-	// Measured against the real engine: at Spread 0 Resonestor is silent for
-	// every combination of density, reverb, feedback and distortion; at Spread
-	// 0.5 it produces output at the defaults. Centre is also the neutral
-	// setting for the granular modes, so nothing else is compromised.
+	// so ss = 0 means separation = 1.0, which kills the LEFT channel outright.
+	// Measured per channel on this line's vendored engine, 20 s of 220 Hz in:
+	// at Spread 0 the left channel is exactly 0.0 RMS for every combination of
+	// feedback, reverb and distortion swept, while the right keeps producing
+	// ~3300; at Spread 0.5 both channels sit level at ~3300. The 1.3 note
+	// recorded this as the mode being silent outright -- it is one channel,
+	// which amounts to the same thing on a mono monitor but is worth stating
+	// accurately. Centre is also the neutral setting for the granular modes,
+	// so nothing else is compromised.
 	unpatchedParams->params[params::UNPATCHED_CLOUDS_SPREAD].setCurrentValueBasicForSetup(0);
 	unpatchedParams->params[params::UNPATCHED_CLOUDS_FEEDBACK].setCurrentValueBasicForSetup(NEGATIVE_ONE_Q31);
 	unpatchedParams->params[params::UNPATCHED_CLOUDS_REVERB].setCurrentValueBasicForSetup(NEGATIVE_ONE_Q31);
