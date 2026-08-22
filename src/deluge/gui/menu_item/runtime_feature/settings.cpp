@@ -53,6 +53,7 @@ SettingToggle menuEnableGridViewLoopPads(RuntimeFeatureSettingType::EnableGridVi
 SettingToggle menuKitSplit(RuntimeFeatureSettingType::KitSplit);
 SettingToggle menuFourBandEq(RuntimeFeatureSettingType::FourBandEq);
 SettingToggle menuEnablePlaitsEngine(RuntimeFeatureSettingType::EnablePlaitsEngine);
+SettingToggle menuEnableCloudsFX(RuntimeFeatureSettingType::EnableCloudsFX);
 SettingToggle menuEnableGristleizer(RuntimeFeatureSettingType::EnableGristleizer);
 SettingToggle menuEnableSear(RuntimeFeatureSettingType::EnableSear);
 SettingToggle menuChordBrush(RuntimeFeatureSettingType::ChordBrush);
@@ -86,6 +87,7 @@ std::array<MenuItem*, RuntimeFeatureSettingType::MaxElement - kNonTopLevelSettin
     &menuKitSplit,
     &menuFourBandEq,
     &menuEnablePlaitsEngine,
+    &menuEnableCloudsFX,
     &menuEnableGristleizer,
     &menuEnableSear,
     &menuChordBrush,

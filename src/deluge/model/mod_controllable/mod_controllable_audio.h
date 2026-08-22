@@ -43,6 +43,7 @@ struct Grain {
 };
 
 class Clip;
+class CloudsAdapter;
 class Knob;
 class MIDIDevice;
 class ModelStack;
@@ -147,6 +148,27 @@ public:
 	LFO modFXLFO;
 
 	RMSFeedbackCompressor compressor;
+
+	// Clouds ----------------------------------------------------------------
+	// State lives here, alongside modFXType, so the menu items can reach it
+	// through soundEditor.currentModControllable like every other FX setting.
+	// RENDERING, though, happens only in
+	// GlobalEffectable::processFXForGlobalEffectable -- Clouds' nine
+	// parameters are UNPATCHED_GLOBAL, and a Sound's unpatched param set is
+	// UnpatchedSound, which is far shorter. Reading them off a Sound would
+	// run off the end of that array. The Clouds menu is therefore only ever
+	// added to the global FX tree; do not hang it off a Sound.
+	CloudsMode cloudsMode{CloudsMode::OFF};
+	bool cloudsFreeze{false};
+	CloudsAdapter* cloudsFX{nullptr};
+
+	/// Switch Clouds to `mode`. Constructs the adapter on the first non-OFF
+	/// mode and tears it down again on OFF, so the engine costs nothing --
+	/// neither the ~180 KB working buffer nor the per-block resampling --
+	/// while it is switched off. Returns false if the adapter could not be
+	/// allocated, in which case the mode stays OFF.
+	bool setCloudsMode(CloudsMode mode);
+	void disableClouds();
 
 	// Grain
 	int32_t wrapsToShutdown;

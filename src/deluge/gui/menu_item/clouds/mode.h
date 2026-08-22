@@ -57,8 +57,9 @@ public:
 		}
 	}
 
-	deluge::vector<std::string_view> getOptions(OptType optType) override {
-		(void)optType;
+	// 1.2.1's Selection::getOptions takes no OptType -- that parameter arrives with the 1.3
+	// menu rework. Signature adapted here rather than in the caller; the body is unchanged.
+	deluge::vector<std::string_view> getOptions() override {
 		using enum deluge::l10n::String;
 		// Order must match CloudsMode exactly -- this is indexed by value.
 		return {
