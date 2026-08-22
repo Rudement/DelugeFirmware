@@ -21,6 +21,8 @@ exactly as saved. This is deliberate, and is how the stock `Enable DX7 Engine` t
 | Sear | `SEAR` | On | The Sear drive and tone controls |
 | Kit Split | `SPLT` | **Off** | `Kit Global FX > Actions > Split Kit` |
 | AUX Sends | `AUX` | On | The `AUX` menus and `SETTINGS > AUX` |
+| Chord Brush | `BRSH` | On | Chord capture and placement. The Harmonic layout itself stays |
+| Retrospective Capture | `RCAP` | On | The SHIFT+RECORD dump of what you just played |
 
 ---
 
@@ -164,10 +166,61 @@ carries its own copy of the shared send params, but the capture can only isolate
 those per-Drum copies could never do anything. The kit-wide send in `KIT GLOBAL FX` is the one that
 works. The firmware already does this for portamento.
 
-7-segment only, matching the original release — no OLED support was added in the port.
+Originally 7-segment only. The OLED port (`1c16d0b1`, `feda7d1f`) separated menu visibility from socket capability and made the audio stream share the SPI bus with the display, so the
+menus and the sockets both work on an OLED machine. The cost is that the sockets hold their last voltage while the display holds the bus — silence while the screen is still, a tick per
+redraw while it is not — and note voltages are now dropped on both models while a stream runs.
 
 Source: `src/deluge/processing/engines/cv_audio_stream.cpp`,
 `src/deluge/gui/menu_item/cv_output/routing.h`
+
+---
+
+## Chroma
+
+A chord explorer beside an isomorphic visualiser, on one 16-wide surface, plus a brush that stamps a
+held chord into the piano roll like a note. Selected like any other keyboard layout: hold `KEYBOARD`
+and turn `SELECT`. It requires scale mode and is melodic-only.
+
+Palette on the left, one column per scale degree, stacking upward through an additive richness ladder
+— root, 5th, triad, 6th, 7th, 9th, 11th, 13th. Iso play surface on the right, tinted to the key's own
+colour, where the picked chord lights as a shape with an amber bass spotlight an octave below it. Two
+control columns between them: crimson shapes the chord (calculator, octave, stack, spread, inversion),
+purple shapes the surface (view, show, sticky, overlays, snap, progressions, edit, audition).
+
+Hold `LEARN` and the whole surface goes silent while every pad names itself.
+
+The voicing engine runs inversion → spread → walk → octave stack. The walk is spring-loaded: hold a
+chord and turn the vertical encoder to sweep it while it rings, release and it springs back to home;
+hold the encoder in and turn to dial where home is.
+
+Progressions load lazily from `CHORDS/*.chordpack` on the first `PROG` press, never at boot, so a
+malformed pack cannot brick the device.
+
+### The Harmonic Brush — `Chord Brush (BRSH)`
+
+Captures the notes **currently sounding**, not a chord index, so it works from the Harmonic palette,
+Chord, Chord Library, or a chord held by hand on any layout. Hold the chord, press `SELECT` to arm
+(`PEND`), switch to the piano roll and tap a step to stamp it (`PLCD`). Hold the start step and press
+another to set the length; turn `SELECT` while holding the pad to re-voice by ear, auditioning as you
+go. It stays armed for repeat stamps and disarms on layout change, on `SELECT`, or when you leave the
+piano roll. One chord is one undo step. Melodic clips only.
+
+### Retrospective capture — `Retrospective Capture (RCAP)`
+
+Every note played in Keyboard View is buffered in the background, even when not recording. `SHIFT` +
+`RECORD` dumps it into the current clip. 128 notes, keeping the earliest take on overflow; timing is
+kept in audio samples so it works with the transport stopped; the clip grows to fit, rounded to whole
+bars.
+
+### Keyboard note preview — `Keyboard Note Preview (PREV)`
+
+Sequenced notes light the keyboard grid during playback, so a clip plays back as moving shapes on the
+iso panel. This is the one setting with no menu item: it is stored and honoured, but not offered.
+
+Full operating manual: `CHROMA-MANUAL.md`, and chapter 09 of the Rudement Features Manual.
+
+Source: `src/deluge/gui/ui/keyboard/layout/harmonic.{cpp,h}`,
+`src/deluge/gui/ui/keyboard/chord_service.{cpp,h}`
 
 ---
 
@@ -187,3 +240,9 @@ had an `isRelevant()` for the engine-off case that the check folds into.
 `cvOutputsAvailable()`, before showing themselves. That call became `auxMenusVisible()`, which is the
 hardware check *and* the feature check, so one helper takes the whole feature out of the menus — the
 sends on all three roots and `SETTINGS > AUX` alike.
+
+`Chord Brush` and `Retrospective Capture` are gated differently again: neither hides a menu, because
+neither has one. They gate a gesture — the `SELECT` encoder in a keyboard view and in the piano roll,
+and `SHIFT` + `RECORD` — by testing the runtime setting at the point of use. Switching either off
+returns those controls to their ordinary jobs. The Harmonic layout has no toggle of its own and is
+always present once built.
