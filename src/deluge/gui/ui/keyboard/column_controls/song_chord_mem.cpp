@@ -16,6 +16,7 @@
  */
 
 #include "song_chord_mem.h"
+#include "gui/ui/keyboard/chord_mem_service.h"
 #include "gui/ui/keyboard/layout/column_controls.h"
 #include "hid/buttons.h"
 #include "model/song/song.h"
@@ -46,24 +47,18 @@ void SongChordMemColumn::handlePad(ModelStackWithTimelineCounter* modelStackWith
 	NotesState& currentNotesState = layout->getNotesState();
 
 	if (pad.active) {
+		// Press: recall the slot (sound it, light its shape, name it) — all in ChordMemService.
 		activeChordMem = pad.y;
-		auto noteCount = currentSong->chordMemNoteCount[pad.y];
-		for (int i = 0; i < noteCount && i < MAX_NOTES_CHORD_MEM; i++) {
-			currentNotesState.enableNote(currentSong->chordMem[pad.y][i], layout->velocity);
-		}
-		currentSong->chordMemNoteCount[pad.y] = noteCount;
+		ChordMemService::recall(pad.y, layout);
 	}
 	else {
 		activeChordMem = 0xFF;
-		if ((!currentSong->chordMemNoteCount[pad.y] || Buttons::isShiftButtonPressed()) && currentNotesState.count) {
-			auto noteCount = currentNotesState.count;
-			for (int i = 0; i < noteCount && i < MAX_NOTES_CHORD_MEM; i++) {
-				currentSong->chordMem[pad.y][i] = currentNotesState.notes[i].note;
-			}
-			currentSong->chordMemNoteCount[pad.y] = noteCount;
+		// Release: store the held notes into the slot if it's empty (or Shift), else Shift clears it.
+		if ((!ChordMemService::noteCount(pad.y) || Buttons::isShiftButtonPressed()) && currentNotesState.count) {
+			ChordMemService::store(pad.y, currentNotesState);
 		}
 		else if (Buttons::isShiftButtonPressed()) {
-			currentSong->chordMemNoteCount[pad.y] = 0;
+			ChordMemService::clearSlot(pad.y);
 		}
 	}
 };

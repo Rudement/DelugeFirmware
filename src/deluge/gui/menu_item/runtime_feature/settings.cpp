@@ -55,6 +55,8 @@ SettingToggle menuFourBandEq(RuntimeFeatureSettingType::FourBandEq);
 SettingToggle menuEnablePlaitsEngine(RuntimeFeatureSettingType::EnablePlaitsEngine);
 SettingToggle menuEnableGristleizer(RuntimeFeatureSettingType::EnableGristleizer);
 SettingToggle menuEnableSear(RuntimeFeatureSettingType::EnableSear);
+SettingToggle menuChordBrush(RuntimeFeatureSettingType::ChordBrush);
+SettingToggle menuRetrospectiveCapture(RuntimeFeatureSettingType::RetrospectiveCapture);
 
 std::array<MenuItem*, RuntimeFeatureSettingType::MaxElement - kNonTopLevelSettings> subMenuEntries{
     &menuDrumRandomizer,
@@ -84,7 +86,9 @@ std::array<MenuItem*, RuntimeFeatureSettingType::MaxElement - kNonTopLevelSettin
     &menuFourBandEq,
     &menuEnablePlaitsEngine,
     &menuEnableGristleizer,
-    &menuEnableSear};
+    &menuEnableSear,
+    &menuChordBrush,
+    &menuRetrospectiveCapture};
 
 Settings::Settings(l10n::String name, l10n::String title) : menu_item::Submenu(name, title, subMenuEntries) {
 }

@@ -18,6 +18,7 @@
 #include "chord_mem.h"
 #include "gui/ui/keyboard/layout/column_controls.h"
 #include "hid/buttons.h"
+#include "hid/hid_sysex.h"
 #include "model/song/song.h"
 
 namespace deluge::gui::ui::keyboard::controls {
@@ -49,10 +50,20 @@ void ChordMemColumn::handlePad(ModelStackWithTimelineCounter* modelStackWithTime
 	if (pad.active) {
 		activeChordMem = pad.y;
 		auto noteCount = chordMemNoteCount[pad.y];
+		int16_t voiced[kMaxNotesChordMem];
+		uint8_t vn = 0;
 		for (int i = 0; i < noteCount && i < kMaxNotesChordMem; i++) {
 			currentNotesState.enableNote(chordMem[pad.y][i], layout->velocity);
+			voiced[vn++] = (int16_t)chordMem[pad.y][i];
 		}
 		chordMemNoteCount[pad.y] = noteCount;
+		// Chroma: a BANKED chord has no scale-degree, so broadcast its raw notes + key/scale and let the host
+		// name it from the notes (the "bank" context tells it there's no degree). No-op until a host handshakes;
+		// mirrors the palette-pick broadcast so the CT/HUD respond to banked chords too, not just picks.
+		if (vn > 0 && currentSong != nullptr) {
+			uint8_t kr = (uint8_t)((((int32_t)currentSong->key.rootNote % 12) + 12) % 12);
+			HIDSysex::sendChordState(kr, voiced, vn, "bank", 0, 0, (uint8_t)currentSong->getCurrentScale());
+		}
 	}
 	else {
 		activeChordMem = 0xFF;

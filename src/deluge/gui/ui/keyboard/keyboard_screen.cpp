@@ -28,6 +28,8 @@
 #include "gui/views/view.h"
 #include "hid/buttons.h"
 #include "hid/display/oled.h"
+#include "io/debug/log.h" // 1.2: pulls in lib/printf.h so snprintf aliases the non-allocating
+                             // implementation (1.3 gets it transitively)
 #include "hid/led/indicator_leds.h"
 #include "hid/led/pad_leds.h"
 #include "model/action/action_logger.h"
@@ -42,10 +44,13 @@
 #include "processing/sound/sound_instrument.h"
 #include <cstring>
 
+#include "gui/ui/keyboard/chord_service.h"
+#include "gui/ui/keyboard/chords.h"
 #include "gui/ui/keyboard/layout.h"
 #include "gui/ui/keyboard/layout/chord_keyboard.h"
 #include "gui/ui/keyboard/layout/chord_library.h"
 #include "gui/ui/keyboard/layout/column_control_state.h"
+#include "gui/ui/keyboard/layout/harmonic.h"
 #include "gui/ui/keyboard/layout/in_key.h"
 #include "gui/ui/keyboard/layout/isomorphic.h"
 #include "gui/ui/keyboard/layout/norns.h"
@@ -60,6 +65,7 @@ layout::KeyboardLayoutVelocityDrums keyboardLayoutVelocityDrums{};
 layout::KeyboardLayoutInKey keyboardLayoutInKey{};
 layout::KeyboardLayoutChord KeyboardLayoutChord{};
 layout::KeyboardLayoutChordLibrary keyboardLayoutChordLibrary{};
+layout::KeyboardLayoutHarmonic keyboardLayoutHarmonic{};
 layout::KeyboardLayoutNorns keyboardLayoutNorns{};
 KeyboardLayout* layoutList[KeyboardLayoutType::KeyboardLayoutTypeMaxElement + 1] = {0};
 
@@ -69,6 +75,7 @@ KeyboardScreen::KeyboardScreen() {
 	layoutList[KeyboardLayoutType::KeyboardLayoutTypeInKey] = (KeyboardLayout*)&keyboardLayoutInKey;
 	layoutList[KeyboardLayoutType::KeyboardLayoutTypeChord] = (KeyboardLayout*)&KeyboardLayoutChord;
 	layoutList[KeyboardLayoutType::KeyboardLayoutTypeChordLibrary] = (KeyboardLayout*)&keyboardLayoutChordLibrary;
+	layoutList[KeyboardLayoutType::KeyboardLayoutTypeHarmonic] = (KeyboardLayout*)&keyboardLayoutHarmonic;
 	layoutList[KeyboardLayoutType::KeyboardLayoutTypeNorns] = (KeyboardLayout*)&keyboardLayoutNorns;
 
 	memset(&pressedPads, 0, sizeof(pressedPads));
@@ -189,6 +196,135 @@ ActionResult KeyboardScreen::padAction(int32_t x, int32_t y, int32_t velocity) {
 	return ActionResult::DEALT_WITH;
 }
 
+// ───────────────────── Retrospective MIDI capture (slice 1) ─────────────────────
+// A background buffer of notes played in keyboard view, EVEN WHEN NOT RECORDING. SHIFT+RECORD dumps
+// it into the current clip's piano roll. Cleared on track / layout / keyboard-view change. Timing is
+// kept in audio samples and converted to ticks at dump time (works while stopped — no transport needed).
+namespace {
+struct CapturedNote {
+	int32_t note;
+	uint8_t velocity;
+	uint32_t onSamples;
+	uint32_t offSamples;
+	bool sounding;
+};
+constexpr int32_t kCaptureMax = 128;
+CapturedNote g_capture[kCaptureMax];
+int32_t g_captureCount = 0;
+uint32_t g_captureFirst = 0;
+
+void captureNoteOn(int32_t note, uint8_t velocity) {
+	if (runtimeFeatureSettings.get(RuntimeFeatureSettingType::RetrospectiveCapture) != RuntimeFeatureStateToggle::On) {
+		return; // feature off — don't buffer
+	}
+	if (g_captureCount >= kCaptureMax) {
+		return; // buffer full; keep the earliest take rather than overwrite
+	}
+	uint32_t now = AudioEngine::audioSampleTimer;
+	if (g_captureCount == 0) {
+		g_captureFirst = now;
+	}
+	g_capture[g_captureCount++] = {note, velocity, now, now, true};
+}
+void captureNoteOff(int32_t note) {
+	uint32_t now = AudioEngine::audioSampleTimer;
+	for (int32_t i = g_captureCount - 1; i >= 0; --i) {
+		if (g_capture[i].sounding && g_capture[i].note == note) {
+			g_capture[i].offSamples = now;
+			g_capture[i].sounding = false;
+			break;
+		}
+	}
+}
+void captureClear() {
+	g_captureCount = 0;
+}
+} // namespace
+
+// Dump the captured noodle into the current clip (melodic only for slice 1). Mirrors the live-record
+// path (getOrCreateNoteRowForYNote + attemptNoteAdd) but with positions we compute from elapsed time.
+static void captureDumpToCurrentClip() {
+	if (g_captureCount == 0) {
+		display->displayPopup("NONE");
+		return;
+	}
+	if (getCurrentOutputType() == OutputType::KIT) {
+		display->displayPopup("MELODIC ONLY");
+		return;
+	}
+	InstrumentClip* clip = getCurrentInstrumentClip();
+	if (!clip) {
+		return;
+	}
+	char modelStackMemory[MODEL_STACK_MAX_SIZE];
+	ModelStack* modelStack = setupModelStackWithSong(modelStackMemory, currentSong);
+	ModelStackWithTimelineCounter* mstc = modelStack->addTimelineCounter(clip);
+	Action* action = actionLogger.getNewAction(ActionType::RECORD, ActionAddition::ALLOWED);
+
+	uint32_t samplesPerTick = playbackHandler.getTimePerInternalTick();
+	if (samplesPerTick == 0) {
+		samplesPerTick = 1;
+	}
+	// Measure how long the noodle actually was (ticks) and GROW the clip to fit — rounded to whole
+	// bars (multiples of the clip's current length). So 2 bars played over a 1-bar loop becomes a real
+	// 2-bar clip instead of folding bar 2 back onto bar 1.
+	int32_t curLen = clip->loopLength;
+	int32_t spanTicks = 1;
+	for (int32_t i = 0; i < g_captureCount; ++i) {
+		uint32_t endS = g_capture[i].sounding ? AudioEngine::audioSampleTimer : g_capture[i].offSamples;
+		int32_t e = (int32_t)((endS - g_captureFirst) / samplesPerTick);
+		if (e > spanTicks) {
+			spanTicks = e;
+		}
+	}
+	int32_t target = (curLen > 0) ? curLen : spanTicks;
+	if (curLen > 0) {
+		int32_t bars = (spanTicks + curLen / 2) / curLen; // round to nearest whole bar
+		if (bars < 1) {
+			bars = 1;
+		}
+		target = bars * curLen;
+	}
+	if (target > clip->loopLength) {
+		int32_t oldLength = clip->loopLength;
+		clip->loopLength = target;
+		clip->lengthChanged(mstc, oldLength, action); // extend the clip to hold the full phrase
+	}
+
+	int32_t added = 0;
+	bool scaleAltered = false;
+	for (int32_t i = 0; i < g_captureCount; ++i) {
+		CapturedNote& cn = g_capture[i];
+		uint32_t endS = cn.sounding ? AudioEngine::audioSampleTimer : cn.offSamples;
+		int32_t pos = (int32_t)((cn.onSamples - g_captureFirst) / samplesPerTick);
+		int32_t len = (int32_t)((endS - cn.onSamples) / samplesPerTick);
+		if (len < 1) {
+			len = 1;
+		}
+		if (target > 0) {
+			pos %= target;
+			if (len > target) {
+				len = target;
+			}
+		}
+		bool altered = false;
+		ModelStackWithNoteRow* mnr = clip->getOrCreateNoteRowForYNote(cn.note, mstc, action, &altered);
+		scaleAltered = scaleAltered || altered;
+		NoteRow* nr = mnr->getNoteRowAllowNull();
+		if (nr) {
+			// 1.2 NoteRow API: probability is looked up per note row; iterance and fill arrived in 1.3.
+			nr->attemptNoteAdd(pos, len, cn.velocity, nr->getDefaultProbability(mnr), mnr, action);
+			added++;
+		}
+	}
+	if (action && scaleAltered) {
+		action->updateYScrollClipViewAfter();
+	}
+	captureClear();
+	display->displayPopup((uint8_t)added); // show how many notes landed
+	uiNeedsRendering(&instrumentClipView);
+}
+
 void KeyboardScreen::evaluateActiveNotes() {
 	lastNotesState = currentNotesState;
 	layoutList[getCurrentInstrumentClip()->keyboardState.currentLayout]->evaluatePads(pressedPads);
@@ -301,8 +437,13 @@ void KeyboardScreen::updateActiveNotes() {
 
 		// Post sound logic for non-retrigger events
 		if (currentToLastIdx[idx] == -1) {
+			// Retrospective MIDI capture: stash every newly played note (even when not recording).
+			captureNoteOn(newNote, currentNotesState.notes[idx].velocity);
 			if (!currentNotesState.notes[idx].generatedNote) {
-				drawNoteCode(newNote);
+				// If you're playing a chord (2+ notes held), name the chord; else the single note.
+				if (!drawHeldChordName()) {
+					drawNoteCode(newNote);
+				}
 			}
 			enterUIMode(UI_MODE_AUDITIONING);
 
@@ -391,6 +532,8 @@ void KeyboardScreen::noteOff(ModelStack& modelStack, Instrument& activeInstrumen
 		(static_cast<MelodicInstrument*>(&activeInstrument))->endAuditioningForNote(&modelStack, note);
 	}
 
+	captureNoteOff(note); // Retrospective MIDI capture: close out this note's length in the buffer.
+
 	// Recording - this only works *if* the Clip that we're viewing right now is the Instrument's activeClip
 	if (activeInstrument.type != OutputType::KIT && clipIsActiveOnInstrument && playbackHandler.shouldRecordNotesNow()
 	    && currentSong->isClipActive(getCurrentClip())) {
@@ -408,6 +551,22 @@ ActionResult KeyboardScreen::buttonAction(deluge::hid::Button b, bool on, bool i
 
 	if (inCardRoutine) {
 		return ActionResult::REMIND_ME_OUTSIDE_CARD_ROUTINE;
+	}
+
+	// Spring-loaded voicing (perform): a clean click of the vertical encoder springs the voicing back to home;
+	// holding it in and turning dials the home (see handleVerticalEncoder). We split press-down vs release so we
+	// can tell those apart. Only consumes when the layout handled it (harmonic); otherwise Y_ENC falls through.
+	if (b == Y_ENC) {
+		KeyboardLayout* layout = layoutList[getCurrentInstrumentClip()->keyboardState.currentLayout];
+		bool handled = on ? layout->voicingPressBegin() : layout->voicingPressEnd();
+		if (handled) {
+			if (!on && isUIModeWithinRange(padActionUIModes)) {
+				evaluateActiveNotes();
+				updateActiveNotes();
+			}
+			requestRendering();
+			return ActionResult::DEALT_WITH;
+		}
 	}
 
 	// Scale mode button
@@ -472,6 +631,7 @@ ActionResult KeyboardScreen::buttonAction(deluge::hid::Button b, bool on, bool i
 		if (currentUIMode == UI_MODE_NONE && !keyboardButtonActive
 		    && !keyboardButtonUsed) { // Leave if key up and not used
 
+			captureClear(); // leaving keyboard view → drop the retrospective-capture buffer
 			instrumentClipView.recalculateColours();
 			if (getCurrentClip()->onAutomationClipView) {
 				changeRootUI(&automationView);
@@ -486,6 +646,7 @@ ActionResult KeyboardScreen::buttonAction(deluge::hid::Button b, bool on, bool i
 
 	// Song view button
 	else if (b == SESSION_VIEW && on && currentUIMode == UI_MODE_NONE) {
+		captureClear(); // leaving keyboard view → drop the retrospective-capture buffer
 		// Transition back to arranger
 		if (currentSong->lastClipInstanceEnteredStartPos != -1 || getCurrentClip()->section == 255) {
 			if (arrangerView.transitionToArrangementEditor()) {
@@ -582,6 +743,27 @@ ActionResult KeyboardScreen::buttonAction(deluge::hid::Button b, bool on, bool i
 		requestRendering();
 	}
 
+	// Any chord-producing keyboard mode: press the select encoder while holding notes to capture
+	// them as a Pending Chord, then tap a step in the piano roll to place it. Layout-agnostic — it
+	// reads the currently-sounding notes (currentNotesState), so it works in Chord Library, Chord,
+	// or even a hand-played chord on any layout, with no library required.
+	else if (b == SELECT_ENC && on && currentUIMode == UI_MODE_AUDITIONING && currentNotesState.count > 0
+	         && runtimeFeatureSettings.get(RuntimeFeatureSettingType::ChordBrush) == RuntimeFeatureStateToggle::On) {
+		PendingChord pending;
+		for (uint8_t i = 0; i < currentNotesState.count && pending.count < kMaxPendingChordNotes; i++) {
+			pending.notes[pending.count] = currentNotesState.notes[i].note;
+			pending.count++;
+		}
+		pending.velocity = currentNotesState.notes[0].velocity;
+		ChordService::capturePending(pending);
+	}
+
+	// Click the select encoder while a chord is armed (but not holding new notes) to clear the
+	// harmonic brush.
+	else if (b == SELECT_ENC && on && ChordService::hasPending()) {
+		ChordService::clearPending();
+	}
+
 	// store if the user is holding the x encoder
 	else if (b == X_ENC) {
 		xEncoderActive = on;
@@ -617,6 +799,17 @@ ActionResult KeyboardScreen::buttonAction(deluge::hid::Button b, bool on, bool i
 				}
 			}
 		}
+	}
+
+	// Retrospective MIDI capture: SHIFT + RECORD dumps the background noodle buffer into this clip.
+	else if (b == RECORD && on && Buttons::isShiftButtonPressed()
+	         && runtimeFeatureSettings.get(RuntimeFeatureSettingType::RetrospectiveCapture)
+	                == RuntimeFeatureStateToggle::On) {
+		if (inCardRoutine) {
+			return ActionResult::REMIND_ME_OUTSIDE_CARD_ROUTINE;
+		}
+		captureDumpToCurrentClip();
+		Buttons::recordButtonPressUsedUp = true; // don't also arm recording on release
 	}
 
 	else {
@@ -713,6 +906,9 @@ void KeyboardScreen::selectLayout(int8_t offset) {
 
 	getCurrentInstrumentClip()->keyboardState.currentLayout = (KeyboardLayoutType)nextLayout;
 	if (getCurrentInstrumentClip()->keyboardState.currentLayout != lastLayout) {
+		// Switching layout is a context change, so disarm any harmonic-chord brush.
+		ChordService::clearPending();
+		captureClear(); // and drop the retrospective-capture buffer (fresh context)
 		display->displayPopup(layoutList[getCurrentInstrumentClip()->keyboardState.currentLayout]->name());
 	}
 
@@ -909,6 +1105,40 @@ void KeyboardScreen::drawNoteCode(int32_t noteCode) {
 	}
 }
 
+// Name a manually-played chord: if 2+ notes are currently held, match them against the chord table
+// and show the name (Roman + absolute, spelled to the key). Returns false (caller shows the single
+// note) if fewer than 2 notes or no chord matched.
+bool KeyboardScreen::drawHeldChordName() {
+	if (currentNotesState.count < 2) {
+		return false;
+	}
+	uint8_t notes[16];
+	int32_t count = 0;
+	for (uint8_t i = 0; i < currentNotesState.count && count < 16; i++) {
+		int32_t n = currentNotesState.notes[i].note;
+		if (n >= 0 && n < 128) {
+			notes[count++] = (uint8_t)n;
+		}
+	}
+	if (count < 2) {
+		return false;
+	}
+	char absName[40];
+	char roman[16];
+	if (!describeChordInKey(notes, count, currentSong->key.rootNote % 12, currentSong->key.modeNotes, absName, roman)) {
+		return false;
+	}
+	char full[64];
+	if (roman[0] != '\0') {
+		sprintf(full, "%s  %s", roman, absName);
+	}
+	else {
+		sprintf(full, "%s", absName);
+	}
+	display->setScrollingText(full);
+	return true;
+}
+
 bool KeyboardScreen::getAffectEntire() {
 	return getCurrentInstrumentClip()->affectEntire;
 }
@@ -954,6 +1184,11 @@ void KeyboardScreen::graphicsRoutine() {
 	keyboardTickSquares[kDisplayHeight - 1] = newTickSquare;
 
 	PadLEDs::setTickSquares(keyboardTickSquares, colours);
+
+	// Let the active layout drive continuous animation (e.g. the chord library pulsing its suggestions).
+	if (layoutList[getCurrentInstrumentClip()->keyboardState.currentLayout]->requestsContinuousRender()) {
+		requestRendering();
+	}
 }
 
 } // namespace deluge::gui::ui::keyboard
