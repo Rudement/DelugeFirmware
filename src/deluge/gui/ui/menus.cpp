@@ -116,6 +116,7 @@
 #include "gui/menu_item/patched_param/integer_non_fm.h"
 #include "gui/menu_item/patched_param/pan.h"
 #include "gui/menu_item/performance_session_view/editing_mode.h"
+#include "gui/menu_item/plaits/engine_select.h"
 #include "gui/menu_item/record/countin.h"
 #include "gui/menu_item/record/quantize.h"
 #include "gui/menu_item/reverb/damping.h"
@@ -1194,6 +1195,24 @@ std::array<MenuItem*, 3> dxMenuItems = {
     &dxEngineSelect,
 };
 menu_item::Submenu dxMenu{STRING_FOR_DX_1, dxMenuItems};
+
+// Plaits: model list, the three continuous controls, the low-pass gate and the
+// aux-output toggle -- everything in one place. Harmonics/Timbre/Morph are the
+// SAME params the oscillator menus edit -- a second door, not a copy.
+//
+// Order follows the module's own front panel: what the engine sounds like
+// first, then what the gate does to it, then which output you take.
+std::array<MenuItem*, 8> plaitsMenuItems = {
+    &plaitsEngineSelect,
+    &plaitsHarmonicsMenu,
+    &plaitsTimbreMenu,
+    &plaitsMorphMenu,
+    &plaitsLpgToggle,
+    &plaitsDecayMenu,
+    &plaitsLpgColourMenu,
+    &plaitsAuxToggle,
+};
+menu_item::Submenu plaitsMenu{STRING_FOR_PLAITS, plaitsMenuItems};
 
 // Not FM
 patched_param::IntegerNonFM noiseMenu{STRING_FOR_NOISE_LEVEL, params::LOCAL_NOISE_VOLUME};

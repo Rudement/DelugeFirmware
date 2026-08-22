@@ -3276,6 +3276,37 @@ Error Sound::readSourceFromFile(Deserializer& reader, int32_t s, ParamManagerFor
 			source->sampleControls.reversed = reader.readTagOrAttributeValueInt();
 			reader.exitTag("reversed");
 		}
+		else if (!strcmp(tagName, "plaitsaux")) {
+			source->plaitsAux = (reader.readTagOrAttributeValueInt() != 0);
+			reader.exitTag("plaitsaux");
+		}
+		else if (!strcmp(tagName, "plaitsengine")) {
+			int32_t value = reader.readTagOrAttributeValueInt();
+			// Clamp on read: a preset from a future firmware with more models
+			// must not index off the end of the engine table.
+			if (value < 0 || value >= kPlaitsNumEngines) {
+				value = kPlaitsDefaultEngine;
+			}
+			source->plaitsEngine = static_cast<uint8_t>(value);
+			reader.exitTag("plaitsengine");
+		}
+		else if (!strcmp(tagName, "plaitslpg")) {
+			source->plaitsLpg = (reader.readTagOrAttributeValueInt() != 0);
+			reader.exitTag("plaitslpg");
+		}
+		else if (!strcmp(tagName, "plaitsdecay")) {
+			// Absent from any preset written before the LPG existed, which is
+			// why Source's default (25, i.e. 0.5) is the value those keep --
+			// exactly the constant the adapter used to hardcode. Old presets
+			// sound identical.
+			source->plaitsDecay = static_cast<uint8_t>(std::clamp<int32_t>(reader.readTagOrAttributeValueInt(), 0, 50));
+			reader.exitTag("plaitsdecay");
+		}
+		else if (!strcmp(tagName, "plaitslpgcolour")) {
+			source->plaitsLpgColour =
+			    static_cast<uint8_t>(std::clamp<int32_t>(reader.readTagOrAttributeValueInt(), 0, 50));
+			reader.exitTag("plaitslpgcolour");
+		}
 		else if (!strcmp(tagName, "dx7patch")) {
 			DxPatch* patch = source->ensureDxPatch();
 			int len = reader.readTagOrAttributeValueHexBytes(patch->params, 156);
@@ -3618,6 +3649,28 @@ void Sound::writeSourceToFile(Serializer& writer, int32_t s, char const* tagName
 			else {
 				goto justCloseTag;
 			}
+		}
+		else if (source->oscType == OscType::PLAITS && synthMode != SynthMode::FM) {
+			// Written unconditionally so a preset always records which model it
+			// meant. Harmonics/Timbre/Morph need nothing here -- they are
+			// patched params and the param set already saves them.
+			writer.writeAttribute("plaitsengine", source->plaitsEngine);
+			if (source->plaitsAux) {
+				writer.writeAttribute("plaitsaux", 1);
+			}
+			// LPG state. Written only when it differs from the default, same as
+			// plaitsaux, so a preset that never touched these stays byte-for-byte
+			// what the previous firmware wrote.
+			if (source->plaitsLpg) {
+				writer.writeAttribute("plaitslpg", 1);
+			}
+			if (source->plaitsDecay != 25) {
+				writer.writeAttribute("plaitsdecay", source->plaitsDecay);
+			}
+			if (source->plaitsLpgColour != 25) {
+				writer.writeAttribute("plaitslpgcolour", source->plaitsLpgColour);
+			}
+			goto justCloseTag;
 		}
 		else if (source->oscType == OscType::DX7
 		         && synthMode != SynthMode::FM) { // Don't combine this with the above "if" - there's an "else" below

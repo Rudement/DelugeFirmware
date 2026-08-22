@@ -27,6 +27,7 @@ class Voice;
 class VoiceSample;
 class LivePitchShifter;
 class DxVoice;
+class PlaitsVoice;
 
 class VoiceUnisonPartSource {
 public:
@@ -46,4 +47,5 @@ public:
 	VoiceSample* voiceSample;
 	LivePitchShifter* livePitchShifter;
 	DxVoice* dxVoice;
+	PlaitsVoice* plaitsVoice;
 };

@@ -21,6 +21,7 @@
 #include "dsp/dx/engine.h"
 #include "dsp/filter/filter_set.h"
 #include "dsp/heat.hpp"
+#include "dsp/plaits_adapter.h"
 #include "dsp/timestretch/time_stretcher.h"
 #include "dsp/util.hpp"
 #include "gui/waveform/waveform_renderer.h"
@@ -623,6 +624,13 @@ void Voice::noteOff(ModelStackWithVoice* modelStack, bool allowReleaseStage) {
 				for (int u = 0; u < sound->numUnison; u++) {
 					if (unisonParts[u].sources[s].dxVoice) {
 						unisonParts[u].sources[s].dxVoice->keyup();
+					}
+				}
+			}
+			else if (sound->sources[s].oscType == OscType::PLAITS) {
+				for (int u = 0; u < sound->numUnison; u++) {
+					if (unisonParts[u].sources[s].plaitsVoice) {
+						unisonParts[u].sources[s].plaitsVoice->keyup();
 					}
 				}
 			}
@@ -1488,8 +1496,8 @@ skipUnisonPart: {}
 		// Placed AFTER the filter so the LPF doubles as an anti-aliasing control.
 		if (paramFinalValues[params::LOCAL_HEAT] > 0) {
 			dsp::heatBuffer(oscBuffer, oscBufferEnd, paramFinalValues[params::LOCAL_HEAT]);
-			q31_t heatTone = dsp::heatToneFromUnpatched(
-			    paramManager->getUnpatchedParamSet()->getValue(params::UNPATCHED_HEAT_TONE));
+			q31_t heatTone =
+			    dsp::heatToneFromUnpatched(paramManager->getUnpatchedParamSet()->getValue(params::UNPATCHED_HEAT_TONE));
 			dsp::heatToneBufferStereo(oscBuffer, oscBufferEnd, heatTone, &heatToneState[0], &heatToneState[1]);
 		}
 
@@ -1580,8 +1588,8 @@ skipUnisonPart: {}
 		// stereo path must not share it.
 		if (paramFinalValues[params::LOCAL_HEAT] > 0) {
 			dsp::heatBuffer(oscBuffer, oscBufferEnd, paramFinalValues[params::LOCAL_HEAT]);
-			q31_t heatTone = dsp::heatToneFromUnpatched(
-			    paramManager->getUnpatchedParamSet()->getValue(params::UNPATCHED_HEAT_TONE));
+			q31_t heatTone =
+			    dsp::heatToneFromUnpatched(paramManager->getUnpatchedParamSet()->getValue(params::UNPATCHED_HEAT_TONE));
 			dsp::heatToneBuffer(oscBuffer, oscBufferEnd, heatTone, &heatToneState[0]);
 		}
 
@@ -1906,7 +1914,7 @@ void Voice::renderFMWithFeedbackAdd(int32_t* bufferStart, int32_t numSamples, in
 			// version. The hard clipping one sounds really solid.
 			feedback = signed_saturate<22>(feedback);
 
-			uint32_t sum = (uint32_t) * (fmSample++) + (uint32_t)feedback;
+			uint32_t sum = (uint32_t)*(fmSample++) + (uint32_t)feedback;
 
 			feedbackValue = doFMNew(phaseNow += phaseIncrement, sum);
 			*thisSample = multiply_accumulate_32x32_rshift32_rounded(*thisSample, feedbackValue, amplitudeNow);
@@ -2450,6 +2458,80 @@ dontUseCache: {}
 
 			// Or regular wave
 		}
+		else if (sound->sources[s].oscType == OscType::PLAITS) {
+			// Deliberately a near-copy of the DX7 block above rather than a
+			// shared helper: the two engines will diverge, and a premature
+			// abstraction here would have to be unpicked.
+			static int32_t plaitsBuf[132] __attribute__((aligned(CACHE_LINE_SIZE)));
+			memset(plaitsBuf, 0, sizeof plaitsBuf);
+
+			PlaitsVoice* pv = unisonParts[u].sources[s].plaitsVoice;
+			if (pv == nullptr) {
+				goto instantUnassign;
+			}
+
+			{
+				// Harmonics / Timbre / Morph ride on three existing per-source
+				// patched params -- no new params, so no automation-count bump
+				// and no enum reordering. All three are FIRST_LOCAL__HYBRID
+				// with a neutral of 0, so each sweeps 0 .. 2^30 over full
+				// travel; see hybridParamToUnit() in dsp/plaits_adapter.cpp.
+				//
+				// Morph borrows OSC B's phase width because the carrier
+				// feedback params are linear, not hybrid, and would not give a
+				// clean sweep. KNOWN CONFLICT: if OSC 2 is a square/pulse, its
+				// width and Plaits' Morph are the same control.
+				const int32_t plaitsHarmonics = paramFinalValues[params::LOCAL_OSC_A_PHASE_WIDTH + s];
+				const int32_t plaitsTimbre = paramFinalValues[params::LOCAL_OSC_A_WAVE_INDEX + s];
+				const int32_t plaitsMorph = paramFinalValues[params::LOCAL_OSC_B_PHASE_WIDTH];
+
+				// Refreshed every block so changing model or output mid-note
+				// takes effect on a held note.
+				pv->engineIndex = sound->sources[s].plaitsEngine;
+				pv->useAux = sound->sources[s].plaitsAux;
+
+				// Low-pass gate. Off by default -- see Source::plaitsLpg for
+				// why, and dsp/plaits_adapter.cpp::compute for what the flag
+				// actually does inside Plaits.
+				//
+				// Deliberately NOT patched params. Decay and Colour are
+				// per-source settings like the model itself, not per-note
+				// modulation targets, and the three patched params Plaits
+				// already borrows are as far as squatting on OSC A/B should go.
+				// Promoting Decay later is a contained change: it would want a
+				// hybrid param and the same hybridParamToUnit() treatment
+				// Harmonics/Timbre/Morph get.
+				//
+				// 1/50, not 1/51: the menu range is 0..50 inclusive, so 50 must
+				// land on exactly 1.0 or the top of the control is unreachable.
+				pv->lpg = sound->sources[s].plaitsLpg;
+				pv->decay = static_cast<float>(sound->sources[s].plaitsDecay) * (1.0f / 50.0f);
+				pv->lpgColour = static_cast<float>(sound->sources[s].plaitsLpgColour) * (1.0f / 50.0f);
+
+				if (!pv->compute(plaitsBuf, numSamples, phaseIncrement, plaitsHarmonics, plaitsTimbre, plaitsMorph)) {
+					goto instantUnassign;
+				}
+
+				// Same amplitude convention as the DX7 block.
+				int32_t sourceAmplitudeNow = sourceAmplitude;
+				if (stereoUnison) {
+					for (int i = 0; i < numSamples; i++) {
+						sourceAmplitudeNow += amplitudeIncrement;
+						int amplified = multiply_32x32_rshift32(plaitsBuf[i], sourceAmplitudeNow) << 6;
+						oscBuffer[(i << 1)] += multiply_32x32_rshift32(amplified, amplitudeL) << 2;
+						oscBuffer[(i << 1) + 1] += multiply_32x32_rshift32(amplified, amplitudeR) << 2;
+					}
+				}
+				else {
+					for (int i = 0; i < numSamples; i++) {
+						sourceAmplitudeNow += amplitudeIncrement;
+						oscBuffer[i] += multiply_32x32_rshift32(plaitsBuf[i], sourceAmplitudeNow) << 6;
+					}
+				}
+			}
+
+			// Or regular wave
+		}
 		else [[likely]] {
 			uint32_t oscSyncPosThisUnison;
 			uint32_t oscSyncPhaseIncrementsThisUnison;
@@ -2854,7 +2936,7 @@ Voice::renderOsc(int32_t s, OscType type, int32_t amplitude, int32_t* bufferStar
 
 				int64_t resetterPhaseToDivide = (uint64_t)resetterPhase << 30;
 
-				if ((uint32_t)(resetterPhase) >= (uint32_t) - (resetterPhaseIncrement >> 1)) {
+				if ((uint32_t)(resetterPhase) >= (uint32_t)-(resetterPhaseIncrement >> 1)) {
 					resetterPhaseToDivide -= (uint64_t)1 << 62;
 				}
 
@@ -2871,7 +2953,7 @@ Voice::renderOsc(int32_t s, OscType type, int32_t amplitude, int32_t* bufferStar
 				}
 
 				int32_t resetterPhaseToMultiply = resetterPhase >> 1;
-				if ((uint32_t)(resetterPhase) >= (uint32_t) - (resetterPhaseIncrement >> 1)) {
+				if ((uint32_t)(resetterPhase) >= (uint32_t)-(resetterPhaseIncrement >> 1)) {
 					resetterPhaseToMultiply -= ((uint32_t)1 << 31); // Count the last little bit of the cycle as
 					                                                // actually a negative-number bit of the next one.
 				}
