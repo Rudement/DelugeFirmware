@@ -18,6 +18,7 @@
 #include "gui/ui/keyboard/layout/isomorphic.h"
 #include "gui/ui/audio_recorder.h"
 #include "gui/ui/browser/sample_browser.h"
+#include "gui/ui/keyboard/chords.h"
 #include "gui/ui/sound_editor.h"
 #include "hid/display/display.h"
 #include "model/scale/note_set.h"
@@ -38,6 +39,42 @@ void KeyboardLayoutIsomorphic::evaluatePads(PressedPad presses[kMaxNumKeyboardPa
 
 	// Should be called last so currentNotesState can be read
 	ColumnControlsKeyboard::evaluatePads(presses);
+
+	// Chroma: name the chord you're holding, on the display — so the iso grid tells you what you played.
+	nameHeldChordOnDisplay();
+}
+
+// Gather the held notes, and when the pitch-class SET changes to a real chord (3+ notes), name it from
+// the notes (the firmware's own nameChordFromNotes) and show it — OLED popup or 7-seg scroll, like the
+// harmonic layout. Cheap: a template match on a few notes, only on change, display region only.
+void KeyboardLayoutIsomorphic::nameHeldChordOnDisplay() {
+	uint8_t notes[16];
+	uint8_t n = 0;
+	uint16_t pcMask = 0;
+	for (uint8_t i = 0; i < currentNotesState.count && n < 16; i++) {
+		int16_t note = currentNotesState.notes[i].note;
+		if (note >= 0 && note <= 127) {
+			notes[n++] = (uint8_t)note;
+			pcMask |= (uint16_t)(1u << (note % 12));
+		}
+	}
+	if (pcMask == lastChordPcMask_) {
+		return; // same set of pitch classes as last time — nothing to redraw
+	}
+	lastChordPcMask_ = pcMask;
+	if (n < 3) {
+		return; // a single note or dyad isn't a chord — don't name it (keeps melodic playing quiet)
+	}
+	char nm[48];
+	uint8_t keyRoot = (uint8_t)getRootNote();
+	if (nameChordFromNotes(notes, n, nm, effectivePreferFlats(keyRoot, getScaleNotes()))) {
+		if (display->haveOLED()) {
+			display->popupTextTemporary(nm);
+		}
+		else {
+			display->setScrollingText(nm, 0);
+		}
+	}
 }
 
 void KeyboardLayoutIsomorphic::handleVerticalEncoder(int32_t offset) {
@@ -119,15 +156,22 @@ void KeyboardLayoutIsomorphic::renderPads(RGB image[][kDisplayWidth + kSideBarWi
 		int32_t noteWithinOctave = (uint16_t)((noteCode + kOctaveSize) - getRootNote()) % kOctaveSize;
 
 		for (int32_t x = 0; x < kDisplayWidth; x++) {
-			// Full colour for every octaves root and active notes
-			if (octaveActiveNotes[noteWithinOctave] || noteWithinOctave == 0) {
+			// Full colour for every octaves root and active notes — but let the white chord-shape
+			// highlight (255) win, so the recalled voicing reads as one uniform shape, root included.
+			if ((octaveActiveNotes[noteWithinOctave] || noteWithinOctave == 0)
+			    && getHighlightedNotes()[noteCode] < 254) {
 				image[y][x] = noteColours[normalizedPadOffset];
 			}
-			// If highlighting notes is active, do it
-			else if (runtimeFeatureSettings.get(RuntimeFeatureSettingType::HighlightIncomingNotes)
-			             == RuntimeFeatureStateToggle::On
-			         && getHighlightedNotes()[noteCode] != 0) {
-				image[y][x] = noteColours[normalizedPadOffset].adjust(getHighlightedNotes()[noteCode], 1);
+			// Highlighted notes. The "white" sentinels always show and win over the note colour: 255 is
+			// the chord-memory shape (full white), 254 is the playback note-preview (dimmer white). Lower
+			// values are velocity-tinted incoming-note highlights, shown only when the toggle is on.
+			else if (getHighlightedNotes()[noteCode] != 0
+			         && (getHighlightedNotes()[noteCode] >= 254
+			             || runtimeFeatureSettings.get(RuntimeFeatureSettingType::HighlightIncomingNotes)
+			                    == RuntimeFeatureStateToggle::On)) {
+				image[y][x] = (getHighlightedNotes()[noteCode] >= 254)
+				                  ? RGB::monochrome(getHighlightedNotes()[noteCode] == 255 ? 255 : 110)
+				                  : noteColours[normalizedPadOffset].adjust(getHighlightedNotes()[noteCode], 1);
 			}
 
 			// Or, if this note is just within the current scale, show it dim

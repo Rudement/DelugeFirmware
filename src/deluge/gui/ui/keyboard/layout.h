@@ -55,6 +55,11 @@ public:
 	                                     PressedPad presses[kMaxNumKeyboardPadPresses],
 	                                     bool encoderPressed = false) = 0;
 
+	/// Spring-loaded voicing (perform), vertical-encoder press. Begin fires on press-down (arms), end on release.
+	/// A clean click springs the voicing to home; a press-and-turn dials the home. True if the layout consumed it.
+	virtual bool voicingPressBegin() { return false; }
+	virtual bool voicingPressEnd() { return false; }
+
 	/// This function is called on visibility change and if colour offset changes
 	virtual void precalculate() = 0;
 
@@ -76,6 +81,9 @@ public:
 	virtual bool supportsInstrument() { return false; }
 	virtual bool supportsKit() { return false; }
 	virtual RequiredScaleMode requiredScaleMode() { return RequiredScaleMode::Undefined; }
+
+	/// Return true to have the keyboard re-render every graphics tick (e.g. to animate pulsing pads).
+	virtual bool requestsContinuousRender() { return false; }
 
 	virtual NotesState& getNotesState() { return currentNotesState; }
 
