@@ -41,7 +41,31 @@ target_compile_options(deluge_dsp PRIVATE
     "-marm"
 )
 
+# stmlib (vendored, MIT). Shared support code for both Mutable ports below --
+# see stmlib/CMakeLists.txt for why it is one target, not two. It used to live
+# inside plaits/; Clouds needs the same code, and stmlib/utils/random.cc and
+# stmlib/dsp/units.cc define real symbols, so two copies would be an ODR
+# violation at link time rather than merely duplicated .text.
+add_subdirectory(stmlib)
+
 # Mutable Instruments Plaits (vendored, MIT). Separate target -- see
 # plaits/CMakeLists.txt for why it is not folded into this unity build.
 add_subdirectory(plaits)
 target_link_libraries(deluge_dsp PUBLIC plaits_dsp)
+
+# Mutable Instruments Clouds / Parasites (vendored, MIT). Separate target --
+# see clouds/CMakeLists.txt for why it is not folded into this unity build.
+# clouds_adapter.cpp, compiled as part of deluge_dsp itself, is what actually
+# calls into clouds_dsp.
+add_subdirectory(clouds)
+target_link_libraries(deluge_dsp PUBLIC clouds_dsp)
+
+# Keep clouds_adapter.cpp out of the unity build. clouds_dsp is a separate
+# target precisely so upstream translation units are never concatenated with
+# ours, but the adapter lives in deluge_dsp and includes upstream headers, so
+# without this the macros stmlib.h defines -- NULL, CLIP, CONSTRAIN, UNROLL2/4/8,
+# IN_RAM -- get textually merged into whatever Deluge sources share its chunk.
+set_source_files_properties(
+    ${CMAKE_CURRENT_LIST_DIR}/clouds_adapter.cpp
+    PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON
+)

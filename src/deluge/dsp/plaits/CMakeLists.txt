@@ -9,9 +9,15 @@
 #  2. Plaits needs GNU extensions on (M_PI is hidden under strict ANSI) and
 #     upstream's own -std, which is not the Deluge's C++23.
 #  3. Keeping the include root at this directory means every upstream
-#     `#include "plaits/..."` and `#include "stmlib/..."` resolves unchanged,
-#     so the vendored tree stays byte-identical to upstream and re-vendoring is
-#     a copy rather than a merge.
+#     `#include "plaits/..."` resolves unchanged, so the vendored tree stays
+#     byte-identical to upstream and re-vendoring is a copy rather than a
+#     merge.
+#
+# stmlib moved out to ../stmlib (its own target, stmlib_dsp) when Clouds
+# arrived and needed the same support code -- see ../stmlib/CMakeLists.txt
+# for why that has to be one compiled copy, not two. `#include "stmlib/..."`
+# still resolves unchanged; the include root below just gained a second entry
+# for it.
 #
 # Upstream: https://github.com/pichenettes/eurorack (plaits, firmware 1.2)
 # Licence: MIT, see LICENSE-MIT and PROVENANCE.md in this directory.
@@ -19,16 +25,18 @@
 file(GLOB_RECURSE plaits_SOURCES
   CONFIGURE_DEPENDS
   ${CMAKE_CURRENT_LIST_DIR}/plaits/*.cc
-  ${CMAKE_CURRENT_LIST_DIR}/stmlib/*.cc
 )
 
 add_library(plaits_dsp STATIC ${plaits_SOURCES})
 
-# Include root is this directory, so "plaits/dsp/voice.h" and "stmlib/stmlib.h"
-# resolve exactly as they do upstream.
+# Include root is this directory, so "plaits/dsp/voice.h" resolves exactly as
+# it does upstream. "stmlib/stmlib.h" resolves via stmlib_dsp's own public
+# include directory, picked up through the PUBLIC link below.
 target_include_directories(plaits_dsp PUBLIC
   ${CMAKE_CURRENT_LIST_DIR}
 )
+
+target_link_libraries(plaits_dsp PUBLIC stmlib_dsp)
 
 set_target_properties(plaits_dsp
     PROPERTIES
