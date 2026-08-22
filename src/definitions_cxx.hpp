@@ -1101,6 +1101,7 @@ enum KeyboardLayoutType : uint8_t {
 	KeyboardLayoutTypeChordLibrary,
 	KeyboardLayoutTypeDrums,
 	KeyboardLayoutTypeNorns,
+	KeyboardLayoutTypeHarmonic,  // appended so existing saved-layout indices stay stable
 	KeyboardLayoutTypeMaxElement // Keep as boundary
 };
 
