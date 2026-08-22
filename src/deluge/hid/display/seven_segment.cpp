@@ -147,6 +147,19 @@ void SevenSegment::removeTopLayer() {
 void SevenSegment::setText(std::string_view newText, bool alignRight, uint8_t drawDot, bool doBlink,
                            uint8_t* newBlinkMask, bool blinkImmediately, bool shouldBlinkFast, int32_t scrollPos,
                            uint8_t* encodedAddition, bool justReplaceBottomLayer) {
+	// Chroma: remember the literal text so a host can mirror it exactly, without guessing it back from
+	// ambiguous segments (S/5, Z/2).
+	{
+		size_t n = newText.size();
+		if (n > sizeof(lastTextForHost_) - 1) {
+			n = sizeof(lastTextForHost_) - 1;
+		}
+		if (n > 0) {
+			memcpy(lastTextForHost_, newText.data(), n);
+		}
+		lastTextForHost_[n] = '\0';
+	}
+
 	// Paul: Render time could be lower putting this into internal
 	void* layerSpace = GeneralMemoryAllocator::get().allocLowSpeed(sizeof(NumericLayerBasicText));
 	if (!layerSpace) {
@@ -196,6 +209,21 @@ void SevenSegment::setText(std::string_view newText, bool alignRight, uint8_t dr
 
 NumericLayerScrollingText* SevenSegment::setScrollingText(char const* newText, int32_t startAtTextPos,
                                                           int32_t initialDelay, int count, uint8_t fixedDot) {
+	// Chroma: capture the FULL scrolling string for the host text mirror (patch names, long labels).
+	// Without this, scrolled text never reached the Companion — only the static setText path did.
+	{
+		// upstream main takes char const* here (community took std::string_view), so measure it
+		// as a C string rather than assuming the string_view interface.
+		size_t n = (newText != nullptr) ? strlen(newText) : 0;
+		if (n > sizeof(lastTextForHost_) - 1) {
+			n = sizeof(lastTextForHost_) - 1;
+		}
+		if (n > 0) {
+			memcpy(lastTextForHost_, newText, n);
+		}
+		lastTextForHost_[n] = '\0';
+	}
+
 	// Paul: Render time could be lower putting this into internal
 	void* layerSpace = GeneralMemoryAllocator::get().allocLowSpeed(sizeof(NumericLayerScrollingText));
 	if (!layerSpace) {

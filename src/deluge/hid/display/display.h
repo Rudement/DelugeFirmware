@@ -94,6 +94,10 @@ public:
 
 	virtual std::array<uint8_t, kNumericDisplayLength> getLast() { return {0}; }; // to match SevenSegment
 
+	// Chroma: the real text currently shown, behind the segments. Lets a host mirror "BASS" instead of
+	// reverse-engineering ambiguous segments (S/5 and Z/2 share a pattern). Empty unless overridden (7-seg).
+	virtual std::string_view getLastTextForHost() { return {}; }
+
 	bool haveOLED() { return displayType == DisplayType::OLED; }
 	bool have7SEG() { return displayType == DisplayType::SEVENSEG; }
 

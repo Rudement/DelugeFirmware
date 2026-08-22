@@ -42,6 +42,7 @@
 #include "hid/display/display.h"
 #include "hid/display/oled.h"
 #include "hid/encoders.h"
+#include "hid/hid_sysex.h" // Chroma: push an "fx" context on gold-knob turns so a following host jumps to FX
 #include "hid/led/indicator_leds.h"
 #include "hid/led/pad_leds.h"
 #include "hid/matrix/matrix_driver.h"
@@ -783,6 +784,8 @@ void View::modEncoderAction(int32_t whichModEncoder, int32_t offset) {
 	//  }
 
 	if (activeModControllableModelStack.modControllable) {
+
+		HIDSysex::sendFxContext(); // Chroma: gold-knob turn → tell a following host we're on FX (throttled)
 
 		bool noteTailsAllowedBefore;
 		ModelStackWithAutoParam* modelStackWithParam = getModelStackWithParam(whichModEncoder, noteTailsAllowedBefore);

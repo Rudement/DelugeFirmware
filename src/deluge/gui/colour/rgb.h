@@ -250,6 +250,18 @@ public:
 	}
 
 	/**
+	 * @brief Adjust a colour by altering its intensity and brightness. Intensity/brightnessDivider must be less than 1
+	 * @return RGB The new colour
+	 *
+	 * Backported from the 1.3 line so the Harmonic layout's colour code is identical on both firmware lines.
+	 */
+	[[nodiscard]] constexpr RGB adjustFractional(uint16_t numerator, uint16_t divisor) const {
+		return transform([numerator, divisor](channel_type channel) { //<
+			return ((channel * numerator) / divisor);
+		});
+	}
+
+	/**
 	 * This rotates the colour in fromRgb by 1 radian and places it in rgb
 	 * This is useful to generate a complementary colour with the same brightness
 	 */

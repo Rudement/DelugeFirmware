@@ -50,6 +50,8 @@ SettingToggle menuDisplayChordLayout(RuntimeFeatureSettingType::DisplayChordKeyb
 SettingToggle menuAlternativePlaybackStartBehaviour(RuntimeFeatureSettingType::AlternativePlaybackStartBehaviour);
 SettingToggle menuAccessibilityShortcuts(RuntimeFeatureSettingType::AccessibilityShortcuts);
 SettingToggle menuEnableGridViewLoopPads(RuntimeFeatureSettingType::EnableGridViewLoopPads);
+SettingToggle menuChordBrush(RuntimeFeatureSettingType::ChordBrush);
+SettingToggle menuRetrospectiveCapture(RuntimeFeatureSettingType::RetrospectiveCapture);
 
 std::array<MenuItem*, RuntimeFeatureSettingType::MaxElement - kNonTopLevelSettings> subMenuEntries{
     &menuDrumRandomizer,
@@ -74,7 +76,9 @@ std::array<MenuItem*, RuntimeFeatureSettingType::MaxElement - kNonTopLevelSettin
     &menuDisplayChordLayout,
     &menuAlternativePlaybackStartBehaviour,
     &menuAccessibilityShortcuts,
-    &menuEnableGridViewLoopPads};
+    &menuEnableGridViewLoopPads,
+    &menuChordBrush,
+    &menuRetrospectiveCapture};
 
 Settings::Settings(l10n::String name, l10n::String title) : menu_item::Submenu(name, title, subMenuEntries) {
 }
