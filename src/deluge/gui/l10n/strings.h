@@ -485,7 +485,7 @@ enum class String : size_t {
 	STRING_FOR_COMMUNITY_FEATURE_FOUR_BAND_EQ,
 	STRING_FOR_COMMUNITY_FEATURE_PLAITS,
 	STRING_FOR_COMMUNITY_FEATURE_GRISTLEIZER,
-	STRING_FOR_COMMUNITY_FEATURE_HEAT,
+	STRING_FOR_COMMUNITY_FEATURE_SEAR,
 
 	STRING_FOR_TRACK_STILL_HAS_CLIPS_IN_SESSION,
 	STRING_FOR_DELETE_ALL_TRACKS_CLIPS_FIRST,
@@ -788,8 +788,8 @@ enum class String : size_t {
 	STRING_FOR_LOOP_DOUBLED,
 
 	STRING_FOR_WAVEFOLD,
-	STRING_FOR_HEAT,
-	STRING_FOR_HEAT_TONE,
+	STRING_FOR_SEAR,
+	STRING_FOR_SEAR_TONE,
 
 	// The Gristleizer. Names are qualified ("Gristle rate", not "Rate") because these are the
 	// strings automation view and MIDI Follow display, where an unqualified "Rate" would be

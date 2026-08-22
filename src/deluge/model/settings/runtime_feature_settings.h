@@ -70,7 +70,7 @@ enum RuntimeFeatureSettingType : uint32_t {
 	FourBandEq,
 	EnablePlaitsEngine,
 	EnableGristleizer,
-	EnableHeat,
+	EnableSear,
 	MaxElement // Keep as boundary
 };
 

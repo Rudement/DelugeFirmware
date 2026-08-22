@@ -121,7 +121,7 @@ const uint32_t mutePadActionUIModes[] = {UI_MODE_NOTES_PRESSED, UI_MODE_AUDITION
 const uint32_t verticalScrollUIModes[] = {UI_MODE_NOTES_PRESSED, UI_MODE_AUDITIONING, UI_MODE_RECORD_COUNT_IN, 0};
 
 constexpr int32_t kNumNonGlobalParamsForAutomation =
-    76; // 60 stock + LOCAL_HEAT + 4 EQ mid params + 9 Gristleizer + 2 CV sends
+    76; // 60 stock + LOCAL_SEAR + 4 EQ mid params + 9 Gristleizer + 2 CV sends
 constexpr int32_t kNumGlobalParamsForAutomation =
     43; // 26 stock + 4 EQ mid params + 9 Gristleizer + 2 CV sends + 2 CV masters
 constexpr int32_t kParamNodeWidth = 3;
@@ -162,7 +162,7 @@ const std::array<std::pair<params::Kind, ParamType>, kNumNonGlobalParamsForAutom
     {params::Kind::UNPATCHED_SOUND, params::UNPATCHED_SAMPLE_RATE_REDUCTION},
     {params::Kind::UNPATCHED_SOUND, params::UNPATCHED_BITCRUSHING},
     {params::Kind::PATCHED, params::LOCAL_FOLD},
-    {params::Kind::PATCHED, params::LOCAL_HEAT},
+    {params::Kind::PATCHED, params::LOCAL_SEAR},
     // OSC 1 Volume, Pitch, Pulse Width, Carrier Feedback, Wave Index
     {params::Kind::PATCHED, params::LOCAL_OSC_A_VOLUME},
     {params::Kind::PATCHED, params::LOCAL_OSC_A_PITCH_ADJUST},

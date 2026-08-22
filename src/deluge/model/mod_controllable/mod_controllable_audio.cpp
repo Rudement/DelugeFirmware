@@ -153,7 +153,8 @@ void ModControllableAudio::initParams(ParamManager* paramManager) {
 
 	unpatchedParams->params[params::UNPATCHED_BITCRUSHING].setCurrentValueBasicForSetup(-2147483648);
 
-	unpatchedParams->params[params::UNPATCHED_HEAT_TONE].setCurrentValueBasicForSetup(0);
+	// Sear Tone defaults to centre, which the tilt filter treats as a true bypass.
+	unpatchedParams->params[params::UNPATCHED_SEAR_TONE].setCurrentValueBasicForSetup(0);
 
 	// The Gristleizer. Every one of these is the INACTIVE value, so a song that has never
 	// touched the effect loads with isEnabled() false and sounds exactly as it did before the
@@ -637,7 +638,7 @@ void ModControllableAudio::processFX(StereoSample* buffer, int32_t numSamples, M
 			// Verified numerically 2026-08-05: at *6 BOTH coefficients hit getExp's saturation ceiling
 			// (q31 max, one-pole coefficient == 1) over roughly the top fifth of the knob, the two
 			// lowpasses become identical, their difference cancels, and the whole band silently does
-			// NOTHING there — a dead knob zone, the same failure class as Heat's octaves==0 bug.
+			// NOTHING there — a dead knob zone, the same failure class as Sear's octaves==0 bug.
 			// At *3 only the upper lowpass ever saturates, and the band then degrades gracefully
 			// into a presence tilt instead of vanishing. Do not raise this multiplier.
 			int32_t lowMidFreqAdjustment = (unpatchedParams->getValue(params::UNPATCHED_LOW_MID_FREQ) >> 5) * 3;
@@ -1016,7 +1017,7 @@ void ModControllableAudio::writeParamAttributesToFile(Serializer& writer, ParamM
 	                                       writeAutomation, false, valuesForOverride);
 	unpatchedParams->writeParamAsAttribute(writer, "bitCrush", params::UNPATCHED_BITCRUSHING, writeAutomation, false,
 	                                       valuesForOverride);
-	unpatchedParams->writeParamAsAttribute(writer, "heatTone", params::UNPATCHED_HEAT_TONE, writeAutomation, false,
+	unpatchedParams->writeParamAsAttribute(writer, "searTone", params::UNPATCHED_SEAR_TONE, writeAutomation, false,
 	                                       valuesForOverride);
 	unpatchedParams->writeParamAsAttribute(writer, "modFXOffset", params::UNPATCHED_MOD_FX_OFFSET, writeAutomation,
 	                                       false, valuesForOverride);
@@ -1143,16 +1144,16 @@ bool ModControllableAudio::readParamTagFromFile(Deserializer& reader, char const
 		reader.exitTag("sampleRateReduction");
 	}
 
-	else if (!strcmp(tagName, "heatTone")) {
-		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_HEAT_TONE,
-		                           readAutomationUpToPos);
-		reader.exitTag("heatTone");
-	}
 
 	else if (!strcmp(tagName, "bitCrush")) {
 		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_BITCRUSHING,
 		                           readAutomationUpToPos);
 		reader.exitTag("bitCrush");
+	}
+
+	else if (!strcmp(tagName, "searTone")) {
+		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_SEAR_TONE, readAutomationUpToPos);
+		reader.exitTag("searTone");
 	}
 
 	else if (!strcmp(tagName, "modFXOffset")) {

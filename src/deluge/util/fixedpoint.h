@@ -78,6 +78,17 @@ static inline int32_t add_saturation(int32_t a, int32_t b) {
 	return out;
 }
 
+// Matches ARM `qsub`. Added for Sear, which needs a saturating absolute value: |NEGATIVE_ONE_Q31|
+// is not representable, so plain negation overflows on exactly the samples a clipper produces
+// most of. Named to match add_saturation above; the 1.3 line calls this pair add_saturate /
+// subtract_saturate.
+static inline int32_t subtract_saturation(int32_t a, int32_t b) __attribute__((always_inline, unused));
+static inline int32_t subtract_saturation(int32_t a, int32_t b) {
+	int32_t out;
+	asm("qsub %0, %1, %2" : "=r"(out) : "r"(a), "r"(b));
+	return out;
+}
+
 inline int32_t clz(uint32_t input) {
 	int32_t out;
 	asm("clz %0, %1" : "=r"(out) : "r"(input));
@@ -113,9 +124,20 @@ static inline int32_t signed_saturate(int32_t val) {
 	return std::min(val, 1 << bits);
 }
 
+// Matches ARM `qadd`: saturating add, clamped to the signed 32-bit range. The previous host stub
+// was plain `a + b`, which WRAPPED on overflow — a ramp past INT32_MAX flipped to negative on the
+// host while pinning on hardware, so host tests could not see a saturation bug at all.
 static inline int32_t add_saturation(int32_t a, int32_t b) __attribute__((always_inline, unused));
 static inline int32_t add_saturation(int32_t a, int32_t b) {
-	return a + b;
+	int64_t r = static_cast<int64_t>(a) + b;
+	return r > INT32_MAX ? INT32_MAX : (r < INT32_MIN ? INT32_MIN : static_cast<int32_t>(r));
+}
+
+// Matches ARM `qsub`: saturating subtract, clamped to the signed 32-bit range.
+static inline int32_t subtract_saturation(int32_t a, int32_t b) __attribute__((always_inline, unused));
+static inline int32_t subtract_saturation(int32_t a, int32_t b) {
+	int64_t r = static_cast<int64_t>(a) - b;
+	return r > INT32_MAX ? INT32_MAX : (r < INT32_MIN ? INT32_MIN : static_cast<int32_t>(r));
 }
 
 inline int32_t clz(uint32_t input) {

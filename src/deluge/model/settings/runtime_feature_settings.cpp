@@ -210,11 +210,9 @@ void RuntimeFeatureSettings::init() {
 	                  "enablePlaitsEngine", RuntimeFeatureStateToggle::On);
 	SetupOnOffSetting(settings[RuntimeFeatureSettingType::EnableGristleizer], STRING_FOR_COMMUNITY_FEATURE_GRISTLEIZER,
 	                  "enableGristleizer", RuntimeFeatureStateToggle::On);
-	// Named for what this line calls it. The 1.3 branch renamed Heat to Sear and its toggle is
-	// "enableSear"; the two settings do not carry across, which is correct -- they are different
-	// names for a control that also behaves differently there.
-	SetupOnOffSetting(settings[RuntimeFeatureSettingType::EnableHeat], STRING_FOR_COMMUNITY_FEATURE_HEAT,
-	                  "enableHeat", RuntimeFeatureStateToggle::On);
+	// Same name and same key as the 1.3 branch, now that the rename is on this line too.
+	SetupOnOffSetting(settings[RuntimeFeatureSettingType::EnableSear], STRING_FOR_COMMUNITY_FEATURE_SEAR,
+	                  "enableSear", RuntimeFeatureStateToggle::On);
 }
 
 void RuntimeFeatureSettings::readSettingsFromFile(StorageManager& bdsm) {

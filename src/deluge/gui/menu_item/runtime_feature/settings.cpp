@@ -54,7 +54,7 @@ SettingToggle menuKitSplit(RuntimeFeatureSettingType::KitSplit);
 SettingToggle menuFourBandEq(RuntimeFeatureSettingType::FourBandEq);
 SettingToggle menuEnablePlaitsEngine(RuntimeFeatureSettingType::EnablePlaitsEngine);
 SettingToggle menuEnableGristleizer(RuntimeFeatureSettingType::EnableGristleizer);
-SettingToggle menuEnableHeat(RuntimeFeatureSettingType::EnableHeat);
+SettingToggle menuEnableSear(RuntimeFeatureSettingType::EnableSear);
 
 std::array<MenuItem*, RuntimeFeatureSettingType::MaxElement - kNonTopLevelSettings> subMenuEntries{
     &menuDrumRandomizer,
@@ -84,7 +84,7 @@ std::array<MenuItem*, RuntimeFeatureSettingType::MaxElement - kNonTopLevelSettin
     &menuFourBandEq,
     &menuEnablePlaitsEngine,
     &menuEnableGristleizer,
-    &menuEnableHeat};
+    &menuEnableSear};
 
 Settings::Settings(l10n::String name, l10n::String title) : menu_item::Submenu(name, title, subMenuEntries) {
 }
