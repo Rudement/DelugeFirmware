@@ -69,6 +69,7 @@ enum RuntimeFeatureSettingType : uint32_t {
 	KitSplit,
 	FourBandEq,
 	EnablePlaitsEngine,
+	EnableCloudsFX,
 	EnableGristleizer,
 	EnableSear,
 	MaxElement // Keep as boundary

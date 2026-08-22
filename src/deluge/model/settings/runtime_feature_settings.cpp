@@ -208,6 +208,8 @@ void RuntimeFeatureSettings::init() {
 	                  "fourBandEq", RuntimeFeatureStateToggle::On);
 	SetupOnOffSetting(settings[RuntimeFeatureSettingType::EnablePlaitsEngine], STRING_FOR_COMMUNITY_FEATURE_PLAITS,
 	                  "enablePlaitsEngine", RuntimeFeatureStateToggle::On);
+	SetupOnOffSetting(settings[RuntimeFeatureSettingType::EnableCloudsFX], STRING_FOR_COMMUNITY_FEATURE_CLOUDS,
+	                  "enableCloudsFX", RuntimeFeatureStateToggle::On);
 	SetupOnOffSetting(settings[RuntimeFeatureSettingType::EnableGristleizer], STRING_FOR_COMMUNITY_FEATURE_GRISTLEIZER,
 	                  "enableGristleizer", RuntimeFeatureStateToggle::On);
 	// Same name and same key as the 1.3 branch, now that the rename is on this line too.

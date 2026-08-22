@@ -265,6 +265,21 @@ enum UnpatchedGlobal : ParamType {
 	/// per-song recall is worth more here than one machine-wide default.
 	UNPATCHED_CV1_MASTER,
 	UNPATCHED_CV2_MASTER,
+	// Clouds. Appended after the CV masters rather than grouped with the other FX params:
+	// these IDs are the index automation and MIDI-follow store, so inserting anything above
+	// an existing entry would silently repoint every saved song's automation onto a different
+	// parameter. On this line UNPATCHED_CV1_MASTER/CV2_MASTER already ship, so Clouds goes
+	// after them -- note this is the opposite order from the 1.3 line, where Clouds landed
+	// first. New global params go on the end, always.
+	UNPATCHED_CLOUDS_POSITION,
+	UNPATCHED_CLOUDS_SIZE,
+	UNPATCHED_CLOUDS_PITCH,
+	UNPATCHED_CLOUDS_DENSITY,
+	UNPATCHED_CLOUDS_TEXTURE,
+	UNPATCHED_CLOUDS_BLEND,
+	UNPATCHED_CLOUDS_SPREAD,
+	UNPATCHED_CLOUDS_FEEDBACK,
+	UNPATCHED_CLOUDS_REVERB,
 	UNPATCHED_GLOBAL_MAX_NUM,
 };
 
