@@ -127,6 +127,7 @@
 #include "gui/menu_item/reverb/sidechain/shape.h"
 #include "gui/menu_item/reverb/sidechain/volume.h"
 #include "gui/menu_item/reverb/width.h"
+#include "gui/menu_item/runtime_feature/gated.h"
 #include "gui/menu_item/runtime_feature/setting.h"
 #include "gui/menu_item/runtime_feature/settings.h"
 #include "gui/menu_item/sample/browser_preview/mode.h"
@@ -308,15 +309,27 @@ Submenu modFXMenu{
     },
 };
 
+// Community-feature gating -----------------------------------------------------------------
+// Switching one of these off in SETTINGS > COMMUNITY FEATURES hides its menus. The DSP is
+// untouched and still runs, so a song that already uses the feature plays back exactly as
+// saved -- which is the point of gating presentation rather than processing, and is how
+// EnableDX7Engine already behaves.
+namespace rf = deluge::gui::menu_item::runtime_feature;
+using EqMidParam = rf::Gated<UnpatchedParam, RuntimeFeatureSettingType::FourBandEq>;
+using GristleParam = rf::Gated<UnpatchedParam, RuntimeFeatureSettingType::EnableGristleizer>;
+using GristleMenu = rf::Gated<Submenu, RuntimeFeatureSettingType::EnableGristleizer>;
+using HeatPatched = rf::Gated<patched_param::Integer, RuntimeFeatureSettingType::EnableHeat>;
+using HeatUnpatched = rf::Gated<UnpatchedParam, RuntimeFeatureSettingType::EnableHeat>;
+
 // EQ -------------------------------------------------------------------------------------
 UnpatchedParam bassMenu{STRING_FOR_BASS, params::UNPATCHED_BASS};
 UnpatchedParam trebleMenu{STRING_FOR_TREBLE, params::UNPATCHED_TREBLE};
 UnpatchedParam bassFreqMenu{STRING_FOR_BASS_FREQUENCY, params::UNPATCHED_BASS_FREQ};
 UnpatchedParam trebleFreqMenu{STRING_FOR_TREBLE_FREQUENCY, params::UNPATCHED_TREBLE_FREQ};
-UnpatchedParam lowMidMenu{STRING_FOR_LOW_MID, params::UNPATCHED_LOW_MID};
-UnpatchedParam lowMidFreqMenu{STRING_FOR_LOW_MID_FREQUENCY, params::UNPATCHED_LOW_MID_FREQ};
-UnpatchedParam highMidMenu{STRING_FOR_HIGH_MID, params::UNPATCHED_HIGH_MID};
-UnpatchedParam highMidFreqMenu{STRING_FOR_HIGH_MID_FREQUENCY, params::UNPATCHED_HIGH_MID_FREQ};
+EqMidParam lowMidMenu{STRING_FOR_LOW_MID, params::UNPATCHED_LOW_MID};
+EqMidParam lowMidFreqMenu{STRING_FOR_LOW_MID_FREQUENCY, params::UNPATCHED_LOW_MID_FREQ};
+EqMidParam highMidMenu{STRING_FOR_HIGH_MID, params::UNPATCHED_HIGH_MID};
+EqMidParam highMidFreqMenu{STRING_FOR_HIGH_MID_FREQUENCY, params::UNPATCHED_HIGH_MID_FREQ};
 
 Submenu eqMenu{
     STRING_FOR_EQ,
@@ -336,20 +349,20 @@ Submenu eqMenu{
 // Nine shared unpatched params, so ONE set of menu items serves synths, kits, audio clips and
 // song FX alike — unlike Heat, which is per-voice and therefore cannot appear outside a synth.
 // Ordered as the signal flows: LFO, then what the LFO drives, then the output stage.
-UnpatchedParam gristleRateMenu{STRING_FOR_RATE, STRING_FOR_GRISTLE_RATE, params::UNPATCHED_GRISTLE_RATE};
-UnpatchedParam gristleDepthMenu{STRING_FOR_DEPTH, STRING_FOR_GRISTLE_DEPTH, params::UNPATCHED_GRISTLE_DEPTH};
-UnpatchedParam gristleShapeMenu{STRING_FOR_SHAPE, STRING_FOR_GRISTLE_SHAPE, params::UNPATCHED_GRISTLE_SHAPE};
-UnpatchedParam gristleBiasMenu{STRING_FOR_BIAS, STRING_FOR_GRISTLE_BIAS, params::UNPATCHED_GRISTLE_BIAS};
-UnpatchedParam gristleModeMenu{STRING_FOR_MODE, STRING_FOR_GRISTLE_MODE, params::UNPATCHED_GRISTLE_MODE};
-UnpatchedParam gristleFreqMenu{STRING_FOR_FREQUENCY, STRING_FOR_GRISTLE_FREQ, params::UNPATCHED_GRISTLE_FREQ};
-UnpatchedParam gristleResMenu{STRING_FOR_RESONANCE, STRING_FOR_GRISTLE_RES, params::UNPATCHED_GRISTLE_RES};
-UnpatchedParam gristleDirtMenu{STRING_FOR_DIRT, STRING_FOR_GRISTLE_DIRT, params::UNPATCHED_GRISTLE_DIRT};
-UnpatchedParam gristleLevelMenu{STRING_FOR_LEVEL, STRING_FOR_GRISTLE_LEVEL, params::UNPATCHED_GRISTLE_LEVEL};
+GristleParam gristleRateMenu{STRING_FOR_RATE, STRING_FOR_GRISTLE_RATE, params::UNPATCHED_GRISTLE_RATE};
+GristleParam gristleDepthMenu{STRING_FOR_DEPTH, STRING_FOR_GRISTLE_DEPTH, params::UNPATCHED_GRISTLE_DEPTH};
+GristleParam gristleShapeMenu{STRING_FOR_SHAPE, STRING_FOR_GRISTLE_SHAPE, params::UNPATCHED_GRISTLE_SHAPE};
+GristleParam gristleBiasMenu{STRING_FOR_BIAS, STRING_FOR_GRISTLE_BIAS, params::UNPATCHED_GRISTLE_BIAS};
+GristleParam gristleModeMenu{STRING_FOR_MODE, STRING_FOR_GRISTLE_MODE, params::UNPATCHED_GRISTLE_MODE};
+GristleParam gristleFreqMenu{STRING_FOR_FREQUENCY, STRING_FOR_GRISTLE_FREQ, params::UNPATCHED_GRISTLE_FREQ};
+GristleParam gristleResMenu{STRING_FOR_RESONANCE, STRING_FOR_GRISTLE_RES, params::UNPATCHED_GRISTLE_RES};
+GristleParam gristleDirtMenu{STRING_FOR_DIRT, STRING_FOR_GRISTLE_DIRT, params::UNPATCHED_GRISTLE_DIRT};
+GristleParam gristleLevelMenu{STRING_FOR_LEVEL, STRING_FOR_GRISTLE_LEVEL, params::UNPATCHED_GRISTLE_LEVEL};
 
 // This is a plain Submenu backed by a std::vector, so nine entries need no pagination work.
 // (On `main` the EQ submenu is a fixed-4 EqMenu and would have needed rewriting — 1.2.1 is
 // easier here. Worth knowing before porting this forward.)
-Submenu gristleMenu{
+GristleMenu gristleMenu{
     STRING_FOR_GRISTLE,
     {
         &gristleRateMenu,
@@ -468,8 +481,8 @@ patched_param::Integer foldMenu{STRING_FOR_WAVEFOLD, STRING_FOR_WAVEFOLD, params
 // Named HEAT rather than DRIVE or DISTORTION because both of those labels are already taken —
 // STRING_FOR_DRIVE is the ladder filter's morph and STRING_FOR_DISTORTION is this submenu's own
 // heading. HEAT is also exactly four characters, so it fits 7SEG unabbreviated.
-patched_param::Integer heatMenu{STRING_FOR_HEAT, STRING_FOR_HEAT, params::LOCAL_HEAT};
-UnpatchedParam heatToneMenu{STRING_FOR_HEAT_TONE, params::UNPATCHED_HEAT_TONE};
+HeatPatched heatMenu{STRING_FOR_HEAT, STRING_FOR_HEAT, params::LOCAL_HEAT};
+HeatUnpatched heatToneMenu{STRING_FOR_HEAT_TONE, params::UNPATCHED_HEAT_TONE};
 
 Submenu soundDistortionMenu{
     STRING_FOR_DISTORTION,

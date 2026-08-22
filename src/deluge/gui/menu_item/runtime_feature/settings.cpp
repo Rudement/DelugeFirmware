@@ -51,6 +51,10 @@ SettingToggle menuAlternativePlaybackStartBehaviour(RuntimeFeatureSettingType::A
 SettingToggle menuAccessibilityShortcuts(RuntimeFeatureSettingType::AccessibilityShortcuts);
 SettingToggle menuEnableGridViewLoopPads(RuntimeFeatureSettingType::EnableGridViewLoopPads);
 SettingToggle menuKitSplit(RuntimeFeatureSettingType::KitSplit);
+SettingToggle menuFourBandEq(RuntimeFeatureSettingType::FourBandEq);
+SettingToggle menuEnablePlaitsEngine(RuntimeFeatureSettingType::EnablePlaitsEngine);
+SettingToggle menuEnableGristleizer(RuntimeFeatureSettingType::EnableGristleizer);
+SettingToggle menuEnableHeat(RuntimeFeatureSettingType::EnableHeat);
 
 std::array<MenuItem*, RuntimeFeatureSettingType::MaxElement - kNonTopLevelSettings> subMenuEntries{
     &menuDrumRandomizer,
@@ -76,7 +80,11 @@ std::array<MenuItem*, RuntimeFeatureSettingType::MaxElement - kNonTopLevelSettin
     &menuAlternativePlaybackStartBehaviour,
     &menuAccessibilityShortcuts,
     &menuEnableGridViewLoopPads,
-    &menuKitSplit};
+    &menuKitSplit,
+    &menuFourBandEq,
+    &menuEnablePlaitsEngine,
+    &menuEnableGristleizer,
+    &menuEnableHeat};
 
 Settings::Settings(l10n::String name, l10n::String title) : menu_item::Submenu(name, title, subMenuEntries) {
 }

@@ -199,6 +199,22 @@ void RuntimeFeatureSettings::init() {
 	// Kit Split
 	SetupOnOffSetting(settings[RuntimeFeatureSettingType::KitSplit], STRING_FOR_COMMUNITY_FEATURE_KIT_SPLIT,
 	                  "kitSplit", RuntimeFeatureStateToggle::Off);
+
+	// The Rudement additions. On by default -- the toggle is there to take them away, not to opt
+	// into them. They hide menus and nothing else: the DSP stays compiled in and keeps running, so
+	// a song saved using the mid EQ bands or the Gristleizer plays back exactly as saved with its
+	// menus switched off. Kit Split above stays Off by default, because it is destructive.
+	SetupOnOffSetting(settings[RuntimeFeatureSettingType::FourBandEq], STRING_FOR_COMMUNITY_FEATURE_FOUR_BAND_EQ,
+	                  "fourBandEq", RuntimeFeatureStateToggle::On);
+	SetupOnOffSetting(settings[RuntimeFeatureSettingType::EnablePlaitsEngine], STRING_FOR_COMMUNITY_FEATURE_PLAITS,
+	                  "enablePlaitsEngine", RuntimeFeatureStateToggle::On);
+	SetupOnOffSetting(settings[RuntimeFeatureSettingType::EnableGristleizer], STRING_FOR_COMMUNITY_FEATURE_GRISTLEIZER,
+	                  "enableGristleizer", RuntimeFeatureStateToggle::On);
+	// Named for what this line calls it. The 1.3 branch renamed Heat to Sear and its toggle is
+	// "enableSear"; the two settings do not carry across, which is correct -- they are different
+	// names for a control that also behaves differently there.
+	SetupOnOffSetting(settings[RuntimeFeatureSettingType::EnableHeat], STRING_FOR_COMMUNITY_FEATURE_HEAT,
+	                  "enableHeat", RuntimeFeatureStateToggle::On);
 }
 
 void RuntimeFeatureSettings::readSettingsFromFile(StorageManager& bdsm) {

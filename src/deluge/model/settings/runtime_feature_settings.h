@@ -67,6 +67,10 @@ enum RuntimeFeatureSettingType : uint32_t {
 	AccessibilityShortcuts,
 	EnableGridViewLoopPads,
 	KitSplit,
+	FourBandEq,
+	EnablePlaitsEngine,
+	EnableGristleizer,
+	EnableHeat,
 	MaxElement // Keep as boundary
 };
 

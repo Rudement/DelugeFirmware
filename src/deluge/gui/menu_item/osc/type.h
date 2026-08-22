@@ -23,8 +23,11 @@
 #include "model/song/song.h"
 #include "processing/engines/audio_engine.h"
 #include "processing/sound/sound.h"
+#include "model/settings/runtime_feature_settings.h"
 #include "processing/source.h"
 #include "util/comparison.h"
+
+#include <algorithm>
 
 extern deluge::gui::menu_item::Submenu dxMenu;
 extern deluge::gui::menu_item::Submenu plaitsMenu;
@@ -35,30 +38,67 @@ public:
 	Type(l10n::String name, l10n::String title_format_str) : Selection(name), FormattedTitle(title_format_str) {};
 	void beginSession(MenuItem* navigatedBackwardFrom) override { Selection::beginSession(navigatedBackwardFrom); }
 
-	/// DX7 and Plaits are both source-0-only and unavailable in kits. One
-	/// predicate on purpose: the option list hides both or neither, and the
-	/// index arithmetic below depends on that.
-	bool mayUseDx() { return !soundEditor.editingKit() && soundEditor.currentSourceIndex == 0; }
+	/// DX7 and Plaits are both source-0-only and unavailable in kits.
+	bool mayUseSourceZeroOnlyTypes() { return !soundEditor.editingKit() && soundEditor.currentSourceIndex == 0; }
+	bool mayUseDx() { return mayUseSourceZeroOnlyTypes(); }
+	bool mayUsePlaits() {
+		return mayUseSourceZeroOnlyTypes()
+		       && runtimeFeatureSettings.isOn(RuntimeFeatureSettingType::EnablePlaitsEngine);
+	}
 
-	/// How many enum entries the option list hides when mayUseDx() is false:
-	/// OscType::DX7 and OscType::PLAITS, which are adjacent. The ONLY number to
-	/// bump if a third source-0-only type is added beside them.
-	static constexpr int32_t kNumSourceZeroOnlyOscTypes = 2;
+	/// The OscTypes currently on offer, in the order getOptions() lists them.
+	///
+	/// This used to be a fixed +/-2 index shift that assumed DX7 and PLAITS were hidden together, with
+	/// a comment warning you not to add a third source-0-only type beside them. Plaits can now be
+	/// switched off on its own from Community Features, so the mapping is looked up instead of
+	/// computed. Add a type in both this list and getOptions(), in the same position, and nothing
+	/// else needs touching.
+	deluge::vector<OscType> offeredTypes() {
+		deluge::vector<OscType> types = {OscType::SINE,         OscType::TRIANGLE, OscType::SQUARE,
+		                                 OscType::ANALOG_SQUARE, OscType::SAW,     OscType::ANALOG_SAW_2,
+		                                 OscType::WAVETABLE};
+		if (soundEditor.currentSound->getSynthMode() == SynthMode::RINGMOD) {
+			return types;
+		}
+		types.emplace_back(OscType::SAMPLE);
+		if (mayUseDx()) {
+			types.emplace_back(OscType::DX7);
+		}
+		if (mayUsePlaits()) {
+			types.emplace_back(OscType::PLAITS);
+		}
+		if (AudioEngine::micPluggedIn || AudioEngine::lineInPluggedIn) {
+			types.emplace_back(OscType::INPUT_L);
+			types.emplace_back(OscType::INPUT_R);
+			types.emplace_back(OscType::INPUT_STEREO);
+		}
+		else {
+			// One collapsed "INPUT" entry, and it selects INPUT_L. That is what the index arithmetic
+			// this replaced did -- the entry sat at INPUT_L's position in the enum -- so the behaviour
+			// is preserved rather than quietly changed to stereo.
+			types.emplace_back(OscType::INPUT_L);
+		}
+		return types;
+	}
 
 	void readCurrentValue() override {
-		int32_t rawVal = (int32_t)soundEditor.currentSource->oscType;
-		if (!mayUseDx() && rawVal > (int32_t)OscType::PLAITS) {
-			rawVal -= kNumSourceZeroOnlyOscTypes;
-		}
-		this->setValue(rawVal);
+		const OscType current = soundEditor.currentSource->oscType;
+		const auto types = offeredTypes();
+		const auto it = std::find(types.begin(), types.end(), current);
+		// A type that is no longer offered -- Plaits switched off under a song already using it -- has
+		// no row to sit on. Show the first entry rather than an out-of-range index; the sound itself is
+		// untouched unless the user actually picks something.
+		this->setValue(it == types.end() ? 0 : (int32_t)std::distance(types.begin(), it));
 	}
 	void writeCurrentValue() override {
 
 		OscType oldValue = soundEditor.currentSource->oscType;
-		auto newValue = this->getValue<OscType>();
-		if (!mayUseDx() && (int32_t)newValue >= (int32_t)OscType::DX7) {
-			newValue = (OscType)((int32_t)newValue + kNumSourceZeroOnlyOscTypes);
+		const auto types = offeredTypes();
+		const int32_t index = this->getValue();
+		if (index < 0 || index >= (int32_t)types.size()) {
+			return;
 		}
+		OscType newValue = types[index];
 
 		auto needs_unassignment = {
 		    OscType::INPUT_L,
@@ -105,6 +145,9 @@ public:
 
 		if (mayUseDx()) {
 			options.emplace_back(l10n::getView(STRING_FOR_DX7));
+		}
+
+		if (mayUsePlaits()) {
 			options.emplace_back(l10n::getView(STRING_FOR_PLAITS));
 		}
 
