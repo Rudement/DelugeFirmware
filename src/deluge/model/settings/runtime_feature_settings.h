@@ -74,6 +74,9 @@ enum RuntimeFeatureSettingType : uint32_t {
 	EnableGristleizer,
 	EnableSear,
 	EnableAuxSends,
+	ChordBrush,
+	KeyboardNotePreview,
+	RetrospectiveCapture,
 	MaxElement // Keep as boundary
 };
 

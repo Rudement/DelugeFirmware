@@ -21,8 +21,11 @@
 
 namespace deluge::gui::menu_item::runtime_feature {
 
-/// Some runtime feature settings are squirrled away in submenus.
-constexpr size_t kNonTopLevelSettings = 0;
+/// Some runtime feature settings are squirrled away in submenus / used directly without a top-level menu item.
+/// This MUST equal (number of RuntimeFeatureSettingType entries) minus (number of items in subMenuEntries below),
+/// or the std::array ends up with trailing nullptr(s) and scrolling onto one freezes the device. Currently:
+/// KeyboardNotePreview has a setting but no menu item, so 1.
+constexpr size_t kNonTopLevelSettings = 1;
 // RuntimeFeatureSettingType::MaxElement - kNonTopLevelSettings
 class Settings final : public Submenu {
 public:
