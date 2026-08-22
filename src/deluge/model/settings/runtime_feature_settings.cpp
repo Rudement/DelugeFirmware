@@ -171,6 +171,21 @@ void RuntimeFeatureSettings::init() {
 	                  STRING_FOR_COMMUNITY_FEATURE_CHORD_KEYBOARD, "displayChordKeyboard",
 	                  RuntimeFeatureStateToggle::Off);
 
+	// ChordBrush
+	SetupOnOffSetting(settings[RuntimeFeatureSettingType::ChordBrush], STRING_FOR_COMMUNITY_FEATURE_CHORD_BRUSH,
+	                  "chordBrush", RuntimeFeatureStateToggle::On);
+
+	// KeyboardNotePreview — light up played notes on the keyboard grid (incl. during playback)
+	SetupOnOffSetting(settings[RuntimeFeatureSettingType::KeyboardNotePreview],
+	                  STRING_FOR_COMMUNITY_FEATURE_KEYBOARD_NOTE_PREVIEW, "keyboardNotePreview",
+	                  RuntimeFeatureStateToggle::On);
+
+	// RetrospectiveCapture — background-buffer notes played in a keyboard layout (even when not
+	// recording); SHIFT+RECORD dumps them into the clip. "Never lose a noodled idea."
+	SetupOnOffSetting(settings[RuntimeFeatureSettingType::RetrospectiveCapture],
+	                  STRING_FOR_COMMUNITY_FEATURE_RETROSPECTIVE_CAPTURE, "retrospectiveCapture",
+	                  RuntimeFeatureStateToggle::On);
+
 	// AlternativePlaybackStartBehaviour
 	SetupOnOffSetting(settings[RuntimeFeatureSettingType::AlternativePlaybackStartBehaviour],
 	                  STRING_FOR_COMMUNITY_FEATURE_ALTERNATIVE_PLAYBACK_START_BEHAVIOUR,

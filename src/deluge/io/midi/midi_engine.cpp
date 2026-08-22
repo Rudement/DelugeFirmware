@@ -822,6 +822,14 @@ void MidiEngine::midiSysexReceived(MIDICable& cable, uint8_t* data, int32_t len)
 		HIDSysex::sysexReceived(cable, payloadStart, payloadLength);
 		break;
 
+	case SysEx::SysexCommands::ChordApply: // Chroma WRITE: F0 00 21 7B 01 44 <modType> <value> F7
+		// payload: [0]=0x44 cmd, [1]=modType, [2]=value. Stash only — the Harmonic layout applies it on the UI
+		// thread, then re-broadcasts 0x43 to the handshaked host (the bridge arms that via its periodic HID ping).
+		if (payloadLength >= 3) {
+			HIDSysex::receiveChordApply(payloadStart[1], payloadStart[2]);
+		}
+		break;
+
 	case SysEx::SysexCommands::Debug:
 		// debug namespace: for sysex calls useful for debugging purposes
 		// and/or might require a debug build to function.

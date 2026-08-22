@@ -66,6 +66,7 @@ EmulatedDisplay menuEmulatedDisplay{};
 SettingToggle menuEnableKeyboardViewSidebarMenuExit(RuntimeFeatureSettingType::EnableKeyboardViewSidebarMenuExit);
 SettingToggle menuEnableLaunchEventPlayhead(RuntimeFeatureSettingType::EnableLaunchEventPlayhead);
 SettingToggle menuDisplayChordLayout(RuntimeFeatureSettingType::DisplayChordKeyboard);
+SettingToggle menuChordBrush(RuntimeFeatureSettingType::ChordBrush);
 SettingToggle menuAlternativePlaybackStartBehaviour(RuntimeFeatureSettingType::AlternativePlaybackStartBehaviour);
 SettingToggle menuEnableGridViewLoopPads(RuntimeFeatureSettingType::EnableGridViewLoopPads);
 SettingToggle menuAlternativeTapTempoBehaviour(RuntimeFeatureSettingType::AlternativeTapTempoBehaviour);
@@ -82,6 +83,7 @@ SettingToggle menuEnableSear(RuntimeFeatureSettingType::EnableSear);
 SettingToggle menuKeyboardNotePreview(RuntimeFeatureSettingType::KeyboardNotePreview);
 SettingToggle menuSceneCapture(RuntimeFeatureSettingType::SceneCapture);
 SettingToggle menuGridColumnReorder(RuntimeFeatureSettingType::GridColumnReorder);
+SettingToggle menuRetrospectiveCapture(RuntimeFeatureSettingType::RetrospectiveCapture);
 
 std::array<MenuItem*, RuntimeFeatureSettingType::MaxElement - kNonTopLevelSettings> subMenuEntries{
     &menuDrumRandomizer,
@@ -101,6 +103,8 @@ std::array<MenuItem*, RuntimeFeatureSettingType::MaxElement - kNonTopLevelSettin
     &menuEnableKeyboardViewSidebarMenuExit,
     &menuEnableLaunchEventPlayhead,
     &menuDisplayChordLayout,
+    &menuChordBrush,
+    &menuRetrospectiveCapture,
     &menuAlternativePlaybackStartBehaviour,
     &menuEnableGridViewLoopPads,
     &menuAlternativeTapTempoBehaviour,
