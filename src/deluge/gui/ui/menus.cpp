@@ -1,4 +1,6 @@
 #include "gui/l10n/strings.h"
+#include "gui/menu_item/eq/eq_freq_param.h"
+#include "gui/menu_item/eq/eq_gain_param.h"
 #include "gui/menu_item/active_scales.h"
 #include "gui/menu_item/arpeggiator/midi_cv/gate.h"
 #include "gui/menu_item/arpeggiator/midi_cv/ratchet_amount.h"
@@ -315,21 +317,29 @@ Submenu modFXMenu{
 // saved -- which is the point of gating presentation rather than processing, and is how
 // EnableDX7Engine already behaves.
 namespace rf = deluge::gui::menu_item::runtime_feature;
-using EqMidParam = rf::Gated<UnpatchedParam, RuntimeFeatureSettingType::FourBandEq>;
+// The mid bands carry the Hz/dB readout AND stay behind the Four-Band EQ toggle. Gated
+// inherits its base's constructors, so the Band argument passes straight through.
+using EqMidGain = rf::Gated<eq::EqGainParam, RuntimeFeatureSettingType::FourBandEq>;
+using EqMidFreq = rf::Gated<eq::EqFreqParam, RuntimeFeatureSettingType::FourBandEq>;
 using GristleParam = rf::Gated<UnpatchedParam, RuntimeFeatureSettingType::EnableGristleizer>;
 using GristleMenu = rf::Gated<Submenu, RuntimeFeatureSettingType::EnableGristleizer>;
 using SearPatched = rf::Gated<patched_param::Integer, RuntimeFeatureSettingType::EnableSear>;
 using SearUnpatched = rf::Gated<UnpatchedParam, RuntimeFeatureSettingType::EnableSear>;
 
 // EQ -------------------------------------------------------------------------------------
-UnpatchedParam bassMenu{STRING_FOR_BASS, params::UNPATCHED_BASS};
-UnpatchedParam trebleMenu{STRING_FOR_TREBLE, params::UNPATCHED_TREBLE};
-UnpatchedParam bassFreqMenu{STRING_FOR_BASS_FREQUENCY, params::UNPATCHED_BASS_FREQ};
-UnpatchedParam trebleFreqMenu{STRING_FOR_TREBLE_FREQUENCY, params::UNPATCHED_TREBLE_FREQ};
-EqMidParam lowMidMenu{STRING_FOR_LOW_MID, params::UNPATCHED_LOW_MID};
-EqMidParam lowMidFreqMenu{STRING_FOR_LOW_MID_FREQUENCY, params::UNPATCHED_LOW_MID_FREQ};
-EqMidParam highMidMenu{STRING_FOR_HIGH_MID, params::UNPATCHED_HIGH_MID};
-EqMidParam highMidFreqMenu{STRING_FOR_HIGH_MID_FREQUENCY, params::UNPATCHED_HIGH_MID_FREQ};
+// Amounts read out in dB and frequencies in Hz rather than a bare 0-50. The band each item
+// belongs to is passed through to the DSP, which owns the coefficients both the readout and the
+// filter are computed from - see dsp/eq_bands.hpp.
+//
+// Bass and Treble are stock params and are always shown; only the two mid bands are gated.
+eq::EqGainParam bassMenu{STRING_FOR_BASS, params::UNPATCHED_BASS, eq::Band::BASS};
+eq::EqGainParam trebleMenu{STRING_FOR_TREBLE, params::UNPATCHED_TREBLE, eq::Band::TREBLE};
+eq::EqFreqParam bassFreqMenu{STRING_FOR_BASS_FREQUENCY, params::UNPATCHED_BASS_FREQ, eq::Band::BASS};
+eq::EqFreqParam trebleFreqMenu{STRING_FOR_TREBLE_FREQUENCY, params::UNPATCHED_TREBLE_FREQ, eq::Band::TREBLE};
+EqMidGain lowMidMenu{STRING_FOR_LOW_MID, params::UNPATCHED_LOW_MID, eq::Band::LOW_MID};
+EqMidFreq lowMidFreqMenu{STRING_FOR_LOW_MID_FREQUENCY, params::UNPATCHED_LOW_MID_FREQ, eq::Band::LOW_MID};
+EqMidGain highMidMenu{STRING_FOR_HIGH_MID, params::UNPATCHED_HIGH_MID, eq::Band::HIGH_MID};
+EqMidFreq highMidFreqMenu{STRING_FOR_HIGH_MID_FREQUENCY, params::UNPATCHED_HIGH_MID_FREQ, eq::Band::HIGH_MID};
 
 Submenu eqMenu{
     STRING_FOR_EQ,
