@@ -2543,9 +2543,8 @@ void NoteRow::playNote(bool on, ModelStackWithNoteRow* modelStack, Note* thisNot
 		    && runtimeFeatureSettings.get(RuntimeFeatureSettingType::KeyboardNotePreview)
 		           == RuntimeFeatureStateToggle::On) {
 			int32_t noteCode = getNoteCode();
-			// 254 = the DIM-white playback highlight. The 255 check guards a chord-memory shape; this
-			// line has no chord memory yet, so nothing writes 255 - it is kept so the two firmware
-			// lines stay identical here and it keeps working if chord memory is ported across.
+			// 254 = the DIM-white playback highlight. Never disturb a 255 chord-memory shape that's
+			// painted on this pad — the stored shape owns it until it's cleared by chord memory.
 			if (noteCode >= 0 && noteCode < deluge::gui::ui::keyboard::kHighestKeyboardNote
 			    && keyboardScreen.highlightedNotes[noteCode] != 255) {
 				keyboardScreen.highlightedNotes[noteCode] = on ? 254 : 0;
