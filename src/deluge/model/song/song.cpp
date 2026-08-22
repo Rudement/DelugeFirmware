@@ -238,6 +238,7 @@ Song::~Song() {
 
 #include "gui/menu_item/integer_range.h"
 #include "gui/menu_item/key_range.h"
+#include "hid/hid_sysex.h" // Chroma: broadcast global key/scale to the CT/host on any change (all layouts)
 #include "timers_interrupts/timers_interrupts.h"
 extern gui::menu_item::IntegerRange defaultTempoMenu;
 extern gui::menu_item::IntegerRange defaultSwingAmountMenu;
@@ -620,6 +621,10 @@ void Song::setRootNote(int32_t newRootNote, InstrumentClip* clipToAvoidAdjusting
 			instrumentClip->yScroll += numMoreNotes * numOctaves + rootNoteChangeEffect;
 		}
 	}
+	// Chroma: the global key changed — tell the CT/host so it follows in ANY layout (ISO, harmonic, …).
+	// A chord-state with no notes/ctx = a pure key+scale update (no-op if no host has handshaked).
+	HIDSysex::sendChordState((uint8_t)(((key.rootNote % 12) + 12) % 12), nullptr, 0, "", 0, 0,
+	                         (uint8_t)getCurrentScale());
 }
 
 /* Moves the intervals in the current modeNotes by some number of steps
@@ -3021,15 +3026,18 @@ Scale Song::cycleThroughScales() {
 /// Returns CUSTOM_SCALE_WITH_MORE_THAN_7_NOTES we can't use the newScale
 Scale Song::setScale(Scale newScale) {
 	// Make sure newScale is a legal one
+	Scale result = NO_SCALE;
 	if (0 <= newScale && newScale < NUM_PRESET_SCALES && setScaleNotes(presetScaleNotes[newScale])) {
-		return newScale;
+		result = newScale;
 	}
 	else if (newScale == NUM_PRESET_SCALES && !userScaleNotes.isEmpty() && setScaleNotes(userScaleNotes)) {
-		return newScale;
+		result = newScale;
 	}
-	else {
-		return NO_SCALE;
+	if (result != NO_SCALE) {
+		// Chroma: the global mode changed — broadcast key+scale so the CT follows in any layout.
+		HIDSysex::sendChordState((uint8_t)(((key.rootNote % 12) + 12) % 12), nullptr, 0, "", 0, 0, (uint8_t)result);
 	}
+	return result;
 }
 
 bool Song::setScaleNotes(NoteSet newScaleNotes) {
