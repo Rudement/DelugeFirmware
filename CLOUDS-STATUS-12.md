@@ -99,6 +99,40 @@ Comparable to the 1.3 measurement (+103,348 `.text`). `.bss` barely moves
 because the ~180 KB working set is runtime-allocated from the stealable SDRAM
 pool, exactly as on 1.3.
 
+## Host-harness results (this line's vendored engine)
+
+The harness in the 1.3 notes was rebuilt against this branch and run on the
+defaults actually committed here. All six modes produce output; Blend forced
+full wet, 20 s of 220 Hz sine, RMS over the final 0.4 s:
+
+| mode | wet RMS | vs dry |
+|---|---|---|
+| Granular | 7,595 | 0.67x |
+| Stretch | 4,167 | 0.37x |
+| Looping delay | 4,202 | 0.37x |
+| Spectral | 10,514 | 0.93x |
+| Oliverb | 9,089 | 0.80x |
+| Resonestor | 3,299 | 0.29x |
+
+Two things this confirmed, and one it corrected:
+
+- **The Density dead zone is real and the default clears it.** Sweeping
+  Granular: density 0.40, 0.50 and 0.60 give exactly 0.0 RMS; 0.70 gives
+  2,571 and the committed 0.80 gives 6,810. The 1.3 figure of 0.47-0.53 is
+  narrower than what is actually audible, as that note suspected.
+- **Granular needs about one second to fill before it makes any sound.** A
+  0.4 s measurement reads as digital silence and looks exactly like the
+  memset trap. Not a fault; do not go hunting for one.
+- **The Resonestor/Spread finding is one channel, not the whole mode.** At
+  Spread 0 the LEFT channel is exactly 0.0 RMS across every combination of
+  feedback, reverb and distortion swept, while the right keeps producing
+  ~3,300. At the committed centre both channels sit level at ~3,300. The 1.3
+  note recorded this as the mode being silent outright; on a mono monitor
+  that is indistinguishable, but the accurate statement is left-channel loss.
+
+The harness cannot model the device's threading, in-situ block-size variation
+or memory pressure -- which is exactly where the remaining open faults live.
+
 ## NOT tested on hardware
 
 This branch has never been flashed. Everything below is inherited from the 1.3
