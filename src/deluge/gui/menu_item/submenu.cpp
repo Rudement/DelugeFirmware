@@ -136,6 +136,18 @@ bool Submenu::wrapAround() {
 	return display->have7SEG() || renderingStyle() == HORIZONTAL;
 }
 
+bool Submenu::isRelevant(ModControllableAudio* modControllable, int32_t whichThing) {
+	// Relevant iff at least one child is currently relevant. Keeps a submenu whose contents are all
+	// hidden (e.g. every action gated behind a community feature that is off) from appearing as a dead
+	// end in its parent menu.
+	for (MenuItem* item : items) {
+		if (item != nullptr && item->isRelevant(modControllable, whichThing)) {
+			return true;
+		}
+	}
+	return false;
+}
+
 void Submenu::selectEncoderAction(int32_t offset) {
 	if (current_item_ == items.end()) {
 		return;
