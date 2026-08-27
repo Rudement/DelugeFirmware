@@ -79,7 +79,6 @@
 #include "playback/mode/playback_mode.h"
 #include "playback/playback_handler.h"
 #include "processing/engines/audio_engine.h"
-#include "processing/engines/cv_audio_stream.h"
 #include "processing/engines/cv_engine.h"
 #include "processing/sound/sound_drum.h"
 #include "processing/sound/sound_instrument.h"
@@ -105,7 +104,6 @@ using deluge::modulation::params::unpatchedGlobalParamShortcuts;
 using deluge::modulation::params::unpatchedNonGlobalParamShortcuts;
 
 using namespace deluge::gui;
-using namespace deluge::processing::engines;
 
 const uint32_t auditionPadActionUIModes[] = {UI_MODE_NOTES_PRESSED,
                                              UI_MODE_AUDITIONING,
@@ -121,9 +119,9 @@ const uint32_t mutePadActionUIModes[] = {UI_MODE_NOTES_PRESSED, UI_MODE_AUDITION
 const uint32_t verticalScrollUIModes[] = {UI_MODE_NOTES_PRESSED, UI_MODE_AUDITIONING, UI_MODE_RECORD_COUNT_IN, 0};
 
 constexpr int32_t kNumNonGlobalParamsForAutomation =
-    76; // 60 stock + LOCAL_SEAR + 4 EQ mid params + 9 Gristleizer + 2 CV sends
+    74; // 60 stock + LOCAL_SEAR + 4 EQ mid params + 9 Gristleizer
 constexpr int32_t kNumGlobalParamsForAutomation =
-    43; // 26 stock + 4 EQ mid params + 9 Gristleizer + 2 CV sends + 2 CV masters
+    39; // 26 stock + 4 EQ mid params + 9 Gristleizer
 constexpr int32_t kParamNodeWidth = 3;
 
 // synth and kit rows FX - sorted in the order that Parameters are scrolled through on the display
@@ -227,11 +225,6 @@ const std::array<std::pair<params::Kind, ParamType>, kNumNonGlobalParamsForAutom
     {params::Kind::UNPATCHED_SOUND, params::UNPATCHED_GRISTLE_FREQ},
     {params::Kind::UNPATCHED_SOUND, params::UNPATCHED_GRISTLE_RES},
     {params::Kind::UNPATCHED_SOUND, params::UNPATCHED_GRISTLE_DIRT},
-    // CV sends. Every param reachable by pad must also be in this list, or
-    // getLastSelectedNonGlobalParamArrayPosition can't find it -- selectable by pad, but not
-    // reachable by scrolling.
-    {params::Kind::UNPATCHED_SOUND, params::UNPATCHED_CV1_SEND},
-    {params::Kind::UNPATCHED_SOUND, params::UNPATCHED_CV2_SEND},
 }};
 
 // global FX - sorted in the order that Parameters are scrolled through on the display
@@ -290,13 +283,6 @@ const std::array<std::pair<params::Kind, ParamType>, kNumGlobalParamsForAutomati
     {params::Kind::UNPATCHED_GLOBAL, params::UNPATCHED_GRISTLE_FREQ},
     {params::Kind::UNPATCHED_GLOBAL, params::UNPATCHED_GRISTLE_RES},
     {params::Kind::UNPATCHED_GLOBAL, params::UNPATCHED_GRISTLE_DIRT},
-    // CV sends, for audio clips and kit affect-entire -- same list-membership rule as above.
-    {params::Kind::UNPATCHED_GLOBAL, params::UNPATCHED_CV1_SEND},
-    {params::Kind::UNPATCHED_GLOBAL, params::UNPATCHED_CV2_SEND},
-    // AUX MASTERs. Reachable on the arranger only -- selectGlobalParam skips them everywhere
-    // else, because audio clips and kit affect-entire resolve to the clip's own inert copy.
-    {params::Kind::UNPATCHED_GLOBAL, params::UNPATCHED_CV1_MASTER},
-    {params::Kind::UNPATCHED_GLOBAL, params::UNPATCHED_CV2_MASTER},
 }};
 
 // VU meter style colours for the automation editor
@@ -365,33 +351,6 @@ constexpr uint8_t kInterpolationShortcutX = 0;
 constexpr uint8_t kInterpolationShortcutY = 6;
 constexpr uint8_t kPadSelectionShortcutX = 0;
 constexpr uint8_t kPadSelectionShortcutY = 7;
-/// Which of the CV params a given automation context is allowed to reach.
-///
-/// Centralised because each of the four rules below needs enforcing at several call sites,
-/// and a rule spelled out at each site is a rule that can be forgotten at one of them.
-///
-///  - Sends belong to a Clip. The render reads them from the playing Clip's param manager and
-///    never from the song's, so on the arranger they would edit an inert copy.
-///  - Masters belong to the song. Audio clips and kit affect-entire resolve this same grid
-///    against the *Clip's* GlobalEffectable, where they are likewise inert copies.
-///  - With the pair patched as one stereo destination there is one send and one master, so the
-///    CV2 half of each pair describes a socket that is not independently addressable. It
-///    disappears rather than sitting there doing nothing, which is what the AUX menu does too.
-bool cvParamAllowedInContext(int32_t paramID, bool onArrangerView) {
-	switch (paramID) {
-	case params::UNPATCHED_CV1_SEND:
-		return !onArrangerView;
-	case params::UNPATCHED_CV2_SEND:
-		return !onArrangerView && !cvGetStereoSplit();
-	case params::UNPATCHED_CV1_MASTER:
-		return onArrangerView;
-	case params::UNPATCHED_CV2_MASTER:
-		return onArrangerView && !cvGetStereoSplit();
-	default:
-		return true;
-	}
-}
-
 constexpr uint8_t kVelocityShortcutX = 15;
 constexpr uint8_t kVelocityShortcutY = 1;
 
@@ -859,16 +818,9 @@ void AutomationView::renderAutomationOverview(ModelStackWithTimelineCounter* mod
 				}
 
 				else if (unpatchedNonGlobalParamShortcuts[xDisplay][yDisplay] != kNoParamID) {
-					// don't make portamento, or the CV sends, available for automation in kit rows.
-					// The sends only work track-wide; the per-Drum copies cannot do anything.
+					// don't make portamento available for automation in kit rows
 					if ((outputType == OutputType::KIT)
-					    && (unpatchedNonGlobalParamShortcuts[xDisplay][yDisplay] == params::UNPATCHED_PORTAMENTO
-					        || unpatchedNonGlobalParamShortcuts[xDisplay][yDisplay] == params::UNPATCHED_CV1_SEND
-					        || unpatchedNonGlobalParamShortcuts[xDisplay][yDisplay] == params::UNPATCHED_CV2_SEND)) {
-						pixel = colours::black; // erase pad
-						continue;
-					}
-					if (!cvParamAllowedInContext(unpatchedNonGlobalParamShortcuts[xDisplay][yDisplay], false)) {
+					    && (unpatchedNonGlobalParamShortcuts[xDisplay][yDisplay] == params::UNPATCHED_PORTAMENTO)) {
 						pixel = colours::black; // erase pad
 						continue;
 					}
@@ -883,13 +835,6 @@ void AutomationView::renderAutomationOverview(ModelStackWithTimelineCounter* mod
 			          || (outputType == OutputType::KIT && getAffectEntire()))
 			         && (unpatchedGlobalParamShortcuts[xDisplay][yDisplay] != kNoParamID)) {
 				int32_t paramID = unpatchedGlobalParamShortcuts[xDisplay][yDisplay];
-				// CV sends and AUX MASTERs are only reachable in some of these contexts --
-				// elsewhere they would edit an inert copy. One predicate rather than the
-				// same condition spelled out at each call site.
-				if (!cvParamAllowedInContext(paramID, onArrangerView)) {
-					pixel = colours::black; // erase pad
-					continue;
-				}
 				if (onArrangerView) {
 					// don't make pitch adjust or sidechain available for automation in arranger
 					if ((paramID == params::UNPATCHED_PITCH_ADJUST) || (paramID == params::UNPATCHED_SIDECHAIN_SHAPE)
@@ -2670,12 +2615,7 @@ void AutomationView::handleParameterSelection(Clip* clip, Output* output, Output
 	             || (unpatchedNonGlobalParamShortcuts[xDisplay][yDisplay] != kNoParamID))) {
 		// don't allow automation of portamento in kit's
 		if ((outputType == OutputType::KIT)
-		    && (unpatchedNonGlobalParamShortcuts[xDisplay][yDisplay] == params::UNPATCHED_PORTAMENTO
-		        || unpatchedNonGlobalParamShortcuts[xDisplay][yDisplay] == params::UNPATCHED_CV1_SEND
-		        || unpatchedNonGlobalParamShortcuts[xDisplay][yDisplay] == params::UNPATCHED_CV2_SEND)) {
-			return; // no parameter selected, don't re-render grid;
-		}
-		if (!cvParamAllowedInContext(unpatchedNonGlobalParamShortcuts[xDisplay][yDisplay], false)) {
+		    && (unpatchedNonGlobalParamShortcuts[xDisplay][yDisplay] == params::UNPATCHED_PORTAMENTO)) {
 			return; // no parameter selected, don't re-render grid;
 		}
 
@@ -2701,10 +2641,6 @@ void AutomationView::handleParameterSelection(Clip* clip, Output* output, Output
 
 		params::Kind paramKind = params::Kind::UNPATCHED_GLOBAL;
 		int32_t paramID = unpatchedGlobalParamShortcuts[xDisplay][yDisplay];
-
-		if (!cvParamAllowedInContext(paramID, onArrangerView)) {
-			return; // no parameter selected, don't re-render grid;
-		}
 
 		// don't allow automation of pitch adjust, or sidechain in arranger
 		if (onArrangerView
@@ -4687,8 +4623,7 @@ void AutomationView::selectGlobalParam(int32_t offset, Clip* clip) {
 		auto [kind, id] = globalParamsForAutomation[idx];
 		{
 			while ((id == params::UNPATCHED_PITCH_ADJUST || id == params::UNPATCHED_SIDECHAIN_SHAPE
-			        || id == params::UNPATCHED_SIDECHAIN_VOLUME || id == params::UNPATCHED_COMPRESSOR_THRESHOLD
-			        || !cvParamAllowedInContext(id, true))) {
+			        || id == params::UNPATCHED_SIDECHAIN_VOLUME || id == params::UNPATCHED_COMPRESSOR_THRESHOLD)) {
 
 				if (offset < 0) {
 					offset -= 1;
@@ -4705,51 +4640,12 @@ void AutomationView::selectGlobalParam(int32_t offset, Clip* clip) {
 		currentSong->lastSelectedParamKind = kind;
 		currentSong->lastSelectedParamArrayPosition = idx;
 	}
-	else if (clip->output->type == OutputType::AUDIO) {
-		auto idx = getNextSelectedParamArrayPosition(offset, clip->lastSelectedParamArrayPosition,
-		                                             kNumGlobalParamsForAutomation);
-		auto [kind, id] = globalParamsForAutomation[idx];
-		{
-			while (!cvParamAllowedInContext(id, false)) {
-
-				if (offset < 0) {
-					offset -= 1;
-				}
-				else if (offset > 0) {
-					offset += 1;
-				}
-				idx = getNextSelectedParamArrayPosition(offset, clip->lastSelectedParamArrayPosition,
-				                                        kNumGlobalParamsForAutomation);
-				id = globalParamsForAutomation[idx].second;
-			}
-		}
-		clip->lastSelectedParamID = id;
-		clip->lastSelectedParamKind = kind;
-		clip->lastSelectedParamArrayPosition = idx;
-	}
 	else {
 		auto idx = getNextSelectedParamArrayPosition(offset, clip->lastSelectedParamArrayPosition,
 		                                             kNumGlobalParamsForAutomation);
 		auto [kind, id] = globalParamsForAutomation[idx];
-		// The AUX MASTERs belong to the song. Off the arranger this list is read against a
-		// Clip's own GlobalEffectable, where those two params are inert copies -- so skip them
-		// rather than let the encoder land on a control that cannot do anything.
-		while (!cvParamAllowedInContext(id, false)) {
-			if (offset < 0) {
-				offset -= 1;
-			}
-			else if (offset > 0) {
-				offset += 1;
-			}
-			else {
-				break; // no direction to search in; leave the selection alone
-			}
-			idx = getNextSelectedParamArrayPosition(offset, clip->lastSelectedParamArrayPosition,
-			                                        kNumGlobalParamsForAutomation);
-			id = globalParamsForAutomation[idx].second;
-		}
 		clip->lastSelectedParamID = id;
-		clip->lastSelectedParamKind = globalParamsForAutomation[idx].first;
+		clip->lastSelectedParamKind = kind;
 		clip->lastSelectedParamArrayPosition = idx;
 	}
 	automationParamType = AutomationParamType::PER_SOUND;
@@ -4795,14 +4691,6 @@ void AutomationView::selectNonGlobalParam(int32_t offset, Clip* clip) {
 				idx = getNextSelectedParamArrayPosition(offset, clip->lastSelectedParamArrayPosition,
 				                                        kNumNonGlobalParamsForAutomation);
 			}
-		}
-
-		// With the pair patched as one stereo destination the CV2 send addresses nothing, so
-		// step over it rather than let the encoder land on a control that cannot do anything.
-		while (offset != 0 && !cvParamAllowedInContext(nonGlobalParamsForAutomation[idx].second, false)) {
-			offset += (offset < 0) ? -1 : 1;
-			idx = getNextSelectedParamArrayPosition(offset, clip->lastSelectedParamArrayPosition,
-			                                        kNumNonGlobalParamsForAutomation);
 		}
 
 		// did we reach beginning or end of list?

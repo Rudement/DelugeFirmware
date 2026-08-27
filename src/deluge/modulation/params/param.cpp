@@ -217,22 +217,7 @@ char const* getParamDisplayName(Kind kind, int32_t p) {
 		    [UNPATCHED_GRISTLE_LEVEL] = STRING_FOR_GRISTLE_LEVEL,
 		    [UNPATCHED_GRISTLE_FREQ] = STRING_FOR_GRISTLE_FREQ,
 		    [UNPATCHED_GRISTLE_RES] = STRING_FOR_GRISTLE_RES,
-		    [UNPATCHED_GRISTLE_DIRT] = STRING_FOR_GRISTLE_DIRT,
-		    [UNPATCHED_CV1_SEND] = STRING_FOR_CV1_SEND,
-		    [UNPATCHED_CV2_SEND] = STRING_FOR_CV2_SEND};
-		return l10n::get(NAMES[p]);
-	}
-
-	// Not touched by the AUX sends port: this fork's arp params (UNPATCHED_ARP_GATE etc, below)
-	// pre-date upstream's arp-range rework, so none of the ARP_* / *_PROBABILITY names from that
-	// rework apply here.
-
-	if (kind == Kind::EXPRESSION && p < kNumExpressionDimensions) {
-		static l10n::String const NAMES[kNumExpressionDimensions] = {
-		    [Expression::X_PITCH_BEND] = STRING_FOR_PITCH_BEND,
-		    [Expression::Y_SLIDE_TIMBRE] = STRING_FOR_MOD_WHEEL,
-		    [Expression::Z_PRESSURE] = STRING_FOR_CHANNEL_PRESSURE,
-		};
+		    [UNPATCHED_GRISTLE_DIRT] = STRING_FOR_GRISTLE_DIRT};
 		return l10n::get(NAMES[p]);
 	}
 
@@ -270,9 +255,6 @@ char const* getParamDisplayName(Kind kind, int32_t p) {
 		    [UNPATCHED_VOLUME - unc] = STRING_FOR_MASTER_LEVEL,
 		    [UNPATCHED_SIDECHAIN_VOLUME - unc] = STRING_FOR_SIDECHAIN_LEVEL,
 		    [UNPATCHED_PITCH_ADJUST - unc] = STRING_FOR_MASTER_PITCH,
-		    [UNPATCHED_TEMPO - unc] = STRING_FOR_TEMPO,
-		    [UNPATCHED_CV1_MASTER - unc] = STRING_FOR_OUTPUT_LEVEL_CV1,
-		    [UNPATCHED_CV2_MASTER - unc] = STRING_FOR_OUTPUT_LEVEL_CV2,
 		};
 		return l10n::get(NAMES[p - unc]);
 	}
@@ -385,15 +367,6 @@ constexpr char const* paramNameForFileConst(Kind const kind, ParamType const par
 
 		case UNPATCHED_PITCH_ADJUST:
 			return "pitchAdjust";
-
-		case UNPATCHED_CV1_MASTER:
-			return "cv1Master";
-
-		case UNPATCHED_CV2_MASTER:
-			return "cv2Master";
-
-		// explicit fallthrough cases
-		case UNPATCHED_TEMPO: // nothing, really?
 		case UNPATCHED_GLOBAL_MAX_NUM:
 		    // Intentional fallthrough, not handled
 		    ;
@@ -480,12 +453,6 @@ constexpr char const* paramNameForFileConst(Kind const kind, ParamType const par
 
 		case UNPATCHED_SEAR_TONE:
 			return "searTone";
-
-		case UNPATCHED_CV1_SEND:
-			return "cv1Send";
-
-		case UNPATCHED_CV2_SEND:
-			return "cv2Send";
 
 		case UNPATCHED_NUM_SHARED:
 		    // Intentionally not handled

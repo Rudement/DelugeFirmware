@@ -202,28 +202,9 @@ enum UnpatchedShared : ParamType {
 	UNPATCHED_GRISTLE_FREQ,
 	UNPATCHED_GRISTLE_RES,
 	UNPATCHED_GRISTLE_DIRT,
-	/// How much of this track is sent to CV socket 1 / 2 as audio. Shared rather than
-	/// Sound- or Global-only so that synth, kit and audio tracks all carry it. On a kit
-	/// the value that gets read is the kit-wide one -- each Drum has its own copy of
-	/// every shared param, but the capture can only isolate a whole track, so the
-	/// per-Drum copies are hidden rather than honoured.
-	///
-	/// Upstream (where this was forward-ported from) keeps this outside a contiguous
-	/// arp-param range that automation_view treats specially. This fork's arp params are
-	/// still Sound-only (see UnpatchedSound below) and pre-date that range, so there is
-	/// nothing here to stay clear of -- appended last regardless.
-	UNPATCHED_CV1_SEND,
-	UNPATCHED_CV2_SEND,
 	/// Special value for chaining the UNPATCHED_* params
 	UNPATCHED_NUM_SHARED,
 };
-
-/// CV sends are attenuation only -- there is no headroom guard in the accumulate, and the
-/// per-socket master level already provides boost. The bottom of the range is silence.
-constexpr int32_t kCvSendOff = -2147483648;
-/// Full. What a pre-sends song's CV1/CV2 routing bit is converted into on load, since those
-/// bits meant "on, at full". See Clip::cvRoutingLegacyBits.
-constexpr int32_t kCvSendFull = 2147483647;
 
 /// Unpatched params which are only used for Sounds
 enum UnpatchedSound : ParamType {
@@ -254,24 +235,8 @@ enum UnpatchedGlobal : ParamType {
 	UNPATCHED_SIDECHAIN_VOLUME,
 	UNPATCHED_PITCH_ADJUST,
 	UNPATCHED_TEMPO,
-	/// AUX MASTER: the output level of each CV socket. Global-only rather than shared, because
-	/// a socket level is a property of the song's output stage -- a Sound has no business
-	/// carrying one. Appended at the end of the range deliberately: file serialization is by
-	/// name, so nothing that already exists shifts.
-	///
-	/// These are params rather than flash bytes, and that is the whole point: only a param
-	/// can be put on a gold knob, learned to a MIDI CC, or automated. The cost is that the
-	/// socket level now saves with the song rather than the machine -- taken knowingly, since
-	/// per-song recall is worth more here than one machine-wide default.
-	UNPATCHED_CV1_MASTER,
-	UNPATCHED_CV2_MASTER,
 	UNPATCHED_GLOBAL_MAX_NUM,
 };
-
-/// AUX MASTER default: reproduces the previous fixed output level (x64), displayed as 40 of
-/// 50. 0.8 of the way up param space, since 40/50 of a 1.2 dB-per-step taper whose top is
-/// x256 lands exactly on x64.
-constexpr int32_t kCvMasterDefault = 1288490189;
 
 constexpr ParamType STATIC_START = 162;
 
@@ -368,7 +333,7 @@ const uint32_t unpatchedNonGlobalParamShortcuts[kDisplayWidth][kDisplayHeight] =
     {kNoParamID          , kNoParamID, kNoParamID        , UNPATCHED_HIGH_MID, UNPATCHED_SIDECHAIN_SHAPE , UNPATCHED_LOW_MID          , UNPATCHED_BASS       , UNPATCHED_BASS_FREQ},
     {kNoParamID          , kNoParamID, UNPATCHED_ARP_GATE, UNPATCHED_HIGH_MID_FREQ, kNoParamID   , UNPATCHED_LOW_MID_FREQ             , UNPATCHED_TREBLE     , UNPATCHED_TREBLE_FREQ},
     {kNoParamID          , kNoParamID, kNoParamID        , kNoParamID, UNPATCHED_MOD_FX_OFFSET   , UNPATCHED_MOD_FX_FEEDBACK      , kNoParamID           , kNoParamID},
-    {UNPATCHED_CV1_SEND  , UNPATCHED_CV2_SEND, kNoParamID        , kNoParamID, kNoParamID                , kNoParamID                     , kNoParamID           , kNoParamID},
+    {kNoParamID          , kNoParamID, kNoParamID        , kNoParamID, kNoParamID                , kNoParamID                     , kNoParamID           , kNoParamID},
     {kNoParamID          , kNoParamID, kNoParamID        , kNoParamID, kNoParamID                , kNoParamID                     , kNoParamID           , UNPATCHED_GRISTLE_DIRT},
     {UNPATCHED_GRISTLE_RATE, UNPATCHED_GRISTLE_DEPTH, UNPATCHED_GRISTLE_SHAPE, UNPATCHED_GRISTLE_BIAS, UNPATCHED_GRISTLE_MODE, UNPATCHED_GRISTLE_FREQ, UNPATCHED_GRISTLE_RES, UNPATCHED_GRISTLE_LEVEL}
 };
@@ -391,8 +356,8 @@ const uint32_t unpatchedGlobalParamShortcuts[kDisplayWidth][kDisplayHeight] = {
     {kNoParamID          , kNoParamID            , UNPATCHED_SIDECHAIN_VOLUME, UNPATCHED_HIGH_MID          , UNPATCHED_SIDECHAIN_SHAPE , UNPATCHED_LOW_MID			   			, UNPATCHED_BASS        , UNPATCHED_BASS_FREQ},
     {kNoParamID          , kNoParamID            , kNoParamID                , UNPATCHED_HIGH_MID_FREQ     , kNoParamID				   , UNPATCHED_LOW_MID_FREQ			   		 	, UNPATCHED_TREBLE      , UNPATCHED_TREBLE_FREQ},
     {kNoParamID          , kNoParamID            , kNoParamID                , kNoParamID                  , UNPATCHED_MOD_FX_OFFSET   , UNPATCHED_MOD_FX_FEEDBACK		, UNPATCHED_MOD_FX_DEPTH, UNPATCHED_MOD_FX_RATE},
-    {kNoParamID          , kNoParamID            , kNoParamID                , UNPATCHED_REVERB_SEND_AMOUNT, kNoParamID				   , kNoParamID			   		 	, UNPATCHED_CV1_MASTER  , UNPATCHED_CV1_SEND},
-    {UNPATCHED_DELAY_RATE, kNoParamID            , kNoParamID                , UNPATCHED_DELAY_AMOUNT      , kNoParamID				   , UNPATCHED_CV2_MASTER  		 	, UNPATCHED_CV2_SEND    , UNPATCHED_GRISTLE_DIRT},
+    {kNoParamID          , kNoParamID            , kNoParamID                , UNPATCHED_REVERB_SEND_AMOUNT, kNoParamID				   , kNoParamID			   		 	, kNoParamID            , kNoParamID},
+    {UNPATCHED_DELAY_RATE, kNoParamID            , kNoParamID                , UNPATCHED_DELAY_AMOUNT      , kNoParamID				   , kNoParamID			  		 	, kNoParamID            , UNPATCHED_GRISTLE_DIRT},
     {UNPATCHED_GRISTLE_RATE, UNPATCHED_GRISTLE_DEPTH, UNPATCHED_GRISTLE_SHAPE, UNPATCHED_GRISTLE_BIAS      , UNPATCHED_GRISTLE_MODE   , UNPATCHED_GRISTLE_FREQ           , UNPATCHED_GRISTLE_RES  , UNPATCHED_GRISTLE_LEVEL}};
 // clang-format on
 
