@@ -57,6 +57,9 @@ public:
 	/// @brief 	Indicates if the menu-like object should wrap-around. Destined to be virtualized.
 	///         At the moment implements the legacy behaviour of wrapping on 7seg but not on OLED.
 	bool wrapAround();
+	/// A submenu with nothing relevant inside it should not itself be offered as a navigation target -
+	/// otherwise the parent menu shows a dead end that displays nothing and cannot be usefully entered.
+	bool isRelevant(ModControllableAudio* modControllable, int32_t whichThing) override;
 	bool isSubmenu() override { return true; }
 	virtual bool focusChild(const MenuItem* child);
 	void updatePadLights() override;
