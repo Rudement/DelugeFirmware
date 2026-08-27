@@ -53,6 +53,9 @@ public:
 	///         At the moment implements the legacy behaviour of wrapping on 7seg but not on OLED.
 	bool wrapAround();
 	bool ensureCurrentItemIsRelevant();
+	/// A submenu with nothing relevant inside it should not itself be offered as a navigation target -
+	/// otherwise the parent menu shows a dead end that displays nothing and cannot be usefully entered.
+	bool isRelevant(ModControllableAudio* modControllable, int32_t whichThing) override;
 
 	deluge::vector<MenuItem*> items;
 	typename decltype(items)::iterator current_item_;
