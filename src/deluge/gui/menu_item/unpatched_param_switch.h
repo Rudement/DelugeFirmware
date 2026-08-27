@@ -35,9 +35,9 @@ namespace deluge::gui::menu_item {
  * recorded into a clip or thrown by a gold knob. For a bypass that is the difference between a
  * setup option and a performance gesture.
  *
- * On this branch it costs NO CC map or shortcut grid entry, because there is no free grid
- * position left to give it one — see the note on UNPATCHED_GRISTLE_ON in param.h. Automation
- * and the gold knobs still reach it; MIDI Follow does not.
+ * On this branch it has a real CC map and shortcut grid entry — CC 89, matching the 1.3 line
+ * — living at a genuinely free grid slot rather than one evicted from another param; see the
+ * note on UNPATCHED_GRISTLE_ON in param.h for how that slot was found.
  *
  * THE VALUE IS THRESHOLDED, NEVER BLENDED. What is stored is an ordinary full-range q31, so
  * automation, CCs and gold knobs need no special case anywhere. The DSP compares it against

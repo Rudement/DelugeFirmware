@@ -200,12 +200,13 @@ enum UnpatchedShared : ParamType {
 	// gristle::isEnabled. It must stay first so the menu, the automation lists and the enum all
 	// tell the same story about what this block is.
 	//
-	// NO GRID SHORTCUT ON THIS BRANCH, and so no MIDI Follow CC. The 1.3 line gives On CC 89,
-	// which is free over there; here 89 is already Low Mid Freq. A CC on 1.2.1 is inseparable
-	// from a grid position, every CC-bearing position in all three shortcut tables is occupied,
-	// and the Gristleizer's own column is full at 8 params plus Dirt's slot next door. Adding
-	// On to a table would therefore have to evict a param that currently has a CC — it silently
-	// took Depth's CC 103 when first tried. Menu and automation reach it; MIDI Follow does not.
+	// GRID SHORTCUT AND MIDI FOLLOW CC MATCH 1.3: On is CC 89, same as the 1.3 line. Getting
+	// there took the same move 1.3 made — Low Mid Freq vacated CC 89 (moved to the genuinely
+	// free CC 90) rather than evicting anything — but 1.2.1 also needed an actual shortcut-grid
+	// slot, since a CC here is inseparable from a grid position. Row 10 / column 0 was free in
+	// all three shortcut tables (patched, unpatched-non-global, unpatched-global) and carried no
+	// default CC of its own, so On lives there instead of joining the Gristleizer's own column,
+	// which was already full at 8 params plus Dirt's slot. Nothing existing was evicted.
 	UNPATCHED_GRISTLE_ON,
 	UNPATCHED_GRISTLE_RATE,
 	UNPATCHED_GRISTLE_DEPTH,
@@ -379,7 +380,7 @@ const uint32_t unpatchedNonGlobalParamShortcuts[kDisplayWidth][kDisplayHeight] =
     {UNPATCHED_PORTAMENTO, kNoParamID, kNoParamID        , kNoParamID, kNoParamID                , kNoParamID                     , kNoParamID           , kNoParamID},
     {kNoParamID          , kNoParamID, kNoParamID        , kNoParamID, kNoParamID                , kNoParamID                     , kNoParamID           , kNoParamID},
     {kNoParamID          , kNoParamID, kNoParamID        , kNoParamID, kNoParamID                , kNoParamID                     , kNoParamID           , kNoParamID},
-    {kNoParamID          , kNoParamID, kNoParamID        , UNPATCHED_HIGH_MID, UNPATCHED_SIDECHAIN_SHAPE , UNPATCHED_LOW_MID          , UNPATCHED_BASS       , UNPATCHED_BASS_FREQ},
+    {UNPATCHED_GRISTLE_ON, kNoParamID, kNoParamID        , UNPATCHED_HIGH_MID, UNPATCHED_SIDECHAIN_SHAPE , UNPATCHED_LOW_MID          , UNPATCHED_BASS       , UNPATCHED_BASS_FREQ},
     {kNoParamID          , kNoParamID, UNPATCHED_ARP_GATE, UNPATCHED_HIGH_MID_FREQ, kNoParamID   , UNPATCHED_LOW_MID_FREQ             , UNPATCHED_TREBLE     , UNPATCHED_TREBLE_FREQ},
     {kNoParamID          , kNoParamID, kNoParamID        , kNoParamID, UNPATCHED_MOD_FX_OFFSET   , UNPATCHED_MOD_FX_FEEDBACK      , kNoParamID           , kNoParamID},
     {UNPATCHED_CV1_SEND  , UNPATCHED_CV2_SEND, kNoParamID        , kNoParamID, kNoParamID                , kNoParamID                     , kNoParamID           , kNoParamID},
@@ -402,7 +403,7 @@ const uint32_t unpatchedGlobalParamShortcuts[kDisplayWidth][kDisplayHeight] = {
     {kNoParamID          , kNoParamID            , kNoParamID                , kNoParamID                  , kNoParamID				   , kNoParamID			   		 	, kNoParamID            , kNoParamID},
     {kNoParamID          , kNoParamID            , kNoParamID                , kNoParamID                  , UNPATCHED_LPF_MORPH	   , kNoParamID						, UNPATCHED_LPF_RES     , UNPATCHED_LPF_FREQ},
     {kNoParamID          , kNoParamID            , kNoParamID                , kNoParamID                  , UNPATCHED_HPF_MORPH	   , kNoParamID						, UNPATCHED_HPF_RES     , UNPATCHED_HPF_FREQ},
-    {kNoParamID          , kNoParamID            , UNPATCHED_SIDECHAIN_VOLUME, UNPATCHED_HIGH_MID          , UNPATCHED_SIDECHAIN_SHAPE , UNPATCHED_LOW_MID			   			, UNPATCHED_BASS        , UNPATCHED_BASS_FREQ},
+    {UNPATCHED_GRISTLE_ON, kNoParamID            , UNPATCHED_SIDECHAIN_VOLUME, UNPATCHED_HIGH_MID          , UNPATCHED_SIDECHAIN_SHAPE , UNPATCHED_LOW_MID			   			, UNPATCHED_BASS        , UNPATCHED_BASS_FREQ},
     {kNoParamID          , kNoParamID            , kNoParamID                , UNPATCHED_HIGH_MID_FREQ     , kNoParamID				   , UNPATCHED_LOW_MID_FREQ			   		 	, UNPATCHED_TREBLE      , UNPATCHED_TREBLE_FREQ},
     {kNoParamID          , kNoParamID            , kNoParamID                , kNoParamID                  , UNPATCHED_MOD_FX_OFFSET   , UNPATCHED_MOD_FX_FEEDBACK		, UNPATCHED_MOD_FX_DEPTH, UNPATCHED_MOD_FX_RATE},
     {kNoParamID          , kNoParamID            , kNoParamID                , UNPATCHED_REVERB_SEND_AMOUNT, kNoParamID				   , kNoParamID			   		 	, UNPATCHED_CV1_MASTER  , UNPATCHED_CV1_SEND},
