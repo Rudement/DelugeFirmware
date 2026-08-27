@@ -58,7 +58,7 @@ bool Submenu::ensureCurrentItemIsRelevant() {
 
 	// if we still didn't find a relevant one...
 	// then maybe there is a relevant one in the forward direction...
-	for (auto it = current_item_; it <= items.end(); it++) {
+	for (auto it = current_item_; it < items.end(); it++) {
 		MenuItem* menuItem = (*it);
 		if (menuItem->isRelevant(soundEditor.currentModControllable, soundEditor.currentSourceIndex)) {
 			current_item_ = it;
@@ -146,11 +146,27 @@ bool Submenu::wrapAround() {
 	return display->have7SEG();
 }
 
+bool Submenu::isRelevant(ModControllableAudio* modControllable, int32_t whichThing) {
+	// Relevant iff at least one child is currently relevant. Keeps a submenu whose contents are all
+	// hidden (e.g. every action gated behind a community feature that is off) from appearing as a dead
+	// end in its parent menu.
+	for (MenuItem* item : items) {
+		if (item != nullptr && item->isRelevant(modControllable, whichThing)) {
+			return true;
+		}
+	}
+	return false;
+}
+
 void Submenu::selectEncoderAction(int32_t offset) {
 	if (!items.size()) {
 		return;
 	}
 	auto lastRelevant = current_item_;
+	// Bounds how many items we will visit while hunting for a relevant one. Without this, a submenu
+	// where nothing is currently relevant (e.g. every action hidden) spins forever when wrapAround()
+	// is true, since offset never reaches zero.
+	size_t attemptsLeft = items.size();
 	if (offset > 0) {
 		// Scan items forward, counting relevant items.
 		do {
@@ -168,6 +184,11 @@ void Submenu::selectEncoderAction(int32_t offset) {
 				lastRelevant = current_item_;
 				offset--;
 			}
+			if (attemptsLeft == 0) {
+				current_item_ = lastRelevant;
+				break;
+			}
+			attemptsLeft--;
 		} while (offset > 0);
 	}
 	else if (offset < 0) {
@@ -187,6 +208,11 @@ void Submenu::selectEncoderAction(int32_t offset) {
 				lastRelevant = current_item_;
 				offset++;
 			}
+			if (attemptsLeft == 0) {
+				current_item_ = lastRelevant;
+				break;
+			}
+			attemptsLeft--;
 		} while (offset < 0);
 	}
 	updateDisplay();
