@@ -80,6 +80,18 @@ constexpr float kPitchSemitoneRange = 24.0f;
 //
 // Oliverb measures a further 6.4 dB above Resonestor and wants the same treatment,
 // left at 1.0 here pending a listen rather than assumed.
+// Everything leaving the engine goes through stmlib's SoftConvert():
+//
+//     SoftConvert(x) = Clip16(SoftLimit(x * 0.5f) * 32768.0f)
+//
+// -- a 0.5 gain before the limiter, which in the linear region is simply half.
+// Upstream's dry is crossfaded INSIDE the engine, so it takes that halving too.
+// Ours is read straight off the Deluge's buffer and never sees it, so without this
+// the dry we mix back sits 6 dB above the dry every other mode produces. Measured
+// at Blend 0: the five engine-crossfaded modes return 0.3531x dry, this path
+// returned 0.7071x -- which is what "Resonestor is loud even at zero Blend" was.
+constexpr float kEngineDryScale = 0.5f;
+
 constexpr float kModeOutputTrim[] = {
     1.0f,   // OFF -- never rendered
     1.0f,   // Granular, the reference
@@ -506,8 +518,8 @@ void CloudsAdapter::process(std::span<StereoSample> buffer) {
 	for (StereoSample& sample : buffer) {
 		// Read before stage 3 overwrites it: stages 1 and 2 took their copy into the
 		// rings, so this still holds the block's dry input.
-		const float dryL = crossfadeHere ? static_cast<float>(sample.l) / 2147483648.0f : 0.0f;
-		const float dryR = crossfadeHere ? static_cast<float>(sample.r) / 2147483648.0f : 0.0f;
+		const float dryL = crossfadeHere ? static_cast<float>(sample.l) / 2147483648.0f * kEngineDryScale : 0.0f;
+		const float dryR = crossfadeHere ? static_cast<float>(sample.r) / 2147483648.0f * kEngineDryScale : 0.0f;
 
 		upsamplePhase_ += kStep;
 		while (upsamplePhase_ >= 1.0f) {
