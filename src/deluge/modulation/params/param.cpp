@@ -259,6 +259,10 @@ char const* getParamDisplayName(Kind kind, int32_t p) {
 		    [UNPATCHED_VOLUME - unc] = STRING_FOR_MASTER_LEVEL,
 		    [UNPATCHED_SIDECHAIN_VOLUME - unc] = STRING_FOR_SIDECHAIN_LEVEL,
 		    [UNPATCHED_PITCH_ADJUST - unc] = STRING_FOR_MASTER_PITCH,
+		    // Not a gap: a designated-initialiser hole here is a hard GCC error
+		    // ("non-trivial designated initializers not supported"), so TEMPO gets
+		    // its name back now that Clouds sits after it.
+		    [UNPATCHED_TEMPO - unc] = STRING_FOR_TEMPO,
 		    [UNPATCHED_CLOUDS_POSITION - unc] = STRING_FOR_CLOUDS_POSITION,
 		    [UNPATCHED_CLOUDS_SIZE - unc] = STRING_FOR_CLOUDS_SIZE,
 		    [UNPATCHED_CLOUDS_PITCH - unc] = STRING_FOR_CLOUDS_PITCH,
