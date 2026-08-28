@@ -2137,10 +2137,20 @@ bool ModControllableAudio::setCloudsMode(CloudsMode mode) {
 }
 
 namespace {
-// 200 ms at 44.1 kHz. Long enough to swallow a fast spin through all six modes,
-// short enough that stopping on one and hearing it feels immediate. A deliberate
-// click-pause-click walk still builds every mode you stop on.
-constexpr uint32_t kCloudsModeSettleSamples = 44100 * 2; // PROBE BUILD: 2 seconds, deliberately unmissable
+// Two seconds at 44.1 kHz, and the number is measured rather than chosen.
+//
+// It started at 200 ms, on the reasoning that this only had to swallow a fast spin.
+// It does not: 200 ms is shorter than the gap between clicks when someone browses
+// the list at a normal pace, so a deliberate click-pause-click walk applied EVERY
+// mode it passed over -- a full engine rebuild each, seconds apart. That is what
+// was still taking the device down after the interrupt stall was removed, and it
+// is why Oliverb and Stretch were the ones that showed it: their Prepare() is the
+// expensive one. At 2 s the same walk applies once, and it stops.
+//
+// Long, but not felt: pressing select applies immediately, so the wait only exists
+// if you turn the dial and then do nothing. If the cost of a rebuild ever comes
+// down, this can come down with it.
+constexpr uint32_t kCloudsModeSettleSamples = 44100 * 2;
 } // namespace
 
 ModControllableAudio* ModControllableAudio::pendingCloudsModeOwner = nullptr;
