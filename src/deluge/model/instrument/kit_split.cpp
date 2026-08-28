@@ -101,6 +101,19 @@ void discardUnusedKit(Kit* kit) {
 	delugeDealloc(toDealloc);
 }
 
+/// Splice `newOutput` into the song's output list immediately after `afterThis`. Song::addOutput() only offers
+/// the head or the tail; this is the interior case, used to drop a split-out Kit back where the source Kit used
+/// to sit rather than always at the end of the list. Mirrors the bookkeeping addOutput() does for the tail case -
+/// a freshly created Kit can never be mid-solo, so there is no anyOutputsSoloingInArrangement check to repeat.
+void insertOutputAfter(Song* song, Output* afterThis, Output* newOutput) {
+	newOutput->next = afterThis->next;
+	afterThis->next = newOutput;
+
+	if (song == currentSong) {
+		newOutput->resyncLFOs();
+	}
+}
+
 } // namespace
 
 int32_t countSplittableRows(InstrumentClip* clip) {
@@ -274,8 +287,12 @@ int32_t performSplit(InstrumentClip* src) {
 	changeRootUI(&sessionView);
 
 	// ---- Pass 3: hand each Drum and Clip over ----
-	// Backwards, so that once appended to the song's output list drum 0 ends up as the leftmost of the new grid
-	// columns. Grid columns run opposite to the output list - see SessionView::gridTrackIndexFromTrack().
+	// Backwards, and always inserted right next to where the source Clip and Kit still are, so that once every
+	// row is placed, the whole block sits exactly where the source used to be - same row order, same neighbours
+	// on both sides - rather than always landing at the front of the session clip list or the leftmost grid
+	// columns. Snapshot the source's position now, before anything is inserted and shifts indices around it.
+	int32_t srcSessionIndex = song->sessionClips.getIndexForClip(src);
+	Output* outputInsertionAnchor = srcKit;
 	int32_t created = 0;
 	for (int32_t n = numToSplit - 1; n >= 0; n--) {
 
@@ -399,11 +416,19 @@ int32_t performSplit(InstrumentClip* src) {
 
 		// Clip first, then output: if the insert somehow fails we can still discard both cleanly. Space was
 		// reserved up front, so it should not.
-		if (song->sessionClips.insertClipAtIndex(clone, 0) != Error::NONE) {
+		//
+		// Fixed index, not 0: src is still sitting at srcSessionIndex while this runs, so repeatedly inserting
+		// there pushes src (and everything after it) down by one each time. The finished block ends up in row
+		// order immediately ahead of src's old slot instead of at the top of the list.
+		if (song->sessionClips.insertClipAtIndex(clone, srcSessionIndex) != Error::NONE) {
 			display->displayError(Error::INSUFFICIENT_RAM);
 			break;
 		}
-		song->addOutput(newKit, false);
+		// Chained onto the previous insertion rather than onto srcKit every time, so the block's internal row
+		// order comes out the way Song::addOutput(atStart=false) used to build it against the end of the whole
+		// list - just anchored at srcKit's actual neighbours instead.
+		insertOutputAfter(song, outputInsertionAnchor, newKit);
+		outputInsertionAnchor = newKit;
 
 		if (!newKit->getActiveClip()) {
 			char modelStackMemory[MODEL_STACK_MAX_SIZE];

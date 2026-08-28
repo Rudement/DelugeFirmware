@@ -40,6 +40,9 @@ bool canSplit(InstrumentClip* clip);
 /// On full success the source Clip and its now-empty Kit are removed. If a later step fails, the source Clip is
 /// left in place holding whatever Drums remain, so nothing is lost.
 ///
+/// The new Kits and Clips take the source's place - same row order, same neighbours in the session clip list and
+/// on the grid - rather than always landing at the front of the list or the leftmost grid columns.
+///
 /// Must be called with playback stopped. Returns the number of Kits created, or 0 if nothing was done.
 int32_t performSplit(InstrumentClip* clip);
 
