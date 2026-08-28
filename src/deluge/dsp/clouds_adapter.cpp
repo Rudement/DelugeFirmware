@@ -56,6 +56,42 @@ inline float q31ToBipolar(q31_t v) {
 /// the granular player's resampling ratio sane.
 constexpr float kPitchSemitoneRange = 24.0f;
 
+// Per-mode output trim, wet only.
+//
+// Upstream's six modes are nowhere near level with each other, which does not
+// matter on the module -- Clouds is the whole signal path there and you set the
+// output by ear -- but does as an insert you switch between mid-set. Measured on
+// this exact vendored engine with the committed defaults, 20 s of chord-plus-noise
+// at -20 dBFS, RMS over the last 0.4 s, full wet:
+//
+//     Granular    0.71x dry   -3.0 dB
+//     Stretch     0.37x       -8.5
+//     Delay       0.38x       -8.5
+//     Spectral    0.97x       -0.2
+//     Oliverb     2.22x       +6.9
+//     Resonestor  1.06x       +0.5
+//
+// Granular is the one people reach for first, so it is the reference. Resonestor
+// sits 3.5 dB above it, which is what reads as "the resonator is much louder than
+// everything else" -- and it is not the distortion, which measures identically at
+// 0 and 1. Trim it back to Granular. Nothing is boosted: pushing the quiet modes up
+// would cost headroom and noise for no reason, and their softness is upstream's
+// voice, not a fault.
+//
+// Oliverb measures a further 6.4 dB above Resonestor and wants the same treatment,
+// left at 1.0 here pending a listen rather than assumed.
+constexpr float kModeOutputTrim[] = {
+    1.0f,   // OFF -- never rendered
+    1.0f,   // Granular, the reference
+    1.0f,   // Stretch
+    1.0f,   // Delay
+    1.0f,   // Spectral
+    1.0f,   // Oliverb -- measures +6.4 dB on Granular; candidate, not yet applied
+    0.668f, // Resonestor: -3.5 dB, levelling it with Granular
+};
+static_assert(static_cast<int32_t>(std::size(kModeOutputTrim)) == kNumCloudsModes,
+              "CloudsMode and the output-trim table have drifted apart");
+
 constexpr clouds::PlaybackMode kPlaybackModeFor[] = {
     clouds::PLAYBACK_MODE_GRANULAR, // CloudsMode::OFF -- never used, see setMode()
     clouds::PLAYBACK_MODE_GRANULAR, clouds::PLAYBACK_MODE_STRETCH,    clouds::PLAYBACK_MODE_LOOPING_DELAY,
@@ -462,6 +498,7 @@ void CloudsAdapter::process(std::span<StereoSample> buffer) {
 	// upstream's own equal-power curve so the taper matches the other five. No
 	// post gain: the 1.2f upstream applies lives inside the block it skips for this
 	// mode, and adding it would make the loudest mode louder still.
+	const float outputTrim = kModeOutputTrim[util::to_underlying(mode_)];
 	const bool crossfadeHere = (mode_ == CloudsMode::RESONESTOR);
 	const float wetGain = crossfadeHere ? stmlib::Interpolate(clouds::lut_xfade_in, blend_, 16.0f) : 1.0f;
 	const float dryGain = crossfadeHere ? stmlib::Interpolate(clouds::lut_xfade_out, blend_, 16.0f) : 0.0f;
@@ -523,6 +560,11 @@ void CloudsAdapter::process(std::span<StereoSample> buffer) {
 			outR *= gain;
 			--fadeInRemaining_;
 		}
+		// Wet only, and before the dry is mixed back in: the trim exists to level the
+		// modes against each other, not to turn the whole insert down.
+		outL *= outputTrim;
+		outR *= outputTrim;
+
 		if (crossfadeHere) {
 			outL = dryL * dryGain + outL * wetGain;
 			outR = dryR * dryGain + outR * wetGain;
