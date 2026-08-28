@@ -19,6 +19,8 @@
 
 #include "clouds/dsp/frame.h"
 #include "clouds/dsp/granular_processor.h"
+#include "clouds/resources.h"
+#include "stmlib/dsp/dsp.h"
 #include "memory/general_memory_allocator.h"
 #include "processing/engines/audio_engine.h"
 
@@ -196,6 +198,9 @@ void CloudsAdapter::setMode(CloudsMode mode) {
 	fadeInRemaining_ = kFadeInSamples; // hide the reallocation discontinuity
 	heavyPreparePending_ = true;
 	if (processor_ != nullptr) {
+		// The meaning of dry_wet changes with the mode, so it has to be rewritten
+		// here and not only when Blend next moves.
+		processor_->mutable_parameters()->dry_wet = (mode_ == CloudsMode::RESONESTOR) ? 0.0f : blend_;
 		// Upstream reallocates its internal players out of the working buffer
 		// when the playback mode changes, so this is only safe once Init has
 		// run against a buffer we actually hold.
@@ -236,8 +241,12 @@ void CloudsAdapter::setTexture(q31_t v) {
 }
 
 void CloudsAdapter::setBlend(q31_t v) {
+	blend_ = q31ToUnipolar(v);
 	if (processor_ != nullptr) {
-		processor_->mutable_parameters()->dry_wet = q31ToUnipolar(v);
+		// Resonestor reads this as distortion, not dry/wet -- see process(). It gets a
+		// clean 0 there and Blend does its crossfade downstream instead, so the knob
+		// means the same thing in all six modes.
+		processor_->mutable_parameters()->dry_wet = (mode_ == CloudsMode::RESONESTOR) ? 0.0f : blend_;
 	}
 }
 
@@ -277,7 +286,7 @@ void CloudsAdapter::prepareOffAudioThread() {
 		                 CloudsBuffer::kSmallBufferBytes);
 		processor_->set_silence(false);
 		processor_->set_bypass(false);
-		processor_->mutable_parameters()->dry_wet = 1.0f;
+		processor_->mutable_parameters()->dry_wet = (mode_ == CloudsMode::RESONESTOR) ? 0.0f : 1.0f;
 		resetResamplerState();
 		needsInit_ = false;
 	}
@@ -428,7 +437,20 @@ void CloudsAdapter::process(std::span<StereoSample> buffer) {
 	// time accumulated phase crosses 1.0 (which happens on ~kStep of every
 	// output sample -- fewer than one consume per output on average, correct
 	// for going from the slower rate to the faster one).
+	// Resonestor is the one mode upstream never crossfades. Do it here, with
+	// upstream's own equal-power curve so the taper matches the other five. No
+	// post gain: the 1.2f upstream applies lives inside the block it skips for this
+	// mode, and adding it would make the loudest mode louder still.
+	const bool crossfadeHere = (mode_ == CloudsMode::RESONESTOR);
+	const float wetGain = crossfadeHere ? stmlib::Interpolate(clouds::lut_xfade_in, blend_, 16.0f) : 1.0f;
+	const float dryGain = crossfadeHere ? stmlib::Interpolate(clouds::lut_xfade_out, blend_, 16.0f) : 0.0f;
+
 	for (StereoSample& sample : buffer) {
+		// Read before stage 3 overwrites it: stages 1 and 2 took their copy into the
+		// rings, so this still holds the block's dry input.
+		const float dryL = crossfadeHere ? static_cast<float>(sample.l) / 2147483648.0f : 0.0f;
+		const float dryR = crossfadeHere ? static_cast<float>(sample.r) / 2147483648.0f : 0.0f;
+
 		upsamplePhase_ += kStep;
 		while (upsamplePhase_ >= 1.0f) {
 			upsamplePhase_ -= 1.0f;
@@ -480,6 +502,11 @@ void CloudsAdapter::process(std::span<StereoSample> buffer) {
 			outR *= gain;
 			--fadeInRemaining_;
 		}
+		if (crossfadeHere) {
+			outL = dryL * dryGain + outL * wetGain;
+			outR = dryR * dryGain + outR * wetGain;
+		}
+
 		sample.l = static_cast<q31_t>(std::clamp(outL, -1.0f, 1.0f) * 2147483647.0f);
 		sample.r = static_cast<q31_t>(std::clamp(outR, -1.0f, 1.0f) * 2147483647.0f);
 	}

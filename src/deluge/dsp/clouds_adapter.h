@@ -214,6 +214,15 @@ private:
 	clouds::GranularProcessor* processor_ = nullptr;
 	CloudsBuffer* buffer_ = nullptr;
 
+	/// Blend, 0..1, kept here as well as handed to the engine.
+	///
+	/// Five of the six modes let upstream do the dry/wet crossfade from
+	/// parameters_.dry_wet. Resonestor does not: granular_processor.cc skips the
+	/// crossfade block for that mode entirely and spends dry_wet on
+	/// resonestor_.set_distortion() instead, so the mode returns 100% wet at any
+	/// Blend setting. process() does the crossfade itself in that case, from this.
+	float blend_ = 0.0f;
+
 	CloudsMode mode_ = CloudsMode::GRANULAR;
 
 	/// Samples of fade-in remaining after a mode change or a re-Init.
