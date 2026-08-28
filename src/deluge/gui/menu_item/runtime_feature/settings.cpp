@@ -56,6 +56,7 @@ SettingToggle menuEnablePlaitsEngine(RuntimeFeatureSettingType::EnablePlaitsEngi
 SettingToggle menuEnableGristleizer(RuntimeFeatureSettingType::EnableGristleizer);
 SettingToggle menuEnableSear(RuntimeFeatureSettingType::EnableSear);
 SettingToggle menuChordBrush(RuntimeFeatureSettingType::ChordBrush);
+SettingToggle menuKeyboardNotePreview(RuntimeFeatureSettingType::KeyboardNotePreview);
 SettingToggle menuRetrospectiveCapture(RuntimeFeatureSettingType::RetrospectiveCapture);
 
 std::array<MenuItem*, RuntimeFeatureSettingType::MaxElement - kNonTopLevelSettings> subMenuEntries{
@@ -88,6 +89,7 @@ std::array<MenuItem*, RuntimeFeatureSettingType::MaxElement - kNonTopLevelSettin
     &menuEnableGristleizer,
     &menuEnableSear,
     &menuChordBrush,
+    &menuKeyboardNotePreview,
     &menuRetrospectiveCapture};
 
 Settings::Settings(l10n::String name, l10n::String title) : menu_item::Submenu(name, title, subMenuEntries) {
