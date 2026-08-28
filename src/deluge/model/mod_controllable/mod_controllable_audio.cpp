@@ -24,6 +24,7 @@
 #include "dsp/gristle.hpp"
 #include "dsp/stereo_sample.h"
 #include "gui/l10n/l10n.h"
+#include "hid/display/display.h"
 #include "gui/views/automation_view.h"
 #include "gui/views/performance_session_view.h"
 #include "gui/views/session_view.h"
@@ -117,6 +118,11 @@ ModControllableAudio::~ModControllableAudio() {
 	}
 	if (modFXGrainBuffer) {
 		delugeDealloc(modFXGrainBuffer);
+	}
+	// Before disableClouds(), and unconditional: a pending mode request pointing at
+	// an object about to stop existing is a dangling pointer the tick would follow.
+	if (pendingCloudsModeOwner == this) {
+		pendingCloudsModeOwner = nullptr;
 	}
 	disableClouds();
 }
@@ -2126,6 +2132,64 @@ bool ModControllableAudio::setCloudsMode(CloudsMode mode) {
 		cloudsFX->prepareOffAudioThread();
 	}
 	return true;
+}
+
+namespace {
+// 200 ms at 44.1 kHz. Long enough to swallow a fast spin through all six modes,
+// short enough that stopping on one and hearing it feels immediate. A deliberate
+// click-pause-click walk still builds every mode you stop on.
+constexpr uint32_t kCloudsModeSettleSamples = 44100 / 5;
+} // namespace
+
+ModControllableAudio* ModControllableAudio::pendingCloudsModeOwner = nullptr;
+CloudsMode ModControllableAudio::pendingCloudsMode = CloudsMode::OFF;
+uint32_t ModControllableAudio::pendingCloudsModeAt = 0;
+
+void ModControllableAudio::requestCloudsMode(ModControllableAudio* owner, CloudsMode mode) {
+	if (owner == nullptr) {
+		return;
+	}
+	pendingCloudsModeOwner = owner;
+	pendingCloudsMode = mode;
+	pendingCloudsModeAt = AudioEngine::audioSampleTimer;
+}
+
+void ModControllableAudio::flushPendingCloudsMode() {
+	ModControllableAudio* owner = pendingCloudsModeOwner;
+	CloudsMode mode = pendingCloudsMode;
+	// Cleared FIRST. setCloudsMode() can take milliseconds and displayedCloudsModeFor()
+	// must not keep reporting a pending mode while it runs, or a failed allocation
+	// would leave the menu showing a mode that is not running.
+	pendingCloudsModeOwner = nullptr;
+	if (owner == nullptr || owner->cloudsMode == mode) {
+		return;
+	}
+	if (!owner->setCloudsMode(mode)) {
+		// setCloudsMode leaves the mode OFF on allocation failure, so say so rather
+		// than letting the menu show a mode that never started.
+		display->displayError(Error::INSUFFICIENT_RAM);
+	}
+}
+
+void ModControllableAudio::tickPendingCloudsMode() {
+	if (pendingCloudsModeOwner == nullptr) {
+		return;
+	}
+	// Unsigned subtraction, so the sample timer wrapping is not a special case.
+	if (AudioEngine::audioSampleTimer - pendingCloudsModeAt < kCloudsModeSettleSamples) {
+		return;
+	}
+	flushPendingCloudsMode();
+}
+
+CloudsMode ModControllableAudio::displayedCloudsModeFor(ModControllableAudio* owner) {
+	if (owner == nullptr) {
+		return CloudsMode::OFF;
+	}
+	if (owner == pendingCloudsModeOwner) {
+		return pendingCloudsMode;
+	}
+	return owner->cloudsMode;
 }
 
 void ModControllableAudio::disableClouds() {

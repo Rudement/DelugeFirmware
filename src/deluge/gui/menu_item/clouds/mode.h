@@ -43,18 +43,23 @@ public:
 	using Selection::Selection;
 
 	void readCurrentValue() override {
-		this->setValue(soundEditor.currentModControllable->cloudsMode);
+		this->setValue(ModControllableAudio::displayedCloudsModeFor(soundEditor.currentModControllable));
 	}
 
+	/// Deferred, NOT applied here. selectEncoderAction() calls this on every detent,
+	/// and building a mode costs a reset-path Prepare() with interrupts disabled --
+	/// doing that once per click while the dial spins is what took the device down.
+	/// requestCloudsMode() records it; the main-loop tick applies the one the user
+	/// stops on, and reports an allocation failure if it comes to that.
 	void writeCurrentValue() override {
-		auto mode = this->getValue<CloudsMode>();
-		if (!soundEditor.currentModControllable->setCloudsMode(mode)) {
-			// Allocation failed. setCloudsMode leaves the mode OFF in that
-			// case, so tell the user rather than showing a mode that is not
-			// actually running.
-			display->displayError(Error::INSUFFICIENT_RAM);
-			readCurrentValue();
-		}
+		ModControllableAudio::requestCloudsMode(soundEditor.currentModControllable, this->getValue<CloudsMode>());
+	}
+
+	/// Leaving the menu applies immediately: waiting out the settle window to hear
+	/// the mode you just confirmed would feel broken.
+	MenuItem* selectButtonPress() override {
+		ModControllableAudio::flushPendingCloudsMode();
+		return Selection::selectButtonPress();
 	}
 
 	// 1.2.1's Selection::getOptions takes no OptType -- that parameter arrives with the 1.3

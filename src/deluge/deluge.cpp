@@ -21,6 +21,7 @@
 #include "definitions_cxx.hpp"
 #include "drivers/pic/pic.h"
 #include "dsp/clouds_adapter.h"
+#include "model/mod_controllable/mod_controllable_audio.h"
 #include "gui/ui/audio_recorder.h"
 #include "gui/ui/browser/browser.h"
 #include "gui/ui/keyboard/keyboard_screen.h"
@@ -620,7 +621,15 @@ void registerTasks() {
 	// The 1.2.1 port defined tickAllPrepares() and never registered it, so on this
 	// line those three modes only ever got the one Prepare() at mode-change time and
 	// none after -- which is why Stretch in particular misbehaved.
-	addRepeatingTask([]() { CloudsAdapter::tickAllPrepares(); }, p++, 0.002, 0.005, 0.05, "clouds prepare");
+	addRepeatingTask(
+	    []() {
+		    CloudsAdapter::tickAllPrepares();
+		    // Applies a mode the user has settled on. Same task because both are
+		    // "Clouds work that must not happen on the audio thread", and this one
+		    // needs to run at least as often as the dial can be turned.
+		    ModControllableAudio::tickPendingCloudsMode();
+	    },
+	    p++, 0.002, 0.005, 0.05, "clouds prepare");
 
 	// addRepeatingTask([]() { AudioEngine::routineWithClusterLoading(true); }, 0, 1 / 44100., 16 / 44100., 32 / 44100.,
 	// true); addRepeatingTask(&(AudioEngine::routine), 0, 16 / 44100., 64 / 44100., true);
