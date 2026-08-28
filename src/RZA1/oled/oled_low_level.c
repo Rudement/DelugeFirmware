@@ -26,7 +26,6 @@
 #include "RZA1/uart/sio_char.h"
 #include "deluge/drivers/dmac/dmac.h"
 #include "deluge/drivers/rspi/rspi.h"
-#include "deluge/processing/engines/cv_audio_stream_c_interface.h"
 #include "deluge/processing/engines/cv_engine_c_interface.h"
 #include "deluge/util/cfunctions.h"
 
@@ -124,12 +123,6 @@ void sendSPITransferFromQueue()
 
     spiTransferQueueCurrentlySending = true;
 
-    // The AUX send stream drives this bus continuously while it runs, so take it back before
-    // putting anything else on it. Every transfer starts here -- OLED frames and single CV
-    // words alike -- so this one call covers both. A no-op on 7SEG, and a no-op here whenever
-    // no send is active, which is the ordinary case.
-    cvStreamYieldBegin();
-
     spiDestinationSendingTo = spiTransferQueue[spiTransferQueueReadPos].destinationId;
 
     // If it's OLED data...
@@ -198,8 +191,6 @@ void cvSPITransferComplete(uint32_t sense)
         else
         {
             spiTransferQueueCurrentlySending = false;
-            // Nothing else wants the bus: the AUX send stream can have it back.
-            cvStreamYieldEnd();
         }
     }
 }
@@ -213,14 +204,7 @@ void oledDeselectionComplete()
     if (spiTransferQueueWritePos != spiTransferQueueReadPos)
     {
         sendSPITransferFromQueue();
-        return;
     }
-
-    // Bus genuinely idle. This is the point the AUX send stream is waiting for. The chained
-    // paths -- oledTransferComplete() into another frame, cvSPITransferComplete() into another
-    // CV word -- never come through here, which is what keeps a burst of transfers to one gap
-    // in the audio rather than one per transfer.
-    cvStreamYieldEnd();
 }
 
 void oledLowLevelTimerCallback()

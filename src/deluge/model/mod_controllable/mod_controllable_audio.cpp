@@ -184,12 +184,6 @@ void ModControllableAudio::initParams(ParamManager* paramManager) {
 
 	unpatchedParams->params[params::UNPATCHED_SIDECHAIN_SHAPE].setCurrentValueBasicForSetup(-601295438);
 	unpatchedParams->params[params::UNPATCHED_COMPRESSOR_THRESHOLD].setCurrentValueBasicForSetup(0);
-
-	// Off, because a send above zero is now what "routed to that socket" means. Songs saved
-	// before sends existed carry routing bits instead; Clip::cvRoutingLegacyBits turns those
-	// into full sends at first render. Untouched sends stay out of the song file entirely.
-	unpatchedParams->params[params::UNPATCHED_CV1_SEND].setCurrentValueBasicForSetup(params::kCvSendOff);
-	unpatchedParams->params[params::UNPATCHED_CV2_SEND].setCurrentValueBasicForSetup(params::kCvSendOff);
 }
 
 bool ModControllableAudio::hasBassAdjusted(ParamManager* paramManager) {
@@ -1091,12 +1085,6 @@ void ModControllableAudio::writeParamAttributesToFile(Serializer& writer, ParamM
 	                                       valuesForOverride);
 	unpatchedParams->writeParamAsAttribute(writer, "gristleDirt", params::UNPATCHED_GRISTLE_DIRT, writeAutomation,
 	                                       false, valuesForOverride);
-	// Written only when actually used, so songs which never touch the CV sends stay
-	// byte-for-byte as before. Every other param here is written unconditionally.
-	unpatchedParams->writeParamAsAttribute(writer, "cv1Send", params::UNPATCHED_CV1_SEND, writeAutomation, true,
-	                                       valuesForOverride, params::kCvSendOff);
-	unpatchedParams->writeParamAsAttribute(writer, "cv2Send", params::UNPATCHED_CV2_SEND, writeAutomation, true,
-	                                       valuesForOverride, params::kCvSendOff);
 }
 
 void ModControllableAudio::writeParamTagsToFile(Serializer& writer, ParamManager* paramManager, bool writeAutomation,
@@ -1329,16 +1317,6 @@ bool ModControllableAudio::readParamTagFromFile(Deserializer& reader, char const
 		                           readAutomationUpToPos);
 		inferLegacyGristleOn(unpatchedParams, params::UNPATCHED_GRISTLE_DIRT, -2147483648);
 		reader.exitTag("gristleDirt");
-	}
-
-	else if (!strcmp(tagName, "cv1Send")) {
-		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_CV1_SEND, readAutomationUpToPos);
-		reader.exitTag("cv1Send");
-	}
-
-	else if (!strcmp(tagName, "cv2Send")) {
-		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_CV2_SEND, readAutomationUpToPos);
-		reader.exitTag("cv2Send");
 	}
 
 	else {
