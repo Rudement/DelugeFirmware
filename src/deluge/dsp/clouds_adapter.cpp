@@ -278,7 +278,19 @@ void CloudsAdapter::prepareOffAudioThread() {
 	if (processor_ == nullptr) {
 		return;
 	}
+
+	// Raise BEFORE anything is touched, and keep it up until the engine is
+	// coherent again. Everything below either reallocates the engine's internals
+	// or depends on that having finished; a render landing in the middle reads
+	// freed pointers. Single core, called from the main loop: a render can only
+	// preempt us, so a plain flag closes the window that disabling interrupts used
+	// to close by force -- and without stalling the audio thread for the length of
+	// a Prepare().
+	rebuilding_ = true;
+	__asm volatile("" ::: "memory");
+
 	if (!acquireBuffer()) {
+		rebuilding_ = false;
 		return; // No memory; process() will pass audio through dry.
 	}
 	if (needsInit_) {
@@ -315,6 +327,9 @@ void CloudsAdapter::prepareOffAudioThread() {
 
 	heavyPreparePending_ = false;
 	fadeInRemaining_ = kFadeInSamples;
+
+	__asm volatile("" ::: "memory");
+	rebuilding_ = false;
 }
 
 void CloudsAdapter::process(std::span<StereoSample> buffer) {
@@ -324,6 +339,12 @@ void CloudsAdapter::process(std::span<StereoSample> buffer) {
 	// through dry rather than render.
 	if (processor_ == nullptr || buffer_ == nullptr) {
 		return; // Dry passthrough: caller's buffer is left exactly as it came in.
+	}
+
+	// A mode change is rebuilding the engine on the main loop. Dry until it is done
+	// -- 20 ms or so, and the fade-in on the far side hides the seam.
+	if (rebuilding_) {
+		return;
 	}
 
 	if (needsInit_) {

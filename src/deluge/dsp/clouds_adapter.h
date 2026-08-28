@@ -242,6 +242,21 @@ private:
 	/// Set when the next Prepare() will take its expensive reallocation path,
 	/// so process() can tell the audio engine not to cull voices over it.
 	bool heavyPreparePending_ = true;
+
+	/// True while a mode change is rebuilding the engine. process() passes audio
+	/// through dry for the duration instead of rendering.
+	///
+	/// This replaces disabling interrupts across the rebuild. The hazard being
+	/// guarded is real -- set_playback_mode() followed by Prepare()'s reset path
+	/// reallocates the internal players out of the working buffer, and a render
+	/// landing in the middle of that reads freed pointers -- but this is a single
+	/// core, and the rebuild runs on the main loop. A render can only preempt the
+	/// main loop, never run beside it, so setting this flag before the rebuild
+	/// starts is sufficient: any render that interrupts us sees it and bails.
+	/// Holding interrupts off instead stalled the audio thread for the whole
+	/// rebuild, which for Stretch -- the most expensive Prepare() of the six -- was
+	/// long enough to take the device down.
+	volatile bool rebuilding_ = false;
 	static constexpr int32_t kFadeInSamples = kSampleRate / 50; // 20 ms
 
 	/// Set when the buffer is (re)acquired, so the next process() re-Inits

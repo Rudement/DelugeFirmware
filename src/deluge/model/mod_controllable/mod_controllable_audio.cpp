@@ -2119,18 +2119,20 @@ bool ModControllableAudio::setCloudsMode(CloudsMode mode) {
 
 	cloudsMode = mode;
 
-	// The WHOLE sequence has to be inside the critical section, not just the
-	// prepare. setMode() changes the engine's playback mode; until Prepare()
-	// has caught up, any Prepare() call sees playback_mode_changed and takes
-	// the reset path -- fourteen Init/Allocate calls. Guarding only the
-	// prepare left exactly that window open for the audio thread to fall into,
-	// which is why the first attempt at this changed nothing.
-	{
-		CriticalSectionGuard guard;
-		cloudsFX->setMode(mode);
-		cloudsFX->setFreeze(cloudsFreeze);
-		cloudsFX->prepareOffAudioThread();
-	}
+	// The whole sequence has to be protected, not just the prepare: setMode()
+	// changes the engine's playback mode, and until Prepare() has caught up any
+	// Prepare() call sees playback_mode_changed and takes the reset path -- fourteen
+	// Init/Allocate calls. What protects it is CloudsAdapter::rebuilding_, which
+	// makes the render path pass audio through dry for the duration.
+	//
+	// It used to be a CriticalSectionGuard across these three calls. That worked, in
+	// the sense that nothing raced -- but it stalled the audio thread for the entire
+	// rebuild, and Prepare()'s reset path in Stretch is long enough that the stall
+	// itself took the device down. The engine's own comment about a stall reading as
+	// a missed deadline was the clue. Dry audio for 20 ms beats no audio at all.
+	cloudsFX->setMode(mode);
+	cloudsFX->setFreeze(cloudsFreeze);
+	cloudsFX->prepareOffAudioThread();
 	return true;
 }
 
