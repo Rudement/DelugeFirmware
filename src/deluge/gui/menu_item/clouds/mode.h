@@ -24,6 +24,7 @@
 #include "dsp/clouds_adapter.h"
 #include "model/mod_controllable/mod_controllable_audio.h"
 #include "model/settings/runtime_feature_settings.h"
+#include <iterator>
 
 // NOT `clouds`: the vendored DSP already occupies a global `clouds::`
 // namespace, and menus.cpp has `using namespace gui::menu_item;`, which would
@@ -42,8 +43,28 @@ public:
 	}
 	using Selection::Selection;
 
+	/// Stretch is off the picker on this build. It is the one mode that still takes
+	/// the device down here, and five modes you can trust beat six you cannot. The
+	/// CloudsMode enum, the nine param IDs and the file format are all untouched --
+	/// only what this menu offers changes -- so a song saved either side of this is
+	/// unaffected, and putting Stretch back is a one-line revert.
+	static constexpr CloudsMode kSelectableModes[] = {
+	    CloudsMode::OFF,       CloudsMode::GRANULAR, CloudsMode::DELAY,
+	    CloudsMode::SPECTRAL,  CloudsMode::OLIVERB,  CloudsMode::RESONESTOR,
+	};
+
 	void readCurrentValue() override {
-		this->setValue(ModControllableAudio::displayedCloudsModeFor(soundEditor.currentModControllable));
+		CloudsMode current = ModControllableAudio::displayedCloudsModeFor(soundEditor.currentModControllable);
+		for (size_t i = 0; i < std::size(kSelectableModes); ++i) {
+			if (kSelectableModes[i] == current) {
+				this->setValue(i);
+				return;
+			}
+		}
+		// A song saved with Stretch, loaded on this build: show OFF rather than an
+		// index that is not in the list. The engine keeps running whatever it was
+		// given until the user picks something here.
+		this->setValue(0);
 	}
 
 	/// Deferred, NOT applied here. selectEncoderAction() calls this on every detent,
@@ -52,7 +73,11 @@ public:
 	/// requestCloudsMode() records it; the main-loop tick applies the one the user
 	/// stops on, and reports an allocation failure if it comes to that.
 	void writeCurrentValue() override {
-		ModControllableAudio::requestCloudsMode(soundEditor.currentModControllable, this->getValue<CloudsMode>());
+		size_t index = static_cast<size_t>(this->getValue());
+		if (index >= std::size(kSelectableModes)) {
+			return;
+		}
+		ModControllableAudio::requestCloudsMode(soundEditor.currentModControllable, kSelectableModes[index]);
 	}
 
 	/// Leaving the menu applies immediately: waiting out the settle window to hear
@@ -66,11 +91,11 @@ public:
 	// menu rework. Signature adapted here rather than in the caller; the body is unchanged.
 	deluge::vector<std::string_view> getOptions() override {
 		using enum deluge::l10n::String;
-		// Order must match CloudsMode exactly -- this is indexed by value.
+		// Order must match kSelectableModes exactly -- the value is an index into it,
+		// not a CloudsMode. Stretch is deliberately absent from both.
 		return {
 		    l10n::getView(STRING_FOR_DISABLED),
 		    l10n::getView(STRING_FOR_CLOUDS_MODE_GRANULAR),
-		    l10n::getView(STRING_FOR_CLOUDS_MODE_STRETCH),
 		    l10n::getView(STRING_FOR_CLOUDS_MODE_DELAY),
 		    l10n::getView(STRING_FOR_CLOUDS_MODE_SPECTRAL),
 		    l10n::getView(STRING_FOR_CLOUDS_MODE_OLIVERB),
