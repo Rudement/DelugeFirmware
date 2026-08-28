@@ -2140,7 +2140,7 @@ namespace {
 // 200 ms at 44.1 kHz. Long enough to swallow a fast spin through all six modes,
 // short enough that stopping on one and hearing it feels immediate. A deliberate
 // click-pause-click walk still builds every mode you stop on.
-constexpr uint32_t kCloudsModeSettleSamples = 44100 / 5;
+constexpr uint32_t kCloudsModeSettleSamples = 44100 * 2; // PROBE BUILD: 2 seconds, deliberately unmissable
 } // namespace
 
 ModControllableAudio* ModControllableAudio::pendingCloudsModeOwner = nullptr;
