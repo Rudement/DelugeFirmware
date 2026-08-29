@@ -220,6 +220,11 @@ void RuntimeFeatureSettings::init() {
 	                  "enableGristleizer", RuntimeFeatureStateToggle::On);
 	SetupOnOffSetting(settings[RuntimeFeatureSettingType::EnableSear], STRING_FOR_COMMUNITY_FEATURE_SEAR,
 	                  "enableSear", RuntimeFeatureStateToggle::On);
+
+	// KeyboardNotePreview — light up played notes on the keyboard grid (incl. during playback)
+	SetupOnOffSetting(settings[RuntimeFeatureSettingType::KeyboardNotePreview],
+	                  STRING_FOR_COMMUNITY_FEATURE_KEYBOARD_NOTE_PREVIEW, "keyboardNotePreview",
+	                  RuntimeFeatureStateToggle::On);
 }
 
 void RuntimeFeatureSettings::factoryReset(bool showPopup) {

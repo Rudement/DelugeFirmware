@@ -73,6 +73,7 @@ enum RuntimeFeatureSettingType : uint32_t {
 	EnableCloudsFX,
 	EnableGristleizer,
 	EnableSear,
+	KeyboardNotePreview,
 	MaxElement // Keep as boundary
 };
 
