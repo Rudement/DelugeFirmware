@@ -23,7 +23,12 @@
 #include "hid/display/display.h"
 #include "dsp/clouds_adapter.h"
 #include "model/mod_controllable/mod_controllable_audio.h"
+#include "model/model_stack.h"
 #include "model/settings/runtime_feature_settings.h"
+#include "modulation/automation/auto_param.h"
+#include "modulation/params/param.h"
+#include "modulation/params/param_set.h"
+#include "util/fixedpoint.h"
 
 // NOT `clouds`: the vendored DSP already occupies a global `clouds::`
 // namespace, and menus.cpp has `using namespace gui::menu_item;`, which would
@@ -52,9 +57,56 @@ public:
 	/// requestCloudsMode() records it, the main-loop tick applies the one the user
 	/// settles on, and an allocation failure is reported from there.
 	void writeCurrentValue() override {
-		ModControllableAudio::requestCloudsMode(soundEditor.currentModControllable, this->getValue<CloudsMode>());
+		CloudsMode requested = this->getValue<CloudsMode>();
+		dryBlendIfModeIsChanging(requested);
+		ModControllableAudio::requestCloudsMode(soundEditor.currentModControllable, requested);
 	}
 
+private:
+	/// Every engine arrives fully dry.
+	///
+	/// The six modes are not level with each other and never can be -- they are six
+	/// different processes, not six settings -- so the same Blend position means a
+	/// different amount of signal in each one. Carrying Blend across a mode change is
+	/// therefore a step of unpredictable size in the middle of a set, and it lands on
+	/// the mode you have not heard yet. Zeroing it makes the step always the same size
+	/// and always downward: the new engine comes up silent and you bring it in.
+	///
+	/// Done HERE and not in flushPendingCloudsMode() for a plain reason: writing a
+	/// param needs a ModelStack, and this is the only place a mode change is ever
+	/// asked for -- the menu, on the main thread, with soundEditor context guaranteed.
+	/// The flush can run from tickPendingCloudsMode() long after the menu has closed,
+	/// where that context is not guaranteed to still be ours.
+	///
+	/// Guarded on the mode ACTUALLY changing, so re-confirming the running mode leaves
+	/// Blend alone. Browsing past a mode and back does still zero it -- each detent is
+	/// a real request -- which is the safe direction to be wrong in.
+	static void dryBlendIfModeIsChanging(CloudsMode requested) {
+		ModControllableAudio* owner = soundEditor.currentModControllable;
+		if (owner == nullptr || owner->cloudsMode == requested) {
+			return;
+		}
+		// Already dry: nothing to write, and writing anyway would put a redundant
+		// entry in the undo history for every mode the dial passes over.
+		if (soundEditor.currentParamManager == nullptr
+		    || soundEditor.currentParamManager->getUnpatchedParamSet()->getValue(
+		           deluge::modulation::params::UNPATCHED_CLOUDS_BLEND)
+		           == NEGATIVE_ONE_Q31) {
+			return;
+		}
+		char modelStackMemory[MODEL_STACK_MAX_SIZE];
+		ModelStackWithThreeMainThings* modelStack = soundEditor.getCurrentModelStack(modelStackMemory);
+		ModelStackWithAutoParam* blend =
+		    modelStack->getUnpatchedAutoParamFromId(deluge::modulation::params::UNPATCHED_CLOUDS_BLEND);
+		if (blend == nullptr || blend->autoParam == nullptr) {
+			return;
+		}
+		// The same value initParams() gives a fresh song: q31ToUnipolar(NEGATIVE_ONE_Q31)
+		// is exactly 0.0, i.e. fully dry, in all six modes.
+		blend->autoParam->setCurrentValueInResponseToUserInput(NEGATIVE_ONE_Q31, blend);
+	}
+
+public:
 	/// Leaving the menu applies immediately: waiting out the settle window to hear
 	/// the mode you just confirmed would feel broken.
 	MenuItem* selectButtonPress() override {

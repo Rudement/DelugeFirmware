@@ -78,8 +78,13 @@ constexpr float kPitchSemitoneRange = 24.0f;
 // would cost headroom and noise for no reason, and their softness is upstream's
 // voice, not a fault.
 //
-// Oliverb measures a further 6.4 dB above Resonestor and wants the same treatment,
-// left at 1.0 here pending a listen rather than assumed.
+// Oliverb sits 9.9 dB above Granular -- a further 6.4 dB above Resonestor -- and is
+// now trimmed the same way, by the same rule: trim = 0.71 / measured. It is the
+// largest jump there was when switching engines mid-set, and with Blend no longer
+// carried across a mode change (see Mode::writeCurrentValue) the only thing left
+// that could still surprise you was reaching the same Blend position in a mode 10 dB
+// hotter than the last one. VERIFY BY EAR: the figure is arithmetic off the table
+// above, not a fresh measurement of the trimmed path.
 // Everything leaving the engine goes through stmlib's SoftConvert():
 //
 //     SoftConvert(x) = Clip16(SoftLimit(x * 0.5f) * 32768.0f)
@@ -98,7 +103,7 @@ constexpr float kModeOutputTrim[] = {
     1.0f,   // Stretch
     1.0f,   // Delay
     1.0f,   // Spectral
-    1.0f,   // Oliverb -- measures +6.4 dB on Granular; candidate, not yet applied
+    0.320f, // Oliverb: -9.9 dB, levelling it with Granular (0.71 / 2.22)
     0.668f, // Resonestor: -3.5 dB, levelling it with Granular
 };
 static_assert(static_cast<int32_t>(std::size(kModeOutputTrim)) == kNumCloudsModes,
