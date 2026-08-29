@@ -1017,6 +1017,7 @@ PLACE_SDRAM_DATA Language english{
         {STRING_FOR_SPLIT_KIT_NEEDS_ROWS, "Need 2+ rows with notes"},
         {STRING_FOR_SPLIT_KIT_SYNC_CLIP, "Can't split the sync-scaling clip"},
         {STRING_FOR_SPLIT_KIT_STOP_PLAYBACK, "Stop playback first"},
+        {STRING_FOR_SPLIT_KIT_MUTE_TRACK, "Mute the track first"},
         {STRING_FOR_SPLIT_KIT_FAILED, "Split failed"},
         {STRING_FOR_SPLIT_KIT_TOO_MANY, "Too many rows to split"},
         {STRING_FOR_SPLIT_KIT_IN_ARRANGER, "Clip is used in the arranger"},
