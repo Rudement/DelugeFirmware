@@ -1,0 +1,2259 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Rudement Features — Synthstrom Deluge, Rudement Firmware</title>
+<style>
+  :root{
+    --ink:#1a1a1a;
+    --num:#aaaaaa;
+    --body:#3d3d3d;
+    --muted:#575757;
+    --faint:#8a8a8a;
+    --line:#e6e6e6;
+    --thead:#f0f0f0;
+    --info-bg:#f4f6f8;
+    --info-border:#9aabb8;
+    --info-label:#7c8894;
+    --warn-bg:#fdf3e3;
+    --warn-border:#d9963f;
+    --warn-label:#b9761f;
+    --code-bg:#eef0f2;
+    --code-fg:#3d434a;
+    --tag-bg:#eef0f2;
+    --paper:#ffffff;
+    --accent:#1a1a1a;
+    --sidebar-bg:#fafafa;
+    --sidebar-border:#e6e6e6;
+  }
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{
+    margin:0;
+    font-family:Helvetica,Arial,"Liberation Sans",sans-serif;
+    color:var(--body);
+    background:var(--paper);
+    font-size:15px;
+    line-height:1.55;
+  }
+  code, .mono, .tag{
+    font-family:"SF Mono","DejaVu Sans Mono",Consolas,Menlo,monospace;
+  }
+  .code-pill{
+    background:var(--code-bg);
+    color:var(--code-fg);
+    padding:1px 6px;
+    border-radius:4px;
+    font-size:0.85em;
+    white-space:nowrap;
+  }
+  .tag{
+    display:inline-block;
+    background:var(--tag-bg);
+    color:#4a5158;
+    padding:1px 7px;
+    border-radius:4px;
+    font-size:0.78em;
+    font-weight:600;
+    letter-spacing:0.02em;
+  }
+  a{color:inherit;}
+
+  /* ===== layout shell ===== */
+  .shell{
+    display:grid;
+    grid-template-columns:270px 1fr;
+    max-width:1180px;
+    margin:0 auto;
+  }
+  @media (max-width: 880px){
+    .shell{grid-template-columns:1fr;}
+    nav.sidebar{position:relative; top:auto; height:auto; border-right:none; border-bottom:1px solid var(--sidebar-border);}
+  }
+
+  nav.sidebar{
+    position:sticky;
+    top:0;
+    align-self:start;
+    height:100vh;
+    overflow-y:auto;
+    background:var(--sidebar-bg);
+    border-right:1px solid var(--sidebar-border);
+    padding:28px 20px 40px 28px;
+  }
+  .side-eyebrow{
+    font-size:9.5px;
+    font-weight:700;
+    letter-spacing:0.09em;
+    color:var(--faint);
+    text-transform:uppercase;
+    margin-bottom:4px;
+  }
+  .side-title{
+    font-size:19px;
+    font-weight:700;
+    color:var(--ink);
+    margin-bottom:2px;
+  }
+  .side-edition{
+    font-size:11.5px;
+    color:var(--faint);
+    margin-bottom:22px;
+  }
+  .side-list{
+    list-style:none;
+    margin:0;
+    padding:0;
+  }
+  .side-list li{margin:0;}
+  .side-list a{
+    display:flex;
+    align-items:baseline;
+    gap:9px;
+    text-decoration:none;
+    padding:7px 6px;
+    border-radius:5px;
+    font-size:13px;
+  }
+  .side-list a:hover{background:#f0f0f0;}
+  .side-num{
+    color:var(--num);
+    font-size:11px;
+    font-variant-numeric:tabular-nums;
+    width:15px;
+    flex:none;
+  }
+  .side-name{
+    color:var(--ink);
+    font-weight:600;
+    flex:1;
+  }
+  .side-page{
+    color:var(--faint);
+    font-size:10.5px;
+    font-variant-numeric:tabular-nums;
+    flex:none;
+  }
+  .side-foot{
+    margin-top:28px;
+    padding-top:16px;
+    border-top:1px solid var(--sidebar-border);
+    font-size:10.5px;
+    color:var(--faint);
+    line-height:1.6;
+  }
+
+  /* ===== search ===== */
+  .side-search{
+    position:relative;
+    margin-bottom:16px;
+  }
+  .side-search input{
+    width:100%;
+    box-sizing:border-box;
+    padding:8px 34px 8px 10px;
+    font-size:13px;
+    font-family:inherit;
+    color:var(--ink);
+    background:#fff;
+    border:1px solid var(--sidebar-border);
+    border-radius:6px;
+    outline:none;
+  }
+  .side-search input::placeholder{color:var(--faint);}
+  .side-search input:focus{border-color:#a8a8a8; box-shadow:0 0 0 3px rgba(0,0,0,0.05);}
+  .side-search-kbd{
+    position:absolute;
+    top:50%;
+    right:7px;
+    transform:translateY(-50%);
+    font-size:10px;
+    line-height:1;
+    color:var(--faint);
+    background:#f0f0f0;
+    border:1px solid var(--sidebar-border);
+    border-radius:4px;
+    padding:3px 5px;
+    pointer-events:none;
+  }
+  .side-search.has-query .side-search-kbd{display:none;}
+  .side-search-clear{
+    position:absolute;
+    top:50%;
+    right:6px;
+    transform:translateY(-50%);
+    display:none;
+    width:18px;
+    height:18px;
+    border:none;
+    background:none;
+    color:var(--faint);
+    font-size:15px;
+    line-height:1;
+    cursor:pointer;
+    padding:0;
+  }
+  .side-search-clear:hover{color:var(--ink);}
+  .side-search.has-query .side-search-clear{display:block;}
+
+  .search-meta{
+    font-size:11px;
+    color:var(--faint);
+    margin:0 2px 10px 2px;
+  }
+  .search-results{list-style:none; margin:0; padding:0;}
+  .search-results li{margin:0 0 3px 0;}
+  .search-results a{
+    display:block;
+    text-decoration:none;
+    padding:7px 8px;
+    border-radius:5px;
+  }
+  .search-results a:hover, .search-results a.sr-active{background:#f0f0f0;}
+  .sr-path{
+    font-size:9.5px;
+    font-weight:700;
+    letter-spacing:0.05em;
+    text-transform:uppercase;
+    color:var(--faint);
+    margin-bottom:3px;
+  }
+  .sr-snippet{font-size:12.5px; color:var(--ink); line-height:1.42;}
+  .search-results mark{background:#fbd97a; color:inherit; border-radius:2px; padding:0 1px;}
+  .search-empty{font-size:12.5px; color:var(--faint); padding:6px 2px;}
+
+  .search-jump-flash{animation:searchFlash 1.8s ease-out;}
+  @keyframes searchFlash{
+    0%{background:#fdeba3;}
+    100%{background:transparent;}
+  }
+
+  main{padding:0 56px 100px 56px; min-width:0;}
+
+  /* ===== cover ===== */
+  .cover{
+    padding:90px 0 56px 0;
+    border-bottom:1px solid var(--line);
+  }
+  .eyebrow{
+    font-size:11px;
+    font-weight:700;
+    letter-spacing:0.12em;
+    color:var(--faint);
+    text-transform:uppercase;
+    margin-bottom:34px;
+  }
+  .cover .the{
+    font-size:17px;
+    color:var(--ink);
+    margin-bottom:2px;
+  }
+  .cover h1{
+    font-size:52px;
+    font-weight:800;
+    color:var(--ink);
+    margin:0 0 18px 0;
+    letter-spacing:-0.01em;
+  }
+  .cover .subtitle{
+    font-size:18px;
+    color:var(--muted);
+    margin-bottom:22px;
+  }
+  .cover .intro{
+    max-width:720px;
+    font-size:15px;
+    color:var(--body);
+  }
+  .cover .meta{
+    margin-top:30px;
+    display:flex;
+    justify-content:space-between;
+    font-size:11.5px;
+    color:var(--faint);
+    flex-wrap:wrap;
+    gap:8px;
+  }
+
+  /* ===== TOC (in-page, mirrors the PDF contents page) ===== */
+  .toc-block{padding:44px 0 56px 0; border-bottom:1px solid var(--line);}
+  .toc-block h2{font-size:24px; font-weight:800; color:var(--ink); margin:0 0 20px 0;}
+  table.toc{width:100%; border-collapse:collapse;}
+  table.toc td{padding:11px 0; border-bottom:1px solid var(--line); vertical-align:baseline; font-size:14px;}
+  table.toc tr:first-child td{padding-top:0;}
+  table.toc tr:last-child td{border-bottom:none;}
+  table.toc a{text-decoration:none;}
+  td.tnum{width:30px; color:var(--num);}
+  td.ttitle{width:230px; font-weight:700; color:var(--ink); padding-right:16px;}
+  td.tdesc{color:var(--muted); padding-right:14px;}
+  td.tpage{width:34px; text-align:right; color:var(--num); font-variant-numeric:tabular-nums;}
+
+  /* ===== chapters ===== */
+  .chapter{
+    padding:64px 0 40px 0;
+    border-bottom:1px solid var(--line);
+    scroll-margin-top:20px;
+  }
+  .chapter:last-of-type{border-bottom:none;}
+  .chapter .eyebrow{margin-bottom:30px;}
+  .chapter .the{font-size:15px; color:var(--muted); margin-bottom:2px;}
+  .chapter h1{
+    font-size:38px;
+    font-weight:800;
+    color:var(--ink);
+    margin:0 0 14px 0;
+    letter-spacing:-0.01em;
+  }
+  .chapter .subtitle{font-size:15.5px; color:var(--muted); margin-bottom:18px;}
+  .chapter .intro{max-width:760px; font-size:14.5px;}
+  .chapter .meta{
+    margin-top:24px; padding-top:14px; border-top:1px solid var(--line);
+    display:flex; justify-content:space-between; font-size:11px; color:var(--faint); flex-wrap:wrap; gap:8px;
+  }
+
+  .sec{margin-top:40px;}
+  .sec-head{display:flex; align-items:baseline; gap:12px; margin-bottom:14px;}
+  .sec-num{font-size:13px; color:var(--num); font-weight:700; flex:none;}
+  .sec-title{font-size:19px; font-weight:700; color:var(--ink);}
+
+  .chapter p{margin:0 0 13px 0; max-width:780px;}
+  .chapter h3{font-size:14.5px; font-weight:700; color:var(--ink); margin:22px 0 8px 0;}
+  .chapter ul{margin:0 0 14px 0; padding-left:20px; max-width:760px;}
+  .chapter li{margin-bottom:6px;}
+
+  .control-name{font-size:14.5px; font-weight:700; color:var(--ink); margin:20px 0 4px 0; display:flex; align-items:baseline; gap:8px; flex-wrap:wrap;}
+  .control-default{font-size:12px; font-weight:400; color:var(--faint);}
+
+  .ptm{list-style:none; margin:0 0 10px 0; padding-left:0; max-width:780px;}
+  .ptm li{margin-bottom:4px; font-size:13.5px; color:var(--body);}
+  .ptm li strong{display:inline-block; min-width:74px; color:var(--ink); font-weight:700;}
+  p.model-note{font-size:12.5px; color:var(--muted); max-width:780px; margin:4px 0 0 0;}
+
+  .diagram{
+    background:#f7f7f8;
+    border-radius:6px;
+    padding:14px 16px;
+    font-size:12.5px;
+    color:#4a4a4a;
+    margin:16px 0 20px 0;
+    overflow-x:auto;
+    white-space:pre;
+  }
+
+  /* ===== tables ===== */
+  .chapter table.data, .preset-table{
+    width:100%;
+    border-collapse:collapse;
+    margin:14px 0 22px 0;
+    font-size:13px;
+  }
+  .chapter table.data th{
+    background:var(--thead);
+    text-align:left;
+    font-size:10.5px;
+    letter-spacing:0.05em;
+    text-transform:uppercase;
+    color:var(--muted);
+    font-weight:700;
+    padding:8px 12px;
+  }
+  .chapter table.data td{
+    padding:9px 12px;
+    border-bottom:1px solid var(--line);
+    vertical-align:top;
+  }
+  .chapter table.data.num td, .chapter table.data.num th{text-align:left;}
+  .chapter table.data .r{text-align:right;}
+  .chapter table.data tr:last-child td{border-bottom:1px solid var(--line);}
+  .table-scroll{overflow-x:auto;}
+  .table-footnote{font-size:12px; color:var(--faint); margin-top:-14px; margin-bottom:20px;}
+
+  /* ===== callouts ===== */
+  .box{
+    border-left:3px solid var(--info-border);
+    background:var(--info-bg);
+    padding:14px 18px;
+    margin:18px 0;
+    border-radius:0 4px 4px 0;
+    max-width:780px;
+  }
+  .box .label{
+    font-size:10.5px;
+    font-weight:700;
+    letter-spacing:0.06em;
+    text-transform:uppercase;
+    color:var(--info-label);
+    margin-bottom:7px;
+  }
+  .box p{font-size:13.5px; margin:0 0 8px 0;}
+  .box p:last-child{margin-bottom:0;}
+  .box.warn{
+    border-left-color:var(--warn-border);
+    background:var(--warn-bg);
+  }
+  .box.warn .label{color:var(--warn-label);}
+
+  .back-top{
+    display:inline-block;
+    margin-top:30px;
+    font-size:12px;
+    color:var(--faint);
+    text-decoration:none;
+  }
+
+  footer.page-foot{
+    max-width:1180px;
+    margin:0 auto;
+    padding:30px 56px 60px 326px;
+    font-size:11.5px;
+    color:var(--faint);
+  }
+  @media (max-width: 880px){
+    footer.page-foot{padding:30px 24px 60px 24px;}
+  }
+</style>
+</head>
+<body>
+<div class="shell">
+
+<nav class="sidebar">
+  <div class="side-eyebrow">Synthstrom Deluge · Rudement Firmware</div>
+  <div class="side-title">Rudement Features</div>
+  <div class="side-edition">Edition of August 2026</div>
+
+  <div class="side-search" id="sideSearch">
+    <input type="text" id="searchInput" placeholder="Search the manual&hellip;" autocomplete="off" spellcheck="false" aria-label="Search the manual">
+    <span class="side-search-kbd" id="searchKbd">/</span>
+    <button type="button" class="side-search-clear" id="searchClear" aria-label="Clear search">&times;</button>
+  </div>
+
+  <div id="searchMeta" class="search-meta" hidden></div>
+  <ol class="search-results" id="searchResults" hidden aria-live="polite"></ol>
+
+  <ul class="side-list" id="sideList">
+    <li><a href="#ch01"><span class="side-num">01</span><span class="side-name">Community Features</span><span class="side-page">p.4</span></a></li>
+    <li><a href="#ch02"><span class="side-num">02</span><span class="side-name">The Four-Band EQ</span><span class="side-page">p.6</span></a></li>
+    <li><a href="#ch03"><span class="side-num">03</span><span class="side-name">Bouls</span><span class="side-page">p.10</span></a></li>
+    <li><a href="#ch04"><span class="side-num">04</span><span class="side-name">Wisps</span><span class="side-page">p.27</span></a></li>
+    <li><a href="#ch05"><span class="side-num">05</span><span class="side-name">The Gristleator</span><span class="side-page">p.36</span></a></li>
+    <li><a href="#ch06"><span class="side-num">06</span><span class="side-name">Sear</span><span class="side-page">p.41</span></a></li>
+    <li><a href="#ch07"><span class="side-num">07</span><span class="side-name">Kit Split</span><span class="side-page">p.44</span></a></li>
+    <li><a href="#ch08"><span class="side-num">08</span><span class="side-name">Aux Sends</span><span class="side-page">p.49</span></a></li>
+    <li><a href="#ch09"><span class="side-num">09</span><span class="side-name">Chroma</span><span class="side-page">p.53</span></a></li>
+    <li><a href="#ch10"><span class="side-num">10</span><span class="side-name">MIDI Chart</span><span class="side-page">p.65</span></a></li>
+  </ul>
+  <div class="side-foot" id="sideFoot">EQ4 · BOUL · WISP · GRIS · SEAR · SPLT · AUX · BRSH · PREV · RCAP<br>Page numbers reference the companion PDF.</div>
+</nav>
+
+<main>
+
+  <section class="cover" id="top">
+    <div class="eyebrow">Synthstrom Deluge &middot; Rudement Firmware</div>
+    <div class="the">The</div>
+    <h1>Rudement Features</h1>
+    <div class="subtitle">Operating manuals for the additions in this fork</div>
+    <p class="intro">This compiles a manual for every feature in the Rudement fork that is not part of official or upstream community firmware: the four-band EQ, Bouls, Wisps, the Gristleator, Sear, Kit Split, Aux Sends, and Chroma &mdash; plus a MIDI Implementation Chart consolidating every default CC assignment and MIDI-learn behaviour across all of them in one place. Each chapter documents behaviour as built &mdash; menu paths, on-screen readouts, defaults, and the handful of known limitations worth reading before judging a feature by an unlucky first setting. Every one of them can be switched off; the first chapter covers how, and what switching one off does and does not change.</p>
+    <div class="meta">
+      <span>EQ4 &middot; BOUL &middot; WISP &middot; GRIS &middot; SEAR &middot; SPLT &middot; AUX &middot; BRSH &middot; PREV &middot; RCAP</span>
+      <span>Edition of August 2026</span>
+    </div>
+  </section>
+
+  <section class="toc-block">
+    <h2>Contents</h2>
+    <table class="toc">
+      <tr><td class="tnum">01</td><td class="ttitle"><a href="#ch01">Community Features</a></td><td class="tdesc">The eleven toggles, and what switching one off does</td><td class="tpage">4</td></tr>
+      <tr><td class="tnum">02</td><td class="ttitle"><a href="#ch02">The Four-Band EQ</a></td><td class="tdesc">Two bell bands, and real Hz/dB readouts on all four</td><td class="tpage">6</td></tr>
+      <tr><td class="tnum">03</td><td class="ttitle"><a href="#ch03">Bouls</a></td><td class="tdesc">24 synthesis models, and what the three controls do in each</td><td class="tpage">10</td></tr>
+      <tr><td class="tnum">04</td><td class="ttitle"><a href="#ch04">Wisps</a></td><td class="tdesc">The six-mode texture engine &mdash; the standalone manual, in full</td><td class="tpage">27</td></tr>
+      <tr><td class="tnum">05</td><td class="ttitle"><a href="#ch05">The Gristleator</a></td><td class="tdesc">Ten-knob chop/throb effect, after Gwinn &amp; Carter</td><td class="tpage">36</td></tr>
+      <tr><td class="tnum">06</td><td class="ttitle"><a href="#ch06">Sear</a></td><td class="tdesc">Auto-levelling drive with a tilt tone control</td><td class="tpage">41</td></tr>
+      <tr><td class="tnum">07</td><td class="ttitle"><a href="#ch07">Kit Split</a></td><td class="tdesc">Explode a kit into single-sound kits</td><td class="tpage">44</td></tr>
+      <tr><td class="tnum">08</td><td class="ttitle"><a href="#ch08">Aux Sends</a></td><td class="tdesc">An assignable send bus on the CV outputs</td><td class="tpage">49</td></tr>
+      <tr><td class="tnum">09</td><td class="ttitle"><a href="#ch09">Chroma</a></td><td class="tdesc">The Harmonic layout, and a brush that stamps chords</td><td class="tpage">53</td></tr>
+      <tr><td class="tnum">10</td><td class="ttitle"><a href="#ch10">MIDI Implementation Chart</a></td><td class="tdesc">Every default CC, and what's MIDI-learnable instead</td><td class="tpage">65</td></tr>
+    </table>
+  </section>
+
+  <section class="chapter" id="ch01">
+    <div class="eyebrow">Synthstrom Deluge &middot; Rudement Firmware</div>
+    <div class="the">The</div>
+    <h1>Community Features</h1>
+    <div class="subtitle">Operating manual for the eleven toggles</div>
+    <p class="intro">Every addition in this firmware can be switched off. They live together under <span class="code-pill">SETTINGS &rarr; COMMUNITY FEATURES</span>, alongside the toggles the official community firmware already ships, and all but one are on when you first boot &mdash; the toggle is there to take a feature away, not to opt in to it.</p>
+    <div class="meta"><span>EQ4 &middot; BOUL &middot; WISP &middot; GRIS &middot; SEAR &middot; SPLT &middot; AUX &middot; BRSH &middot; PREV &middot; RCAP</span><span>Edition of August 2026</span></div>
+
+    <div class="sec">
+      <div class="sec-head"><span class="sec-num">01</span><span class="sec-title">The toggles</span></div>
+      <div class="table-scroll">
+      <table class="data">
+        <tr><th>Feature</th><th>7Seg</th><th>Default</th><th>Switching it off hides</th></tr>
+        <tr><td>Four-Band EQ</td><td><span class="tag">EQ4</span></td><td>On</td><td>The two mid bands. Bass and treble are stock Deluge and stay exactly where they are, dB and Hz readouts included.</td></tr>
+        <tr><td>Bouls Engine</td><td><span class="tag">BOUL</span></td><td>On</td><td><span class="code-pill">BOULS</span> in the oscillator type list.</td></tr>
+        <tr><td>Wisps FX</td><td><span class="tag">WISP</span></td><td>On</td><td>The Wisps menu.</td></tr>
+        <tr><td>Gristleator</td><td><span class="tag">GRIS</span></td><td>On</td><td>The Gristleator menu.</td></tr>
+        <tr><td>Sear</td><td><span class="tag">SEAR</span></td><td>On</td><td>The Sear drive and tone controls.</td></tr>
+        <tr><td>Kit Split</td><td><span class="tag">SPLT</span></td><td><strong>Off</strong></td><td><span class="code-pill">Kit Global FX &rarr; Actions &rarr; Split Kit</span>.</td></tr>
+        <tr><td>AUX Sends</td><td><span class="tag">AUX</span></td><td>On</td><td>The AUX submenus on the Kit-global, Audio Clip and Sound roots, and <span class="code-pill">SETTINGS &rarr; AUX</span>.</td></tr>
+        <tr><td>Chord Brush</td><td><span class="tag">BRSH</span></td><td>On</td><td>Chord capture and placement &mdash; the Harmonic Brush. The Harmonic layout itself stays where it is.</td></tr>
+        <tr><td>Keyboard Note Preview</td><td><span class="tag">PREV</span></td><td>On</td><td>The dim highlighting that lights the keyboard grid for sequenced notes during playback. Chapter 09 covers what that buys you on the Harmonic layout.</td></tr>
+        <tr><td>Retrospective Capture</td><td><span class="tag">RCAP</span></td><td>On</td><td>The SHIFT + RECORD dump of what you just played in Keyboard View.</td></tr>
+        <tr><td>Rounded Corners</td><td>&mdash;</td><td>On</td><td>The rounded corners on OLED popup boxes and highlighted rows, which go back to square. <strong>OLED only</strong> &mdash; it has no 7-segment label because it never appears there.</td></tr>
+      </table>
+      </div>
+      <p>Kit Split is the one that ships off, because it is destructive: it consumes the kit it is given, and every clip on it. Everything else is additive, so it is on until you say otherwise.</p>
+      <p>The list sits among the toggles the official community firmware already ships, so these appear alongside entries you may recognise. On a 7-segment display each shows the four-character label in the table &mdash; except Rounded Corners, which is only offered when an OLED screen is active, real or emulated, since it has nothing to change on a 7-segment one. Every one is stored in the persistent settings rather than in the song, so a choice made here follows the instrument rather than the music.</p>
+    </div>
+
+    <div class="sec">
+      <div class="sec-head"><span class="sec-num">02</span><span class="sec-title">What switching one off does &mdash; and does not &mdash; do</span></div>
+      <h3>A toggle hides menus. It does not remove processing.</h3>
+      <p>This matters more than it sounds. If you switch off a feature that a saved song is already using, the song still plays back exactly as saved. A song leaning on the Gristleator keeps chopping; a track sending audio to the CV sockets keeps sending it; a sound built on Bouls keeps sounding like Bouls. What you lose is the ability to reach the controls, not the sound they were set to.</p>
+      <p>The same holds for everything else those parameters are wired into. Automation lanes on a hidden parameter keep playing. A hidden parameter that has been LEARNed to a knob stays learned. Turn the toggle back on and the menus return with every value where you left it.</p>
+      <div class="box">
+        <div class="label">Why they behave this way</div>
+        <p>Because the alternative is worse. A toggle that silenced processing would change how an existing song sounds the moment it was flipped &mdash; and it would do so on somebody else's machine, when a song written here is opened on a Deluge with different toggles set. Hiding menus while leaving audio alone means a song is a song, wherever it is opened.</p>
+        <p>This is the behaviour the stock <strong>Enable DX7 Engine</strong> toggle already has. These follow it rather than inventing a second convention.</p>
+      </div>
+    </div>
+
+    <div class="sec">
+      <div class="sec-head"><span class="sec-num">03</span><span class="sec-title">Three that hide a little differently</span></div>
+      <p><strong>Four-Band EQ</strong> is a partial hide. Only the two mid bells belong to this firmware, so switching it off hides those and leaves the stock bass and treble shelves untouched &mdash; along with the change that made all four report in real dB and Hz rather than a bare <span class="code-pill">0&ndash;50</span>. You are hiding two bands, not reverting the EQ.</p>
+      <p><strong>Bouls Engine</strong> hides a list entry rather than a menu: <span class="code-pill">BOULS</span> is simply not offered as an oscillator type. A sound already set to Bouls keeps playing as Bouls &mdash; the type just has no row to land on until the feature is switched back on.</p>
+      <p><strong>Chord Brush</strong> hides a gesture rather than a menu. There is nothing to look at either way: switching it off means the SELECT encoder stops arming a chord in a keyboard view and stops stamping one in the piano roll, and both go back to their ordinary jobs. The Harmonic layout, which has no toggle of its own, is untouched.</p>
+    </div>
+    <a class="back-top" href="#top">&uarr; Back to contents</a>
+  </section>
+
+  <section class="chapter" id="ch02">
+    <div class="eyebrow">Synthstrom Deluge &middot; Rudement Firmware</div>
+    <div class="the">The</div>
+    <h1>Four&#8209;Band EQ</h1>
+    <div class="subtitle">Operating manual for the two added mid bells</div>
+    <p class="intro">The stock Deluge EQ has two bands: a bass shelf and a treble shelf. This fork adds two bell bands between them &mdash; Low mid and High mid &mdash; and, at the same time, changes what every EQ control reports. All four amount knobs now read out in dB and all four frequency knobs in Hz, rather than a bare <span class="code-pill">0&ndash;50</span>.</p>
+    <div class="meta"><span>Bass &middot; Low mid &middot; High mid &middot; Treble</span><span>Edition of August 2026</span></div>
+
+    <div class="sec">
+      <div class="sec-head"><span class="sec-num">01</span><span class="sec-title">What it is</span></div>
+      <p>Two bell bands, added between the existing bass and treble shelves. They are not built the way a parametric EQ's bell usually is &mdash; there is no biquad peaking filter here. Each band is the <em>difference</em> of two one-pole lowpasses, a low corner subtracted from a high corner, which peaks at the geometric mean of the two and falls away on both sides. It behaves like a bell on the knob; structurally it is a subtraction.</p>
+      <p>That construction has one consequence worth knowing before you judge the range: a band built this way never passes the full extracted signal at its peak. The low mid captures about 64% of what it pulls out at its neutral centre, the high mid about 60%. Both mid bands are therefore mixed in at &times;6 rather than the &times;4 the shelves use, which is what gets them to the same useful &plusmn;12 dB or so range from a smaller starting capture.</p>
+      <div class="table-scroll">
+      <table class="data">
+        <tr><th>Control</th><th>How the readout is derived</th></tr>
+        <tr><td><strong>Bass</strong></td><td>Exact, and needs nothing but the amount &mdash; a lowpass is exactly 1 at DC, so the shelf's own gain law is the whole answer.</td></tr>
+        <tr><td><strong>Treble</strong></td><td>Reads its own Freq param as well as the amount, because a digital lowpass is nowhere near 0 at Nyquist &mdash; ignoring that would report gain the band cannot actually reach.</td></tr>
+        <tr><td><strong>Low mid / High mid</strong></td><td>Take a fixed capture at the band's neutral centre rather than tracking Freq, to stay monotonic through the region where the amount law over-cuts into polarity inversion.</td></tr>
+      </table>
+      </div>
+    </div>
+
+    <div class="sec">
+      <div class="sec-head"><span class="sec-num">02</span><span class="sec-title">Where it sits, and finding it</span></div>
+      <p>The EQ occupies the same slot stock Deluge EQ always has, late in the global FX chain, after the Gristleator and ahead of the delay and reverb send:</p>
+      <div class="diagram">&hellip; SRR / bitcrush &rarr; WISP &rarr; ModFX &rarr; <strong>Gristleator</strong> &rarr; EQ &rarr; Delay &rarr; reverb send &rarr; OUT</div>
+      <p>Adding the two mid bands changed nothing about where EQ sits or what feeds it &mdash; they were inserted into the same processing block the bass and treble shelves already ran in.</p>
+      <div class="box">
+        <div class="label">Switching it off entirely</div>
+        <p><span class="code-pill">SETTINGS &rarr; COMMUNITY FEATURES &rarr; Four-Band EQ</span> (<span class="code-pill">EQ4</span>), on by default. Switching it off hides <strong>only</strong> the two mid bands. Bass and treble are stock Deluge and stay exactly where they are, dB/Hz readouts included &mdash; this toggle does not touch them.</p>
+      </div>
+    </div>
+
+    <div class="sec">
+      <div class="sec-head"><span class="sec-num">03</span><span class="sec-title">The controls</span></div>
+      <p>Menu position 25 is centre / the detent on every one of these eight controls. Figures below were checked against the same fixed-point law the audio path runs, not just the nominal design values.</p>
+      <h3>Bass &amp; Treble (the shelves)</h3>
+      <div class="table-scroll">
+      <table class="data">
+        <tr><th>Knob</th><th class="r">Bass corner</th><th class="r">Treble corner</th></tr>
+        <tr><td>0</td><td class="r">~3 Hz</td><td class="r">~36 Hz</td></tr>
+        <tr><td>25 (centre)</td><td class="r">~199 Hz</td><td class="r">~2.77 kHz</td></tr>
+        <tr><td>32</td><td class="r">~658 Hz</td><td class="r">20 kHz (ceiling)</td></tr>
+        <tr><td>50</td><td class="r">20 kHz (ceiling)</td><td class="r">20 kHz (ceiling)</td></tr>
+      </table>
+      </div>
+      <p>Both shelves sweep &plusmn;6 octaves around their centre corner. Amount is an exact &plusmn;12 dB at the top/bottom of its own knob, true zero (a flat line) at the bottom of Bass. Treble's Freq knob reaches the display ceiling of 20 kHz by knob position 32 &mdash; and from there up, the Treble <em>amount</em> knob does nothing at all, because the shelf has nothing left above Nyquist to remove. That is not a bug in the readout; it is the digital filter reporting the truth about itself.</p>
+
+      <h3>Low Mid &amp; High Mid (the bells)</h3>
+      <div class="table-scroll">
+      <table class="data">
+        <tr><th>Knob (Freq)</th><th class="r">Low mid centre</th><th class="r">High mid centre</th></tr>
+        <tr><td>0</td><td class="r">~120 Hz</td><td class="r">~910 Hz</td></tr>
+        <tr><td>25 (centre)</td><td class="r">~1.04 kHz</td><td class="r">~2.0 kHz</td></tr>
+        <tr><td>41</td><td class="r">~6.4 kHz (upper pole pinning)</td><td class="r">&mdash;</td></tr>
+        <tr><td>50</td><td class="r">pinned near 10&ndash;20 kHz</td><td class="r">~5.6 kHz</td></tr>
+      </table>
+      </div>
+      <div class="table-scroll">
+      <table class="data">
+        <tr><th>Knob (Amount)</th><th class="r">Low mid gain</th><th class="r">High mid gain</th></tr>
+        <tr><td>0</td><td class="r">OFF*</td><td class="r">&minus;20.0 dB</td></tr>
+        <tr><td>12</td><td class="r">&minus;11.5 dB</td><td class="r">&minus;10.2 dB</td></tr>
+        <tr><td>25 (centre)</td><td class="r">0.0 dB</td><td class="r">0.0 dB</td></tr>
+        <tr><td>38</td><td class="r">+7.0 dB</td><td class="r">+6.8 dB</td></tr>
+        <tr><td>50</td><td class="r">+11.7 dB</td><td class="r">+11.4 dB</td></tr>
+      </table>
+      </div>
+      <p class="table-footnote">* Below &minus;24 dB the popup reads <span class="code-pill">OFF</span> rather than a number &mdash; the bells actually cancel a hair past zero at the bottom of their travel, and a display floor is more honest than a negative-then-rising number as you wind the knob back up.</p>
+
+      <div class="box warn">
+        <div class="label">Known limitations &mdash; read before judging it</div>
+        <p><strong>Low mid's upper pole pins</strong> from around Freq knob 41 &mdash; above that, moving the knob further doesn't move the band, it's already sitting at the display ceiling.</p>
+        <p><strong>Treble's amount does nothing above Freq knob 32</strong>, for the same reason: nothing left to shelve above Nyquist.</p>
+        <p><strong>Do not raise either mid band's octave sweep</strong> beyond its shipped range (Low mid 3 octaves, High mid 1). At higher values both of a bell's one-poles saturate at once, their difference cancels, and the band goes silent over the top of its own knob &mdash; this is stated directly in the source and is not a hypothetical.</p>
+      </div>
+    </div>
+
+    <div class="sec">
+      <div class="sec-head"><span class="sec-num">04</span><span class="sec-title">Reference</span></div>
+      <div class="table-scroll">
+      <table class="data">
+        <tr><th>Control</th><th>7Seg</th><th>Default</th></tr>
+        <tr><td>Bass amount / freq</td><td><span class="tag">BASS</span> / <span class="tag">Bfrq</span></td><td>centre (0 dB) / ~199 Hz</td></tr>
+        <tr><td>Treble amount / freq</td><td><span class="tag">TREBLE</span> / <span class="tag">Tfrq</span></td><td>centre (0 dB) / ~2.77 kHz</td></tr>
+        <tr><td>Low mid amount / freq</td><td><span class="tag">LOW MID</span> / <span class="tag">LMfq</span></td><td>centre (0 dB) / ~1.04 kHz</td></tr>
+        <tr><td>High mid amount / freq</td><td><span class="tag">HIGH MID</span> / <span class="tag">HMfq</span></td><td>centre (0 dB) / ~2.0 kHz</td></tr>
+      </table>
+      </div>
+      <div class="box">
+        <div class="label">Provenance</div>
+        <p>Bass and treble shelves are stock Deluge. The two mid bells, and the Hz/dB readout on all four bands, are original to this fork's 1.2.1 line and were carried unchanged to 1.3. Source: <span class="code-pill">src/deluge/gui/menu_item/eq/</span>, <span class="code-pill">src/deluge/dsp/eq_bands.hpp</span>.</p>
+      </div>
+    </div>
+    <a class="back-top" href="#top">&uarr; Back to contents</a>
+  </section>
+
+  <section class="chapter" id="ch03">
+    <div class="eyebrow">Synthstrom Deluge &middot; Rudement Firmware</div>
+    <div class="the">The</div>
+    <h1>Bouls</h1>
+    <div class="subtitle">Operating manual for the 24-model oscillator engine</div>
+    <p class="intro">Mutable Instruments Plaits, as a Deluge oscillator type. Twenty-four synthesis models behind one front panel &mdash; Harmonics, Timbre and Morph &mdash; plus a low-pass gate and a choice of which of the engine's two outputs to take. The three controls keep their names in every model and change their meaning in every model; sections 03 to 07 are about what they actually do, model by model.</p>
+    <div class="meta"><span>Model &middot; Harmonics &middot; Timbre &middot; Morph &middot; LPG</span><span>Edition of August 2026</span></div>
+
+    <div class="sec">
+      <div class="sec-head"><span class="sec-num">01</span><span class="sec-title">What it is</span></div>
+      <p>Bouls is available as an oscillator type: select it, and the sound uses whichever of its 24 synthesis models is dialled in instead of a conventional waveform. It is available on <strong>oscillator 1 only, and not in kits</strong> &mdash; the same restriction the DX7 engine has.</p>
+      <p>Harmonics, Timbre and Morph are not new parameters bolted on beside the existing oscillator controls &mdash; they reuse three slots that already existed for other oscillator types (pulse-width, wave index, and a second pulse-width), running at the model's own front-panel meaning instead. That means all three patch, modulate and automate exactly the way pulse-width already did for a square wave, with no new patching surface to learn.</p>
+      <p>Three things decide what you hear: <strong>which model</strong> is selected, <strong>where the three controls sit</strong> within that model, and <strong>whether the low-pass gate is in circuit</strong>. The third is the one people miss. With the LPG off, Bouls is a bare oscillator and the Deluge's own envelopes and filter do all the shaping; with it on, the engine gets the struck, blooming, vactrol-flavoured envelope that most of the module's recognisable sounds are made of. Section 04 covers what turning it on changes &mdash; which is more than an envelope, on four of the models.</p>
+    </div>
+
+    <div class="sec">
+      <div class="sec-head"><span class="sec-num">02</span><span class="sec-title">Finding it, and the menu</span></div>
+      <p>Select <span class="code-pill">BOULS</span> as the oscillator type, then press select on it again to enter the Bouls menu: <strong>Bouls model</strong>, <strong>Harmonics</strong>, <strong>Timbre</strong>, <strong>Morph</strong>, <strong>Low-pass gate</strong>, <strong>LPG decay</strong>, <strong>LPG colour</strong>, and <strong>Aux output</strong> (which of the engine's two outputs you take). None of the toggles cut a held note when changed &mdash; the voice re-reads model, LPG and aux output every render block, so switching any of them mid-note swaps live rather than retriggering. The module itself isn't click-free when you do this either, so a small seam on model changes is expected, not a fault.</p>
+      <p>The three continuous controls in this menu are the same parameters as Osc 1's Pulse Width and Wave Index and Osc 2's Pulse Width &mdash; a second door onto one room, not a copy. Editing them here, on the oscillator menus, from the shortcut grid, over MIDI or from automation are all the same edit.</p>
+      <div class="box">
+        <div class="label">Switching it off entirely</div>
+        <p><span class="code-pill">SETTINGS &rarr; COMMUNITY FEATURES &rarr; Bouls Engine</span> (<span class="code-pill">BOUL</span>), on by default. Switching it off removes <span class="code-pill">BOULS</span> from the oscillator type list only. A sound already set to Bouls keeps playing as Bouls; the menu just has no row to land on until the feature is back on, and shows the first entry rather than an out-of-range index in the meantime.</p>
+      </div>
+    </div>
+
+    <div class="sec">
+      <div class="sec-head"><span class="sec-num">03</span><span class="sec-title">Harmonics, Timbre and Morph</span></div>
+      <p>Three controls, twenty-four meanings each. The menu never renames them per model &mdash; it says Harmonics, Timbre and Morph whichever model is loaded &mdash; so section 07 is the translation table, and it is the part of this chapter worth keeping open.</p>
+      <p>Loosely, and with plenty of exceptions: <strong>Harmonics</strong> chooses <em>what</em> &mdash; the chord, the terrain, the patch, the filter mode, the spectrum's shape. <strong>Timbre</strong> is usually the brightness or density control, the one that behaves most like opening a filter. <strong>Morph</strong> is usually the waveform or the decay &mdash; the shape of the thing rather than its content. Learning a model means learning which of those three the model bent furthest.</p>
+
+      <h3>Travel, and where the useful part of it is</h3>
+      <div class="table-scroll">
+      <table class="data">
+        <tr><th>Control</th><th>Borrowed slot</th><th>Menu default</th><th>Working travel</th></tr>
+        <tr><td>Harmonics</td><td>Osc 1 Pulse Width</td><td class="r">0</td><td>0 &rarr; 50 covers the model's full range</td></tr>
+        <tr><td>Timbre</td><td>Osc 1 Wave Index</td><td class="r">0</td><td>0 &rarr; 50 covers the model's full range</td></tr>
+        <tr><td>Morph</td><td>Osc 2 Pulse Width</td><td class="r">0</td><td>0 &rarr; 50 covers the model's full range</td></tr>
+      </table>
+      </div>
+      <p>All three menus run 0 to 50 across the engine's full 0&ndash;1, and a fresh Bouls sound sits at <strong>0 on all three</strong> &mdash; which is the engine's zero on all three, where several models are dull, thin or nearly silent. <em>If a model sounds like nothing, that is the first thing to check.</em> Putting all three at about 25 lands you in the middle of every model's range, and is a better place to start listening from than the default.</p>
+      <p>Timbre needs a word of explanation, because the slot underneath it does not behave like the other two. Harmonics and Morph borrow pulse-width parameters, which run from zero upwards. Timbre borrows the wave-index parameter, which is <em>centred</em>: its middle is zero and its lower half is negative, and the engine has no use for negative values, so everything below the middle arrives as zero. Until August 2026 that was exactly what you got &mdash; a Timbre control that did nothing below 25 and had half the resolution of the other two above it. The two menus that reach this parameter (Timbre in the Bouls menu, and Osc 1's wave position, which renames itself Timbre for a Bouls sound) now scale it like a pulse width, so the whole knob works. Saved sounds are unaffected: the stored value and the engine mapping are both unchanged, so an old sound plays back exactly as it did &mdash; only the number the menu shows for it has moved.</p>
+      <p>Modulation is clamped the same way: a patch cable, an LFO or an envelope that pushes any of the three below the engine's zero is held at zero rather than wrapping. Modulating any of them up from a low setting therefore only ever moves them upward.</p>
+      <div class="box warn">
+        <div class="label">Timbre, from anywhere other than the menu</div>
+        <p>Only the two menus were re-scaled. <strong>MIDI CC 25, the Automation View lane and the gold knob write to the parameter directly</strong>, across its centred range &mdash; so from those three, Timbre's lower half still lands on the engine's zero and the control only starts moving from its midpoint. A CC 25 sweep from 0 to 127 gives you the model's full Timbre range across the top half of the fader; the bottom half is silent travel.</p>
+      </div>
+      <div class="box warn">
+        <div class="label">Known conflict</div>
+        <p>Morph borrows <strong>Oscillator 2's</strong> pulse width. If oscillator 2 is set to a square or pulse wave, its width and Bouls' Morph are the same control and cannot be set independently. Harmonics and Timbre are safe &mdash; they sit on oscillator 1's slots, which Bouls has taken over anyway.</p>
+      </div>
+      <p>Model, Low-pass gate, LPG decay, LPG colour and Aux output are per-source settings rather than parameters: they are saved with the sound, but they cannot be automated, patched or MIDI-learned.</p>
+    </div>
+
+    <div class="sec">
+      <div class="sec-head"><span class="sec-num">04</span><span class="sec-title">The low-pass gate, and what turning it on changes</span></div>
+      <p>On the module the LPG is in circuit unless you patch the level input, and it supplies most of what people recognise as "Plaits" &mdash; the pluck, the bloom, the way a bright attack darkens as it falls away. Here it is a toggle, off by default, because a Deluge oscillator is expected to be a bare oscillator until told otherwise.</p>
+      <div class="control-name">Low-pass gate <span class="control-default">default off</span></div>
+      <p><strong>Off:</strong> the engine's raw output, no gate and no decay. The Deluge's own envelopes, filter and amplitude do all the work, and Bouls behaves like any other oscillator type.</p>
+      <p><strong>On:</strong> the gate is struck on each note-on and decays under LPG decay and LPG colour. Its attack scales with pitch, so low notes bloom noticeably more slowly than high ones. This is the setting for plucks, bongos, blooming pads and anything that should have a shape of its own before the Deluge's envelope touches it &mdash; and it stacks with that envelope rather than replacing it, so a slow Deluge attack over a struck LPG gives you both.</p>
+      <div class="control-name">LPG decay <span class="control-default">default 25</span></div>
+      <p>The gate's decay time, from a click of a few milliseconds at 0 to a tail of well over a second at 50. It has no effect while the low-pass gate is off, and none on the eight self-enveloped models below.</p>
+      <div class="control-name">LPG colour <span class="control-default">default 25</span></div>
+      <p>What kind of gate it is. At 0 it is a filter: the sound darkens as it decays, the vactrol behaviour. At 50 it is a plain amplitude gate &mdash; the tone holds and only the level falls. It also lengthens the tail slightly as it rises. Only read while the low-pass gate is on.</p>
+
+      <h3>The eight models that bring their own envelope</h3>
+      <p>Eight models declare their own amplitude shaping, and the engine bypasses the LPG for them regardless of the toggle: the three <strong>6-op FM</strong> banks, <strong>Inharmonic String</strong>, <strong>Modal Resonator</strong>, <strong>Bass Drum</strong>, <strong>Snare Drum</strong> and <strong>Hi-Hat</strong>. On those eight, the Low-pass gate toggle, LPG decay and LPG colour are all inert &mdash; their decay lives elsewhere: on <strong>Morph</strong> for the three drums, the string and the resonator, and inside the loaded patch for the FM banks. This is upstream's design, not a limitation of the port, and it is not optional: without it the drums would have nothing to strike them and would sit silent.</p>
+
+      <h3>The side effect: four models change behaviour, not just shape</h3>
+      <p>Turning the LPG on also hands the engine a trigger, and a handful of models read a trigger as a mode switch rather than as an envelope. On these, the LPG toggle is doing something bigger than adding a decay:</p>
+      <ul>
+        <li><strong>Chiptune</strong> &mdash; stops playing a chord and becomes an <em>arpeggiator</em>, advancing one step per note-on, with Timbre selecting the pattern instead of the inversion. The gate itself is bypassed, so you get the mode change without the decay.</li>
+        <li><strong>Granular Cloud</strong> &mdash; the swarm stops free-running and fires a fresh burst of grains at each note-on.</li>
+        <li><strong>Filtered Noise</strong> &mdash; the noise clock's range extends two octaves lower, and the clock resets at each note-on rather than drifting.</li>
+        <li><strong>Speech</strong> &mdash; in the word banks, each note-on replays a whole word instead of the word being scrubbed by hand with Morph.</li>
+      </ul>
+      <p><strong>Particle Noise</strong> and <strong>Filtered Noise</strong> also reseed their randomness on each note-on once the trigger is live, which makes repeated notes noticeably more consistent than they are with the LPG off.</p>
+    </div>
+
+    <div class="sec">
+      <div class="sec-head"><span class="sec-num">05</span><span class="sec-title">The aux output</span></div>
+      <p>Every model renders two signals at once. The main output is the model's headline sound; the aux output is a companion the same engine produced along the way &mdash; a second oscillator, the exciter before a resonator, a sub, a bit-crushed copy, or the other side of a stereo pair. <strong>Aux output</strong> chooses which of the two the voice takes.</p>
+      <p>Both are computed either way, so the toggle costs nothing and can be flipped on a held note. It is not a mix and there is no blend control: you get one or the other. To hear both at once you need two tracks, since Bouls is oscillator 1 only.</p>
+      <p>What aux gives you is listed per model in section 07, and gathered in the table in section 08. Two notes worth having up front: on the <strong>three 6-op FM banks the aux output is identical to the main one</strong>, so the toggle does nothing there; and levels differ markedly between the two outputs on some models, so expect to re-balance the track's volume after switching.</p>
+    </div>
+
+    <div class="sec">
+      <div class="sec-head"><span class="sec-num">06</span><span class="sec-title">The 24 models</span></div>
+      <p>Indices 0&ndash;7 are the eight models Mutable added in Plaits firmware 1.2; 8&ndash;23 are the original sixteen, which is why the "classic" Virtual Analog sits at index 8 and is the default. The list order is fixed &mdash; a saved sound stores the raw index, so re-sorting the list would silently repatch every song that uses Bouls.</p>
+      <div class="table-scroll">
+      <table class="data">
+        <tr><th>#</th><th>Model</th><th>7Seg</th><th>#</th><th>Model</th><th>7Seg</th></tr>
+        <tr><td>0</td><td>Virtual Analog VCF</td><td><span class="tag">VAVC</span></td><td>12</td><td>Harmonic</td><td><span class="tag">HARM</span></td></tr>
+        <tr><td>1</td><td>Phase Distortion</td><td><span class="tag">PHDS</span></td><td>13</td><td>Wavetable</td><td><span class="tag">WTBL</span></td></tr>
+        <tr><td>2</td><td>6-op FM A</td><td><span class="tag">FMA</span></td><td>14</td><td>Chords</td><td><span class="tag">CHRD</span></td></tr>
+        <tr><td>3</td><td>6-op FM B</td><td><span class="tag">FMB</span></td><td>15</td><td>Speech</td><td><span class="tag">SPCH</span></td></tr>
+        <tr><td>4</td><td>6-op FM C</td><td><span class="tag">FMC</span></td><td>16</td><td>Granular Cloud</td><td><span class="tag">CLUD</span></td></tr>
+        <tr><td>5</td><td>Wave Terrain</td><td><span class="tag">TERR</span></td><td>17</td><td>Filtered Noise</td><td><span class="tag">NOIS</span></td></tr>
+        <tr><td>6</td><td>String Machine</td><td><span class="tag">STRM</span></td><td>18</td><td>Particle Noise</td><td><span class="tag">PART</span></td></tr>
+        <tr><td>7</td><td>Chiptune</td><td><span class="tag">CHIP</span></td><td>19</td><td>Inharmonic String</td><td><span class="tag">STRG</span></td></tr>
+        <tr><td>8</td><td><strong>Virtual Analog</strong> (default)</td><td><span class="tag">VANA</span></td><td>20</td><td>Modal Resonator</td><td><span class="tag">MODL</span></td></tr>
+        <tr><td>9</td><td>Waveshaping</td><td><span class="tag">WSHP</span></td><td>21</td><td>Bass Drum</td><td><span class="tag">BASS</span></td></tr>
+        <tr><td>10</td><td>2-op FM</td><td><span class="tag">FM2</span></td><td>22</td><td>Snare Drum</td><td><span class="tag">SNAR</span></td></tr>
+        <tr><td>11</td><td>Granular Formant</td><td><span class="tag">FORM</span></td><td>23</td><td>Hi-Hat</td><td><span class="tag">HHAT</span></td></tr>
+      </table>
+      </div>
+    </div>
+
+    <div class="sec">
+      <div class="sec-head"><span class="sec-num">07</span><span class="sec-title">The models, one by one</span></div>
+      <p>Each entry describes the voice, then what the three controls do to it, then what the aux output gives you instead. Where a control behaves differently either side of its centre, that is said &mdash; several of them are bipolar in effect even though the menu reads 0&ndash;50.</p>
+
+      <div class="control-name">00 &middot; Virtual Analog VCF <span class="tag">VAVC</span></div>
+      <p>A saw-or-pulse oscillator and a sub-oscillator through a resonant low-pass filter with soft clipping at every stage. The only model with a filter of its own, and the one that can sound like a finished patch before the Deluge's filter touches it &mdash; a mono synth in a single oscillator slot.</p>
+      <ul class="ptm">
+        <li><strong>Harmonics</strong> resonance, and the filter's slope. The centre is clean; resonance climbs toward both ends and screams at either extreme. The lower half runs both filter stages for a steeper, more polite four-pole; the upper half fades the second stage out for a rawer two-pole with more drive.</li>
+        <li><strong>Timbre</strong> cutoff, ten octaves of it, tracking the note.</li>
+        <li><strong>Morph</strong> the waveform: saw at the bottom, through square, to a narrow pulse at the top &mdash; with a sub-oscillator fading in at both extremes and absent in the middle.</li>
+        <li><strong>Aux</strong> the filter's high-pass output instead of its low-pass: thin, buzzy, and useful under something else.</li>
+      </ul>
+
+      <div class="control-name">01 &middot; Phase Distortion <span class="tag">PHDS</span></div>
+      <p>Casio CZ-style phase distortion: a sine wave read through a warped phase, which produces filter-like sweeps and hollow resonant vowels with no filter anywhere in the signal path.</p>
+      <ul class="ptm">
+        <li><strong>Harmonics</strong> the ratio between the carrier and the modulator that warps it, quantised to musical intervals rather than swept continuously.</li>
+        <li><strong>Timbre</strong> how much distortion. At zero this model is a plain sine.</li>
+        <li><strong>Morph</strong> the asymmetry of the warp &mdash; the pulse width of the distortion, from symmetrical to sharply skewed.</li>
+        <li><strong>Aux</strong> the same shaping free-running instead of hard-synced: phase <em>modulation</em> rather than phase distortion, less vocal and more bell-like.</li>
+      </ul>
+
+      <div class="control-name">02&ndash;04 &middot; 6-op FM A, B and C <span class="tag">FMA</span><span class="tag">FMB</span><span class="tag">FMC</span></div>
+      <p>Three banks of thirty-two six-operator FM patches &mdash; the DX7 architecture, complete with each patch's own operator envelopes and LFO. The three banks are three different sets of thirty-two, selected as three separate models rather than by a bank control.</p>
+      <ul class="ptm">
+        <li><strong>Harmonics</strong> patch select within the bank: thirty-two of them, stepped with hysteresis so a wobbling modulator does not flicker between neighbours.</li>
+        <li><strong>Timbre</strong> brightness &mdash; it scales the operators' output levels, which is FM's equivalent of opening a filter.</li>
+        <li><strong>Morph</strong> envelope control. At 0 the patch's own envelopes run at their snappiest &mdash; short and percussive; raising it stretches them out toward their full length.</li>
+        <li><strong>Aux</strong> identical to the main output. The toggle does nothing on these three.</li>
+      </ul>
+      <p class="model-note">Self-enveloped: the LPG toggle, decay and colour are all inert; the patch's envelopes follow the note instead. Two voices are rendered round-robin inside the engine, so a fast retrigger does not cut the previous note's tail. The banks are the factory ones &mdash; the module's ability to load your own SysEx bank from a card is not wired up here.</p>
+
+      <div class="control-name">05 &middot; Wave Terrain <span class="tag">TERR</span></div>
+      <p>An orbit traced across a three-dimensional landscape, where the height under the pointer is the waveform. Tight orbits stay near a sine; wide ones cross ridges and gullies and turn spiky and complex.</p>
+      <ul class="ptm">
+        <li><strong>Harmonics</strong> which terrain &mdash; eight of them, crossfaded rather than switched.</li>
+        <li><strong>Timbre</strong> the radius of the orbit: how much of the terrain the trace covers, and so how far from a sine it gets. It is automatically reined in on high notes.</li>
+        <li><strong>Morph</strong> the orbit's offset across the terrain &mdash; where the loop sits, and how lopsided it becomes.</li>
+        <li><strong>Aux</strong> a sine reading of the orbit summed with the terrain height: a softer, more harmonic relative of the same motion.</li>
+      </ul>
+
+      <div class="control-name">06 &middot; String Machine <span class="tag">STRM</span></div>
+      <p>Four divide-down organ voices playing a chord, through a low-pass filter and an ensemble chorus. A Solina in a box, and the most immediately usable pad in the list.</p>
+      <ul class="ptm">
+        <li><strong>Harmonics</strong> the chord, from the eleven-chord bank in section 08.</li>
+        <li><strong>Timbre</strong> filter cutoff and the ensemble together: brightness rises across the whole travel, while the chorus is at its strongest at both ends and falls to nothing in the middle.</li>
+        <li><strong>Morph</strong> the registration &mdash; drawbars, in effect. Square at the bottom, through saw and stacked saws, to a bright full registration with upper harmonics at the top.</li>
+        <li><strong>Aux</strong> the other side of the ensemble's stereo pair: the same chord, different chorus phase.</li>
+      </ul>
+
+      <div class="control-name">07 &middot; Chiptune <span class="tag">CHIP</span></div>
+      <p>Four square-wave voices and a bass note, deliberately crude: a 1980s console sound chip, phase-inverted voice by voice so the chord fizzes the way those chips did.</p>
+      <ul class="ptm">
+        <li><strong>Harmonics</strong> the chord.</li>
+        <li><strong>Timbre</strong> the inversion &mdash; which note of the chord sits on top. With the LPG on, it selects the arpeggiator pattern instead.</li>
+        <li><strong>Morph</strong> pulse width, from a full square to a thin, nasal buzz.</li>
+        <li><strong>Aux</strong> the bass square alone, an octave below the root.</li>
+      </ul>
+      <p class="model-note">With the low-pass gate on, this model becomes an arpeggiator: one note per note-on, stepping through the chord, with the gate itself bypassed. That is a mode change rather than an envelope &mdash; see section 04.</p>
+
+      <div class="control-name">08 &middot; Virtual Analog <span class="tag">VANA</span><span class="control-default">default model</span></div>
+      <p>Two oscillators &mdash; a variable-width square and a variable-shape saw &mdash; mixed together. The plainest and most predictable voice in the list, and the right one for learning what the three controls feel like.</p>
+      <ul class="ptm">
+        <li><strong>Harmonics</strong> detuning between the two oscillators, from unison to a wide beat.</li>
+        <li><strong>Timbre</strong> the square: its level fades up from silence at the very bottom, then its pulse width narrows, and past the middle it hard-syncs, sweeping the classic sync tear.</li>
+        <li><strong>Morph</strong> the saw: shape and width, with its level falling away as the control rises, so the top of the travel is square-dominant and the bottom is saw-dominant.</li>
+        <li><strong>Aux</strong> "monster sync" &mdash; both oscillators self-synced under Timbre, harsher and more metallic than the main mix.</li>
+      </ul>
+
+      <div class="control-name">09 &middot; Waveshaping <span class="tag">WSHP</span></div>
+      <p>A band-limited slope through a waveshaper and then a wavefolder &mdash; the West Coast timbre, where a control that looks like a level control turns into a brightness control.</p>
+      <ul class="ptm">
+        <li><strong>Harmonics</strong> which waveshaping curve, interpolated across a table. The centre is neutral; both directions bend the curve further, and the range is automatically narrowed on high notes to keep the folding from aliasing.</li>
+        <li><strong>Timbre</strong> wavefolder drive: how many folds, and so how many overtones. At 0 there is no folding at all and the model sounds nearly inert &mdash; this is the model most often written off from its default.</li>
+        <li><strong>Morph</strong> the slope's shape and pulse width: the asymmetry going into the shaper.</li>
+        <li><strong>Aux</strong> a sine crossfaded with a second fold curve &mdash; the same gesture with the top taken off, and a good deal easier on the ears.</li>
+      </ul>
+
+      <div class="control-name">10 &middot; 2-op FM <span class="tag">FM2</span></div>
+      <p>One sine modulating another, plus a sub-oscillator &mdash; the two-operator FM from Braids, Rings and Elements. Bells, basses, clangs and electric pianos.</p>
+      <ul class="ptm">
+        <li><strong>Harmonics</strong> the modulator's frequency ratio, quantised to a table of musical ratios, so it lands on intervals rather than sliding between them.</li>
+        <li><strong>Timbre</strong> the FM index &mdash; the amount of modulation, and therefore the brightness. It is automatically tamed on high notes to hold aliasing down.</li>
+        <li><strong>Morph</strong> feedback, bipolar: the centre is clean, below it the feedback goes to the carrier's phase, above it to the modulator's. The two directions sound quite different &mdash; one grows a rasp, the other a growl.</li>
+        <li><strong>Aux</strong> the sub-oscillator, an octave down and itself modulated by the carrier: a fatter, darker version of the same event.</li>
+      </ul>
+
+      <div class="control-name">11 &middot; Granular Formant <span class="tag">FORM</span></div>
+      <p>Two grain oscillators whose windows produce a formant peak &mdash; a vowel-like, VOSIM-flavoured sound that is pitched by the note and coloured by where the formant sits.</p>
+      <ul class="ptm">
+        <li><strong>Harmonics</strong> the ratio between the two formants, spread over four octaves; below the centre it also bleeds the raw carrier back in, which thickens the low end.</li>
+        <li><strong>Timbre</strong> the formant frequency itself &mdash; the vowel, in effect, sweeping seven octaves.</li>
+        <li><strong>Morph</strong> the shape of the grain window, from soft to sharply pinched.</li>
+        <li><strong>Aux</strong> a different formant oscillator at the same pitch: one cleaner peak instead of two interfering ones.</li>
+      </ul>
+
+      <div class="control-name">12 &middot; Harmonic <span class="tag">HARM</span></div>
+      <p>Additive synthesis: twenty-four harmonics whose amplitudes are drawn by three controls rather than twenty-four faders. Organs, bells, and spectra that no filter would produce.</p>
+      <ul class="ptm">
+        <li><strong>Harmonics</strong> the number of peaks in the spectrum, from a single broad bump up to sixteen &mdash; one peak is a formant, many is a comb.</li>
+        <li><strong>Timbre</strong> where the peak sits: which harmonic is loudest. Sweeping it is the closest thing here to a band-pass sweep.</li>
+        <li><strong>Morph</strong> the slope &mdash; how sharply the amplitudes fall away from the peak. Shallow slopes are bright and buzzy, steep ones nearly sinusoidal.</li>
+        <li><strong>Aux</strong> eight organ harmonics &mdash; octaves and fifths only &mdash; instead of the full integer series: a drawbar organ standing next to a spectrum.</li>
+      </ul>
+
+      <div class="control-name">13 &middot; Wavetable <span class="tag">WTBL</span></div>
+      <p>A grid of waves read as a smooth surface, with two axes of position and a third of bank. Sweeping any of the three is the sound of this model.</p>
+      <ul class="ptm">
+        <li><strong>Harmonics</strong> the bank. Past the middle of its travel the interpolation between waves is progressively quantised, and the model turns deliberately steppy and lo-fi &mdash; that crunch is the design, not a fault.</li>
+        <li><strong>Timbre</strong> position along a row: eight waves, crossfaded.</li>
+        <li><strong>Morph</strong> position down the column: eight rows, crossfaded.</li>
+        <li><strong>Aux</strong> the same wave crushed to five bits &mdash; a dirtier twin of whatever the main output is doing.</li>
+      </ul>
+
+      <div class="control-name">14 &middot; Chords <span class="tag">CHRD</span></div>
+      <p>Four notes from a bank of eleven chords, played by divide-down organ voices that hand over one at a time to a wavetable of string and vocal waves at the top of Morph. One key, one chord, and a bass note on the aux output.</p>
+      <ul class="ptm">
+        <li><strong>Harmonics</strong> the chord, stepped through the eleven-chord bank in section 08.</li>
+        <li><strong>Timbre</strong> the inversion: it rotates the voicing upward one note at a time, crossfading rather than jumping, which makes it usable as a modulation destination.</li>
+        <li><strong>Morph</strong> the tone. The bottom is the fullest, brightest organ registration, thinning through saws to a plain square by about the middle; past that the four notes cross one by one into the wavetable and the chord turns to strings and voices.</li>
+        <li><strong>Aux</strong> the root note alone. This is how one voice gives you a bass line and a chord &mdash; on two tracks, or by switching.</li>
+      </ul>
+
+      <div class="control-name">15 &middot; Speech <span class="tag">SPCH</span></div>
+      <p>Three speech synthesisers stacked behind one control: a naive formant filter, a re-creation of SAM (the 1982 home-computer voice) and an LPC synthesiser with banks of stored words.</p>
+      <ul class="ptm">
+        <li><strong>Harmonics</strong> which synthesiser, and what it can say. The first sixth of the travel crossfades the naive formant filter into SAM; the next sixth crossfades SAM into LPC vowels; the remaining two-thirds step through five banks of LPC words &mdash; numbers, letters and so on.</li>
+        <li><strong>Timbre</strong> formant shift: the size of the speaker, from a giant down to a chipmunk, without changing pitch.</li>
+        <li><strong>Morph</strong> the address &mdash; which phoneme, vowel or word. Sweeping it by hand is how you get the talking-through-a-scrubbed-tape effect.</li>
+        <li><strong>Aux</strong> the excitation alone: the glottal buzz before the formants, which is a usable raw source in its own right.</li>
+      </ul>
+      <p class="model-note">With the low-pass gate on, the word banks replay a whole word at each note-on instead of being scrubbed by Morph.</p>
+
+      <div class="control-name">16 &middot; Granular Cloud <span class="tag">CLUD</span></div>
+      <p>A swarm of detuned voices doing random walks around the note &mdash; less a chord than a cloud, and the model that best rewards a slow modulation on all three controls at once.</p>
+      <ul class="ptm">
+        <li><strong>Harmonics</strong> the spread: how far the swarm wanders from the root, from a tight unison shimmer to a smear across octaves.</li>
+        <li><strong>Timbre</strong> the density and rate of the swarm's motion.</li>
+        <li><strong>Morph</strong> grain duration &mdash; long grains hold pitch, short ones turn the cloud into texture.</li>
+        <li><strong>Aux</strong> the same swarm rendered as sines rather than saws: softer, more choral, far less harsh at high densities.</li>
+      </ul>
+      <p class="model-note">With the low-pass gate on it switches to burst mode: each note-on fires a fresh burst of grains rather than running continuously.</p>
+
+      <div class="control-name">17 &middot; Filtered Noise <span class="tag">NOIS</span></div>
+      <p>Clocked noise through a resonant multimode filter. It covers everything from wind and surf to a pitched whistle, and it is the model to reach for when a track needs air rather than notes.</p>
+      <ul class="ptm">
+        <li><strong>Harmonics</strong> two things at once: the filter mode, sweeping continuously from low-pass through band-pass to high-pass, and the pitch offset of the second band-pass that appears on the aux output.</li>
+        <li><strong>Timbre</strong> the noise clock. At the bottom the noise is slow, stepped and gritty; at the top it is full-band hiss.</li>
+        <li><strong>Morph</strong> resonance, from a broad wash up to a self-oscillating whistle at the note's pitch.</li>
+        <li><strong>Aux</strong> two band-pass filters summed instead of the single multimode filter: a two-peaked, more vocal noise.</li>
+      </ul>
+      <p class="model-note">With the low-pass gate on, the noise clock's range extends two octaves lower and resets at each note-on.</p>
+
+      <div class="control-name">18 &middot; Particle Noise <span class="tag">PART</span></div>
+      <p>Random pulses fired through randomly-tuned band-pass filters: rain, crackle, Geiger counters, and &mdash; at high density with resonance up &mdash; something close to a struck metal sheet.</p>
+      <ul class="ptm">
+        <li><strong>Harmonics</strong> how widely the filter frequencies scatter around the note, from all-in-tune to four octaves of confetti.</li>
+        <li><strong>Timbre</strong> density: how often a particle fires, from occasional ticks to a continuous rustle.</li>
+        <li><strong>Morph</strong> split at its centre. Below it, a diffuser smears the particles into a cloud, most heavily at the bottom; above it the band-passes get resonant and each particle rings instead of clicking.</li>
+        <li><strong>Aux</strong> the raw pulses before any filtering: bare clicks rather than pings.</li>
+      </ul>
+
+      <div class="control-name">19 &middot; Inharmonic String <span class="tag">STRG</span></div>
+      <p>A plucked string model with a stiffness term, so it runs from nylon through piano wire to things that stopped being strings some way back.</p>
+      <ul class="ptm">
+        <li><strong>Harmonics</strong> inharmonicity. There is a deliberate dead zone right at the centre where the string is clean and harmonic; move either way and it grows progressively more dispersed and bell-like, with the two directions taking different routes there.</li>
+        <li><strong>Timbre</strong> the brightness of the pluck &mdash; the filter on the excitation burst, from a soft thumb to a hard plectrum.</li>
+        <li><strong>Morph</strong> damping: how long the string rings after the pluck.</li>
+        <li><strong>Aux</strong> the raw excitation burst without the string &mdash; a short filtered noise click.</li>
+      </ul>
+      <p class="model-note">Self-enveloped: the LPG toggle and its decay and colour are inert, and Morph is the decay control. The string is always plucked here &mdash; the module's continuously-excited, bowed behaviour needs a level input the Deluge does not provide.</p>
+
+      <div class="control-name">20 &middot; Modal Resonator <span class="tag">MODL</span></div>
+      <p>A bank of tuned modes struck by an impulse: bells, bars, bowls, tubes and gongs. The same family as the string above, with the resonator's tuning opened up instead of its stiffness.</p>
+      <ul class="ptm">
+        <li><strong>Harmonics</strong> the inharmonicity of the mode series &mdash; harmonic and string-like at one end, sharply metallic at the other. It is deliberately smoothed, so sweeping it glides rather than steps.</li>
+        <li><strong>Timbre</strong> the brightness of the strike: how much energy goes into the upper modes.</li>
+        <li><strong>Morph</strong> damping &mdash; a dead thud at the bottom, a long ring at the top.</li>
+        <li><strong>Aux</strong> the exciter alone, without the resonator.</li>
+      </ul>
+      <p class="model-note">Self-enveloped, exactly as the string: LPG inert, Morph is the decay, always struck rather than continuously excited.</p>
+
+      <div class="control-name">21 &middot; Bass Drum <span class="tag">BASS</span></div>
+      <p>Two bass drums rendered at once: an 808-style bridged-T circuit on the main output, and a synthetic, FM-flavoured drum on the aux.</p>
+      <ul class="ptm">
+        <li><strong>Harmonics</strong> the punch, in three stages as it climbs: attack FM first, then self-FM, then overdrive.</li>
+        <li><strong>Timbre</strong> tone &mdash; the balance of click and body.</li>
+        <li><strong>Morph</strong> decay, from a tight tick to a long boom.</li>
+        <li><strong>Aux</strong> the synthetic drum instead of the analogue one: tighter, more modern, more distorted.</li>
+      </ul>
+      <p class="model-note">Self-enveloped. LPG decay does nothing here &mdash; <strong>Morph</strong> is the decay control, and it defaults to 0, which is why an untouched Bass Drum is all click and no drum.</p>
+
+      <div class="control-name">22 &middot; Snare Drum <span class="tag">SNAR</span></div>
+      <p>An 808-style analogue snare &mdash; two tuned resonators and a noise burst &mdash; on the main output, with a synthetic snare on the aux.</p>
+      <ul class="ptm">
+        <li><strong>Harmonics</strong> snappy: the balance between the drum's tone and the snare rattle.</li>
+        <li><strong>Timbre</strong> tone &mdash; the pitch balance and brightness of the two resonators.</li>
+        <li><strong>Morph</strong> decay.</li>
+        <li><strong>Aux</strong> the synthetic snare: harder, more processed, with more FM in the body.</li>
+      </ul>
+      <p class="model-note">Self-enveloped, same as the bass drum: Morph is the decay, and the LPG controls do nothing.</p>
+
+      <div class="control-name">23 &middot; Hi-Hat <span class="tag">HHAT</span></div>
+      <p>Six square oscillators at inharmonic ratios plus noise, filtered and gated &mdash; the 808 recipe on the main output, with a more metallic alternative on the aux.</p>
+      <ul class="ptm">
+        <li><strong>Harmonics</strong> noisiness: the balance between the square cluster and plain noise.</li>
+        <li><strong>Timbre</strong> tone &mdash; the filtering, from dark and closed to bright and open.</li>
+        <li><strong>Morph</strong> decay, which is what makes this the same model for both a closed and an open hat.</li>
+        <li><strong>Aux</strong> the metallic variant: a different noise source, harder and more ringing.</li>
+      </ul>
+      <p class="model-note">Self-enveloped: Morph is the decay, the LPG controls are inert.</p>
+    </div>
+
+    <div class="sec">
+      <div class="sec-head"><span class="sec-num">08</span><span class="sec-title">Quick reference</span></div>
+      <h3>The three controls, twenty-four ways</h3>
+      <div class="table-scroll">
+      <table class="data">
+        <tr><th>#</th><th>Model</th><th>Harmonics</th><th>Timbre</th><th>Morph</th><th>Aux output</th></tr>
+        <tr><td>0</td><td>Virtual Analog VCF</td><td>resonance / slope</td><td>cutoff</td><td>waveform + sub</td><td>high-pass output</td></tr>
+        <tr><td>1</td><td>Phase Distortion</td><td>modulator ratio</td><td>distortion amount</td><td>asymmetry</td><td>free-running (PM)</td></tr>
+        <tr><td>2&ndash;4</td><td>6-op FM A/B/C</td><td>patch (32)</td><td>brightness</td><td>envelope length</td><td style="color:var(--faint);">same as main</td></tr>
+        <tr><td>5</td><td>Wave Terrain</td><td>terrain (8)</td><td>orbit radius</td><td>orbit offset</td><td>sine variant</td></tr>
+        <tr><td>6</td><td>String Machine</td><td>chord</td><td>cutoff + ensemble</td><td>registration</td><td>other stereo side</td></tr>
+        <tr><td>7</td><td>Chiptune</td><td>chord</td><td>inversion / arp*</td><td>pulse width</td><td>bass note</td></tr>
+        <tr><td>8</td><td>Virtual Analog</td><td>detune</td><td>square PW / sync</td><td>saw shape</td><td>monster sync</td></tr>
+        <tr><td>9</td><td>Waveshaping</td><td>shaper curve</td><td>fold amount</td><td>slope / PW</td><td>sine + fold mix</td></tr>
+        <tr><td>10</td><td>2-op FM</td><td>ratio</td><td>FM index</td><td>feedback (bipolar)</td><td>sub-oscillator</td></tr>
+        <tr><td>11</td><td>Granular Formant</td><td>formant ratio</td><td>formant freq</td><td>window shape</td><td>second formant osc</td></tr>
+        <tr><td>12</td><td>Harmonic</td><td>peak count</td><td>peak position</td><td>slope</td><td>organ partials</td></tr>
+        <tr><td>13</td><td>Wavetable</td><td>bank + crush</td><td>row position</td><td>column position</td><td>5-bit copy</td></tr>
+        <tr><td>14</td><td>Chords</td><td>chord</td><td>inversion</td><td>registration &rarr; wavetable</td><td>root note</td></tr>
+        <tr><td>15</td><td>Speech</td><td>synth / word bank</td><td>formant shift</td><td>phoneme / word</td><td>excitation</td></tr>
+        <tr><td>16</td><td>Granular Cloud</td><td>spread</td><td>density</td><td>grain duration</td><td>sine swarm</td></tr>
+        <tr><td>17</td><td>Filtered Noise</td><td>filter mode</td><td>noise clock</td><td>resonance</td><td>dual band-pass</td></tr>
+        <tr><td>18</td><td>Particle Noise</td><td>frequency spread</td><td>density</td><td>diffusion / resonance</td><td>raw pulses</td></tr>
+        <tr><td>19</td><td>Inharmonic String</td><td>inharmonicity</td><td>pluck brightness</td><td><strong>decay</strong></td><td>exciter</td></tr>
+        <tr><td>20</td><td>Modal Resonator</td><td>inharmonicity</td><td>strike brightness</td><td><strong>decay</strong></td><td>exciter</td></tr>
+        <tr><td>21</td><td>Bass Drum</td><td>punch / drive</td><td>tone</td><td><strong>decay</strong></td><td>synthetic drum</td></tr>
+        <tr><td>22</td><td>Snare Drum</td><td>snappy</td><td>tone</td><td><strong>decay</strong></td><td>synthetic snare</td></tr>
+        <tr><td>23</td><td>Hi-Hat</td><td>noisiness</td><td>tone</td><td><strong>decay</strong></td><td>metallic variant</td></tr>
+      </table>
+      </div>
+      <p class="table-footnote">* Timbre selects the arpeggiator pattern instead of the inversion when the low-pass gate is on. Bold Morph entries mark the five models where Morph <em>is</em> the decay control, because the LPG's own decay is bypassed.</p>
+
+      <h3>The chord bank</h3>
+      <p>Harmonics steps through the same eleven chords in Chords, String Machine and Chiptune, in this order:</p>
+      <div class="table-scroll">
+      <table class="data">
+        <tr><th>#</th><th>Chord</th><th>#</th><th>Chord</th><th>#</th><th>Chord</th></tr>
+        <tr><td>1</td><td>Octave</td><td>5</td><td>Minor 7th</td><td>9</td><td>Major 9th</td></tr>
+        <tr><td>2</td><td>Fifth</td><td>6</td><td>Minor 9th</td><td>10</td><td>Major 7th</td></tr>
+        <tr><td>3</td><td>Sus4</td><td>7</td><td>Minor 11th</td><td>11</td><td>Major</td></tr>
+        <tr><td>4</td><td>Minor</td><td>8</td><td>6/9</td><td></td><td></td></tr>
+      </table>
+      </div>
+      <p class="table-footnote">The order runs from the emptiest intervals up through the minor family to the major one, so sweeping Harmonics walks the harmony rather than jumping around it. Steps are quantised with hysteresis, so a modulated Harmonics settles on a chord instead of chattering between two.</p>
+    </div>
+
+    <div class="sec">
+      <div class="sec-head"><span class="sec-num">09</span><span class="sec-title">Reference</span></div>
+      <div class="table-scroll">
+      <table class="data">
+        <tr><th>Control</th><th>Default</th><th>Notes</th></tr>
+        <tr><td>Bouls model</td><td>8 &mdash; Virtual Analog</td><td>saved as a raw index; switchable mid-note</td></tr>
+        <tr><td>Harmonics</td><td class="r">0</td><td>Osc 1 Pulse Width &middot; CC 23</td></tr>
+        <tr><td>Timbre</td><td class="r">0</td><td>Osc 1 Wave Index &middot; CC 25 &middot; lower half of CC / automation inert</td></tr>
+        <tr><td>Morph</td><td class="r">0</td><td>Osc 2 Pulse Width &middot; CC 28</td></tr>
+        <tr><td>Low-pass gate</td><td>off</td><td>inert on the eight self-enveloped models</td></tr>
+        <tr><td>LPG decay / LPG colour</td><td class="r">25 / 25</td><td>read only while the LPG is on</td></tr>
+        <tr><td>Aux output</td><td>off (main output)</td><td>free to switch; identical to main on the FM banks</td></tr>
+      </table>
+      </div>
+      <div class="box">
+        <div class="label">Provenance</div>
+        <p>&Eacute;milie Gillet, Mutable Instruments &middot; MIT licensed. The 24-model list follows upstream's own registration order from <span class="code-pill">plaits/dsp/voice.cc</span>, and the per-model control meanings in sections 07 and 08 were read from the engines themselves rather than from the module's manual. Source: <span class="code-pill">src/deluge/dsp/plaits/</span>, <span class="code-pill">src/deluge/dsp/plaits_adapter.cpp</span>, <span class="code-pill">src/deluge/gui/menu_item/plaits/</span>, <span class="code-pill">src/deluge/gui/menu_item/osc/type.h</span>.</p>
+      </div>
+    </div>
+    <a class="back-top" href="#top">&uarr; Back to contents</a>
+  </section>
+
+  <section class="chapter" id="ch04">
+    <div class="eyebrow">Synthstrom Deluge &middot; Rudement Firmware</div>
+    <div class="the">The</div>
+    <h1>Wisps</h1>
+    <div class="subtitle">Operating manual for the six-mode texture engine</div>
+    <p class="intro">&Eacute;milie Gillet's Clouds, as a Deluge insert effect at the head of the FX chain. A granular processor with six playback modes and eleven shared controls, taken from the community-maintained Parasites continuation rather than the stock firmware, which is where the Oliverb and Resonestor modes come from. The DSP is byte-identical to upstream; everything Deluge-specific lives in a thin adapter that resamples 44.1 kHz down to the engine's native 32 kHz and back.</p>
+    <div class="meta"><span>Mode &middot; Blend &middot; Position &middot; Size &middot; Pitch &middot; Density &middot; Texture &middot; Spread &middot; Feedback &middot; Reverb &middot; Freeze</span><span>Edition of August 2026</span></div>
+
+    <div class="sec">
+      <div class="sec-head"><span class="sec-num">01</span><span class="sec-title">What it is</span></div>
+      <p>One recording buffer, about a second of audio, and six different ways of reading back out of it. Wisps is a texture generator rather than a colouring effect &mdash; it does not add an identifiable character to a signal so much as take it apart and rebuild it.</p>
+      <p>Six modes share eleven controls, and <strong>the controls mean different things in each mode</strong>. That is upstream's design, not a shortcut taken here: the same knob is grain density in Granular, diffusion in Stretch, reverb decay in Oliverb and resonator feedback in Resonestor. Section 03 gives the per-mode meaning of every control, and it is the part of this manual worth keeping open.</p>
+      <div class="diagram">IN &rarr; saturation &rarr; filters &rarr; SRR / bitcrush &rarr; WISP &rarr; ModFX &rarr; Gristleator &rarr; EQ &rarr; Delay &rarr; reverb send &rarr; OUT</div>
+      <div class="box">
+        <div class="label">Where it sits in the chain</div>
+        <p>Wisps runs at the head of the global FX chain &mdash; after the drums or clip render, saturation, the filters and the SRR/bitcrush distortion, but ahead of ModFX, the Gristleator, EQ, delay and the reverb send. The reasoning, from the implementation: it is a texture generator rather than a colouring effect, so the useful arrangement is to grain the raw signal and then shape the result, not to grain something already drenched in delay. It is also the only stage in the chain that is rate-converted, so keeping it first means one resampling boundary rather than two.</p>
+      </div>
+      <h3>Rate, and what that costs</h3>
+      <p>Wisps runs natively at 32 kHz in 16-bit stereo. The Deluge runs at 44.1 kHz. The adapter down-samples in, runs the engine in whole 32-frame blocks, and up-samples back out, using linear interpolation. That round trip costs about 44 samples &mdash; roughly 1 ms &mdash; and it is clean in the bass and low mids but poor at the top:</p>
+      <div class="table-scroll">
+      <table class="data">
+        <tr><th>Frequency</th><th class="r">100 Hz</th><th class="r">500 Hz</th><th class="r">1 kHz</th><th class="r">2 kHz</th><th class="r">5 kHz</th><th class="r">10 kHz</th><th class="r">14 kHz</th></tr>
+        <tr><td>Round-trip SNR</td><td class="r">60 dB</td><td class="r">46 dB</td><td class="r">39 dB</td><td class="r">31 dB</td><td class="r">17 dB</td><td class="r">7 dB</td><td class="r">3 dB</td></tr>
+      </table>
+      </div>
+      <p style="color:var(--faint); font-size:13px;">Note also that the engine's own 32 kHz rate puts Nyquist at 16 kHz regardless of resampler quality. Wisps is not the stage to reach for when you want the top octave intact.</p>
+      <h3>Memory</h3>
+      <p>The engine needs one 180 KB working buffer. Nothing is allocated while Mode is <span class="code-pill">OFF</span>; the adapter appears the first time you leave OFF, and the buffer is taken on the first render after that. Selecting OFF again frees the whole thing rather than merely muting it. If the allocation fails you get an <em>insufficient RAM</em> error and the mode reverts to OFF; if the buffer is stolen by the sample cache the recording is lost but audio passes through dry rather than dropping.</p>
+    </div>
+
+    <div class="sec">
+      <div class="sec-head"><span class="sec-num">02</span><span class="sec-title">Finding it</span></div>
+      <p>Wisps is a global effect. It lives on the FX submenu wherever global FX live, and its 7-segment name is <span class="tag">WISP</span>.</p>
+      <div class="table-scroll">
+      <table class="data">
+        <tr><th>Context</th><th>Path</th></tr>
+        <tr><td>Song / Arranger / Automation view</td><td><span class="code-pill">FX &rarr; WISP</span></td></tr>
+        <tr><td>Kit, affect-entire (Kit Global FX)</td><td><span class="code-pill">FX &rarr; WISP</span></td></tr>
+        <tr><td>Audio Clip</td><td><span class="code-pill">FX &rarr; WISP</span></td></tr>
+        <tr><td>Performance View</td><td><span class="code-pill">FX &rarr; WISP</span></td></tr>
+        <tr><td>Synth clip, or a single kit row</td><td style="color:var(--faint);">not available &mdash; see below</td></tr>
+      </table>
+      </div>
+      <div class="box">
+        <div class="label">Why not on synth clips</div>
+        <p>Wisps' eleven controls are global parameters. A synth voice carries a much shorter parameter set, and reading global parameters off a sound would run off the end of that array. The menu is therefore only ever hung off the global FX tree. There was an attempt to drive Wisps from a synth clip through a per-source send bus; it regressed the effect badly and was reverted. The one salvageable piece &mdash; a menu item that resolves Wisps' parameters to the song's parameter manager whatever context it was opened from &mdash; would give synth-clip control of a song-level Wisps without any routing work, and has not been re-applied.</p>
+      </div>
+      <div class="box">
+        <div class="label">Automation, MIDI and the shortcut grid</div>
+        <p>All nine continuous parameters are automatable and are saved with automation data. They are <strong>not</strong> in the Automation View parameter list, <strong>not</strong> on the shortcut grid, and have <strong>no</strong> default MIDI Follow assignments &mdash; but they can be MIDI-learned like any other parameter, and learned mappings persist in <span class="code-pill">SETTINGS/MIDIFollow.XML</span>. Mode and Freeze are not parameters at all, so neither can be automated.</p>
+      </div>
+      <div class="box">
+        <div class="label">Switching it off entirely</div>
+        <p><span class="code-pill">SETTINGS &rarr; COMMUNITY FEATURES &rarr; Wisps FX</span> (<span class="code-pill">WISP</span>), on by default. Switching it off hides every Wisps menu but leaves the processing alone, so a song already using Wisps continues to play exactly as saved.</p>
+      </div>
+    </div>
+
+    <div class="sec">
+      <div class="sec-head"><span class="sec-num">03</span><span class="sec-title">The controls</span></div>
+      <p>Values below are the on-screen 0&ndash;50 reading. Only Pitch is bipolar; the other eight continuous controls run from bottom to top.</p>
+
+      <div class="control-name">Mode <span class="control-default">default OFF</span></div>
+      <p>Which of the six engines is running: <strong>Granular</strong>, <strong>Stretch</strong>, <strong>Delay</strong>, <strong>Spectral</strong>, <strong>Oliverb</strong> or <strong>Resonestor</strong>. Granular, Stretch, Delay and Spectral are stock Clouds; Oliverb and Resonestor came with Parasites.</p>
+      <p>OFF is not a mute &mdash; it frees the engine's entire working buffer, and costs nothing at all. Changing mode is the one operation that clicks: the engine reinitialises fourteen sub-objects, and a 20 ms fade reduces but does not eliminate it.</p>
+
+      <div class="control-name">Blend <span class="tag">Blnd</span><span class="control-default">default 0 &mdash; fully dry</span></div>
+      <p>Dry/wet. It starts fully dry deliberately, so that selecting a mode reads as "nothing yet" rather than as an abrupt wall of grains &mdash; bring it up to hear the effect at all.</p>
+      <p><strong>Except in Resonestor</strong>, where Blend is <em>distortion</em> and there is no dry/wet control at all: that mode is always fully wet.</p>
+
+      <div class="control-name">Position <span class="tag">Posn</span><span class="control-default">centre 25</span></div>
+      <p>Where in the recording buffer playback reads from &mdash; the "when", not the "what". In Delay it is the delay time; in Oliverb a pre-delay; in Spectral the magnitude store/replay position. In Resonestor it shapes an excitation burst that the Deluge never fires, so it does nothing there.</p>
+
+      <div class="control-name">Size <span class="tag">Size</span><span class="control-default">centre 25</span></div>
+      <p>Grain size in Granular &mdash; roughly 16 ms at the bottom to 512 ms at the top. Window size in Stretch, loop length in a frozen Delay, spectral warp in Spectral, room size in Oliverb, and <em>chord selection</em> in Resonestor.</p>
+
+      <div class="control-name">Pitch <span class="tag">Ptch</span><span class="control-default">bipolar &middot; centre 25 = unity</span></div>
+      <p>Transposition, &plusmn;24 semitones &mdash; two octaves either side of unity, centre-detented like master pitch. Upstream clamps to &plusmn;48 internally; the narrower range is what Clouds' own front panel covers and keeps the granular player's resampling ratio sane.</p>
+      <p>In Delay and Oliverb the pitch shifter has a dead zone by design: below about 0.3 semitones of detune the shifted signal is silent, ramping to full by 0.7 semitones. Small detunes do nothing on purpose.</p>
+
+      <div class="control-name">Density <span class="tag">Dens</span><span class="control-default">default 40 &mdash; deliberately off-centre</span></div>
+      <p>In Granular, grain rate &mdash; and it is a meta-control: below the centre grains are triggered regularly, above they are randomised, and <strong>at the centre there are no grains at all</strong>. Upstream's dead zone is audibly silent from roughly menu 26 to 30. The default sits at 40, clear of it. <em>If Wisps ever appears silent, check Density before anything else.</em></p>
+      <p>In every other mode it means something else entirely: diffusion in Stretch and Delay, refresh rate and phase randomisation in Spectral, <strong>reverb decay</strong> in Oliverb, and resonator feedback in Resonestor &mdash; where the law is so steep that essentially all the action is in the top of the travel.</p>
+
+      <div class="control-name">Texture <span class="tag">Text</span><span class="control-default">centre 25</span></div>
+      <p>In Granular, grain window shape &mdash; rectangular through gaussian for the first three quarters of the travel, then the remainder becomes diffusion. In Stretch and Delay it is a combined lowpass/highpass tone control sweeping through centre. Spectral quantisation in Spectral, tone in Oliverb, damping and narrowness in Resonestor.</p>
+
+      <div class="control-name">Spread <span class="tag">Sprd</span><span class="control-default">default 0 &mdash; minimum</span></div>
+      <p>Stereo behaviour, and it differs sharply by mode: per-grain random panning in Granular, a left/right swap-crossfade in Stretch and Delay, diffusion in Oliverb, stereo width and separation in Resonestor. It does nothing at all in Spectral.</p>
+
+      <div class="control-name">Feedback <span class="tag">Fdbk</span><span class="control-default">default 0 &mdash; off</span></div>
+      <p>Regeneration back into the input, with a highpass in the loop, in Granular, Stretch, Delay and Spectral. In Oliverb it is the modulation <em>rate</em> and in Resonestor the harmonicity &mdash; in neither of those is it feedback in any sense.</p>
+
+      <div class="control-name">Reverb <span class="tag">Verb</span><span class="control-default">default 0 &mdash; off</span></div>
+      <p>A reverb after the engine, in Granular, Stretch, Delay and Spectral. In Oliverb it is the modulation <em>amount</em>; in Resonestor the spread of the resonator taps. Neither is a reverb.</p>
+
+      <div class="control-name">Freeze <span class="control-default">default off &middot; latched</span></div>
+      <p>Holds the recording buffer: what is already in there keeps playing, but nothing new is written in. Upstream exposes this as a momentary button; here it is a latch, because the Deluge has no spare panel button for it and a latched freeze is the more useful of the two live.</p>
+      <p>Per mode: Granular, Stretch and Delay stop recording, and Delay switches to loop playback with Size as loop length and Pitch as playback speed. Spectral stops capturing magnitudes. Oliverb becomes an infinite hold with the input muted &mdash; and is the one mode that keeps recording while frozen. Freeze is hidden while Mode is OFF, where it would do nothing audible.</p>
+
+      <h3>The same eleven knobs, six ways</h3>
+      <div class="table-scroll">
+      <table class="data">
+        <tr><th></th><th>Granular</th><th>Stretch</th><th>Delay</th><th>Spectral</th><th>Oliverb</th><th>Resonestor</th></tr>
+        <tr><td><strong>Position</strong></td><td>read position</td><td>playhead</td><td>delay time</td><td>store/replay pos</td><td>pre-delay</td><td style="color:var(--faint);">inert</td></tr>
+        <tr><td><strong>Size</strong></td><td>grain size</td><td>window size</td><td>loop length*</td><td>spectral warp</td><td>room size</td><td>chord</td></tr>
+        <tr><td><strong>Pitch</strong></td><td>grain transpose</td><td>transpose</td><td>shift / speed*</td><td>shift ratio</td><td>ratio + decay</td><td>pitch</td></tr>
+        <tr><td><strong>Density</strong></td><td>grain rate</td><td>diffusion</td><td>diffusion</td><td>refresh + phase</td><td>decay</td><td>feedback</td></tr>
+        <tr><td><strong>Texture</strong></td><td>window shape</td><td>tone</td><td>tone</td><td>quantisation</td><td>tone</td><td>damping</td></tr>
+        <tr><td><strong>Spread</strong></td><td>grain pan</td><td>L/R swap</td><td>L/R swap</td><td style="color:var(--faint);">nothing</td><td>diffusion</td><td>width / sep.</td></tr>
+        <tr><td><strong>Feedback</strong></td><td>feedback</td><td>feedback</td><td>feedback</td><td>feedback</td><td>mod rate</td><td>harmonicity</td></tr>
+        <tr><td><strong>Reverb</strong></td><td>reverb</td><td>reverb</td><td>reverb</td><td>reverb</td><td>mod amount</td><td>tap spread</td></tr>
+        <tr><td><strong>Blend</strong></td><td>dry/wet</td><td>dry/wet</td><td>dry/wet</td><td>dry/wet</td><td>dry/wet</td><td><strong>distortion</strong></td></tr>
+      </table>
+      </div>
+      <p class="table-footnote">* when frozen.</p>
+    </div>
+
+    <div class="sec">
+      <div class="sec-head"><span class="sec-num">04</span><span class="sec-title">Starting points</span></div>
+      <p>Six settings worth dialling in as-is, then pulling apart. Values are on-screen 0&ndash;50 readings; anything unlisted stays at its default. All of them need Blend brought up &mdash; it starts fully dry.</p>
+      <h3>Grain cloud <span style="font-weight:400; color:var(--faint); font-size:12.5px;">Granular &middot; Blend 30 &middot; Size 20 &middot; Density 40 &middot; Texture 30</span></h3>
+      <p>The sound Wisps is known for. Short grains, randomised triggering, window shape softened. Take Density up for a denser cloud, or below 26 for silence &mdash; which is the dead zone, not a fault.</p>
+      <h3>Frozen pad <span style="font-weight:400; color:var(--faint); font-size:12.5px;">Granular &middot; Blend 40 &middot; Size 38 &middot; Density 44 &middot; Freeze on</span></h3>
+      <p>Play a chord, switch Freeze on, and the buffer becomes an instrument you can keep grinding after the source has stopped. Position sweeps through what you captured.</p>
+      <h3>Tape looper <span style="font-weight:400; color:var(--faint); font-size:12.5px;">Delay &middot; Blend 50 &middot; Position 30 &middot; Feedback 34 &middot; Texture 18</span></h3>
+      <p>Position is delay time here, up to about a second. Texture below centre rolls the top off each repeat, so the loop degrades the way tape does.</p>
+      <h3>Smeared reverb <span style="font-weight:400; color:var(--faint); font-size:12.5px;">Oliverb &middot; Blend 34 &middot; Size 40 &middot; Density 42 &middot; Spread 32</span></h3>
+      <p>Density is decay, Spread is diffusion, Feedback and Reverb are the modulation rate and depth. Add a semitone or two of Pitch for the shimmer.</p>
+      <h3>Spectral wash <span style="font-weight:400; color:var(--faint); font-size:12.5px;">Spectral &middot; Blend 36 &middot; Size 25 &middot; Density 25 &middot; Texture 32</span></h3>
+      <p>The most expensive mode &mdash; roughly 2.4&times; Granular. Density at centre keeps phase coherent; move it either way to randomise. Spread does nothing here.</p>
+      <h3>Struck resonator <span style="font-weight:400; color:var(--faint); font-size:12.5px;">Resonestor &middot; Spread 25 &middot; Size 30 &middot; Density 46 &middot; Blend 12</span></h3>
+      <p><strong>Spread must be off minimum or this mode is silent</strong> &mdash; see the warning overleaf. Blend is distortion, not mix. Density is the resonator's decay and lives in the top few steps.</p>
+    </div>
+
+    <div class="sec">
+      <div class="sec-head"><span class="sec-num">05</span><span class="sec-title">Reference</span></div>
+      <h3>Defaults and displays</h3>
+      <div class="table-scroll">
+      <table class="data">
+        <tr><th>Control</th><th>7Seg</th><th>Default</th><th>Saved as</th><th>Inactive at</th></tr>
+        <tr><td>Mode</td><td><span class="tag">WISP</span></td><td>Off</td><td><span class="code-pill">cloudsMode</span></td><td>Off &mdash; nothing allocated</td></tr>
+        <tr><td>Blend</td><td><span class="tag">Blnd</span></td><td>0</td><td><span class="code-pill">cloudsBlend</span></td><td>0 &mdash; fully dry</td></tr>
+        <tr><td>Position</td><td><span class="tag">Posn</span></td><td>25</td><td><span class="code-pill">cloudsPosition</span></td><td>&mdash;</td></tr>
+        <tr><td>Size</td><td><span class="tag">Size</span></td><td>25</td><td><span class="code-pill">cloudsSize</span></td><td>&mdash;</td></tr>
+        <tr><td>Pitch</td><td><span class="tag">Ptch</span></td><td>25</td><td><span class="code-pill">cloudsPitch</span></td><td>25 &mdash; unity</td></tr>
+        <tr><td>Density</td><td><span class="tag">Dens</span></td><td>40</td><td><span class="code-pill">cloudsDensity</span></td><td>&mdash; (26&ndash;30 is silent)</td></tr>
+        <tr><td>Texture</td><td><span class="tag">Text</span></td><td>25</td><td><span class="code-pill">cloudsTexture</span></td><td>&mdash;</td></tr>
+        <tr><td>Spread</td><td><span class="tag">Sprd</span></td><td>0</td><td><span class="code-pill">cloudsSpread</span></td><td>0 &mdash; but see below</td></tr>
+        <tr><td>Feedback</td><td><span class="tag">Fdbk</span></td><td>0</td><td><span class="code-pill">cloudsFeedback</span></td><td>0</td></tr>
+        <tr><td>Reverb</td><td><span class="tag">Verb</span></td><td>0</td><td><span class="code-pill">cloudsReverb</span></td><td>0</td></tr>
+        <tr><td>Freeze</td><td><span class="tag">Freeze</span></td><td>off</td><td><span class="code-pill">cloudsFreeze</span></td><td>off</td></tr>
+      </table>
+      </div>
+      <div class="box warn">
+        <div class="label">Known limitations &mdash; read before judging it</div>
+        <p><strong>Resonestor is silent at the default Spread.</strong> At minimum Spread the mode's tap reads are multiplied by zero. Move Spread to centre. A fix exists on an earlier commit and has not been re-applied to this tree.</p>
+        <p><strong>Density has a silent band</strong> around menu 26&ndash;30 in Granular. This is upstream's behaviour. The default of 40 is chosen to sit clear of it.</p>
+        <p><strong>Mode changes click.</strong> Reduced by a fade, never eliminated.</p>
+        <p><strong>Stretch can drop out</strong> and recover. Only Stretch, and it costs about twice Granular &mdash; it may simply be too expensive. Not diagnosed to a root cause.</p>
+        <p><strong>This state is untested since a revert.</strong> All six modes were confirmed working on hardware before an experimental send-routing branch; the source was rolled back to that point and has not been re-flashed since. Treat hardware behaviour as unverified.</p>
+      </div>
+      <h3>Cost by mode</h3>
+      <p>Host-relative measurements against the engine compiled natively through the adapter's exact plumbing. Ratios transfer to hardware; absolute figures do not, and the fraction of the Deluge's budget one instance eats has not been measured on device.</p>
+      <div class="table-scroll">
+      <table class="data">
+        <tr><th>Mode</th><th>Granular</th><th>Delay</th><th>Resonestor</th><th>Stretch</th><th>Oliverb</th><th>Spectral</th></tr>
+        <tr><td>Relative cost</td><td>1.0&times;</td><td>1.29&times;</td><td>1.84&times;</td><td>2.02&times;</td><td>2.15&times;</td><td>2.42&times;</td></tr>
+      </table>
+      </div>
+      <p>The resampler alone is 8&ndash;19% of the stage depending on mode &mdash; not trivial beside the engine. Mode choice matters more than anything else here.</p>
+      <h3>Notes worth keeping in mind</h3>
+      <ul>
+        <li><strong>Nothing is allocated until you leave OFF.</strong> Wisps costs literally nothing while switched off, and selecting OFF gives the 180 KB straight back.</li>
+        <li><strong>Old songs are safe.</strong> The parameters were appended to the end of the global set rather than inserted, so no existing automation was repointed, and a song with no Wisps attribute loads with the mode Off.</li>
+        <li><strong>Settings survive even when the mode is off.</strong> All nine parameters are written unconditionally, so dialling in a texture, switching Wisps off to hear the dry signal, and saving does not lose them.</li>
+        <li><strong>Stereo throughout.</strong> Two channels in, two out, each with its own recording buffer of about a second &mdash; and each instance carries its own resampler state, so two tracks running Wisps never cross-feed.</li>
+        <li><strong>Some upstream features are not wired up.</strong> The trigger and gate inputs are never driven, which makes Delay's tap-tempo sync unreachable, Resonestor's excitation burst never fire, and Spectral's glitch never run. The granular sub-parameters upstream exposes beyond the nine panel controls are left at their defaults.</li>
+      </ul>
+      <div class="box">
+        <div class="label">Provenance</div>
+        <p>&Eacute;milie Gillet, Mutable Instruments &middot; the <span class="code-pill">mqtthiqs/parasites</span> community continuation, which is where Oliverb and Resonestor come from &middot; MIT licensed &middot; vendored August 2026. The DSP under <span class="code-pill">src/deluge/dsp/clouds/</span> is Gillet's original, unmodified &mdash; deliberately so, which is why the sample rate is adapted around rather than retuned in place: Clouds scatters <span class="code-pill">32000.0f</span> as a literal across several files rather than centralising it. Deluge-specific code lives only in <span class="code-pill">clouds_adapter.{h,cpp}</span>. This manual describes behaviour as built, and its figures are those stated in the implementation and its measurements.</p>
+      </div>
+    </div>
+    <a class="back-top" href="#top">&uarr; Back to contents</a>
+  </section>
+
+  <section class="chapter" id="ch05">
+    <div class="eyebrow">Synthstrom Deluge &middot; Rudement Firmware</div>
+    <div class="the">The</div>
+    <h1>Gristleator</h1>
+    <div class="subtitle">Operating manual for the ten-knob chop/throb effect</div>
+    <p class="intro">A modulation and distortion effect with a master switch, so it can be bypassed without unwinding its settings. After the Roy Gwinn design published in <em>Practical Electronics</em> in 1975 and sold in kit form by Phonosonics in 1977, which Chris Carter modified for Throbbing Gristle &mdash; the modification being that he brought the Bias trimpot out to the front panel, which is why Bias is a first-class knob here. The Eurorack redesign (FSS TG3/TG4, Gwinn + Carter, 2017) added Register and Resonance to the filter and Dirt to the VCA. This implements all nine, plus a master switch the hardware never had and never needed &mdash; a rack unit is bypassed by not patching it.</p>
+    <div class="meta"><span>On &middot; Rate &middot; Depth &middot; Shape &middot; Bias &middot; Mode &middot; Freq &middot; Reso &middot; Dirt &middot; Level</span><span>Edition of August 2026</span></div>
+
+    <div class="sec">
+      <div class="sec-head"><span class="sec-num">01</span><span class="sec-title">What it is</span></div>
+      <p>One LFO driving two parallel stages &mdash; an amplitude stage (the "chop") and a state-variable filter (the "throb") &mdash; blended against each other by Mode. Ten controls in total: the master switch plus nine that describe the sound. There is no delay line; the whole effect costs six words of state per instance.</p>
+      <p>The Gristleator sits late in the global FX chain, after ModFX and ahead of the four-band EQ:</p>
+      <div class="diagram">&hellip; SRR / bitcrush &rarr; WISP &rarr; ModFX &rarr; <strong>Gristleator</strong> &rarr; EQ &rarr; Delay &rarr; reverb send &rarr; OUT</div>
+      <div class="box">
+        <div class="label">Why this is not a ModFX type</div>
+        <p>It used to be one, sharing the mod-FX Feedback and Offset params for Shape and Mode. But the global effect chain silences mod FX automatically whenever the currently selected gold-knob parameter sits at its minimum, and that parameter defaults to Feedback &mdash; which is where Shape lived. Shape at minimum is a perfectly musical setting (a plain triangle wave, and where an untouched knob starts), so on song, kit and audio-clip FX the whole effect silently vanished the moment nobody had touched it. Owning its own ten params instead of borrowing mod-FX's four removes that gate entirely: every knob here has a musically valid minimum, and none of them can make the effect disappear on their own.</p>
+      </div>
+    </div>
+
+    <div class="sec">
+      <div class="sec-head"><span class="sec-num">02</span><span class="sec-title">Finding it</span></div>
+      <p>Ten shared unpatched params, so one set of menu items serves synths, kits, audio clips and song FX alike &mdash; unlike Sear, which is per-voice and therefore synth-clip only. The menu paginates four items per page (4/4/2 across three pages). <strong>On is first</strong> deliberately: it is the only control that can make the other nine inaudible, so it has to be reachable without paging past it.</p>
+      <div class="box">
+        <div class="label">Switching it off entirely</div>
+        <p><span class="code-pill">SETTINGS &rarr; COMMUNITY FEATURES &rarr; Gristleator</span> (<span class="code-pill">GRIS</span>), on by default. Hides the Gristleator menu only; a song already using it keeps sounding exactly as saved.</p>
+      </div>
+    </div>
+
+    <div class="sec">
+      <div class="sec-head"><span class="sec-num">03</span><span class="sec-title">The master switch</span></div>
+      <p><strong>On</strong> is bipolar and thresholded at centre &mdash; anything above the exact centre point is on, at or below it is off. The default sits precisely on that boundary, which reads as off both audibly and to a song that predates the switch.</p>
+      <div class="box warn">
+        <div class="label">What this replaced</div>
+        <p>Before the switch existed, "on" was inferred from whether any of the four audibly active knobs &mdash; Depth, Mode, Dirt, Level &mdash; sat away from its default. That was correct in a narrow sense, but it made the effect impossible to bypass without also discarding the patch: every one of the nine knobs has a musically valid setting that isn't its default, so "return everything to default" was the only off switch, and it wasn't reversible. It was also backwards in one specific way that tripped people up repeatedly &mdash; turning Depth down to zero looks like an off switch and isn't one, because Mode pushed toward the filter leaves a static lowpass sitting in the signal path at whatever Freq is set to, exactly as the original hardware's VCF doesn't leave the circuit just because the LFO is turned down. The switch removes both problems: the nine knobs only ever describe the sound now, and one param decides whether you hear it.</p>
+        <p>Songs saved before the switch existed carry the nine param tags and no "on" tag. The loader treats the first tag that departs from its old default as proof the effect was in use, and reconstructs an implied "on" from it &mdash; so a song that already used the Gristleator keeps sounding the way it did without ever having written the tag itself.</p>
+      </div>
+    </div>
+
+    <div class="sec">
+      <div class="sec-head"><span class="sec-num">04</span><span class="sec-title">The controls</span></div>
+      <p>In signal order: the driver, then what it drives, then the output stage.</p>
+      <div class="table-scroll">
+      <table class="data">
+        <tr><th>Control</th><th>Default</th><th>What it does</th></tr>
+        <tr><td><strong>Rate</strong></td><td>centre</td><td>LFO speed. Rates through the knob's whole travel, from a slow sweep up into audio rate &mdash; pushed far enough, the chop stops reading as tremolo and starts reading as a second tone.</td></tr>
+        <tr><td><strong>Depth</strong></td><td>0 (min)</td><td>How far the LFO pulls the stage down. Zero is an exact bypass of the modulation &mdash; both stages still pass signal, just unmodulated. Warped so roughly &minus;6 dB of chop already arrives by mid-travel; most of the audible change is in the bottom half of the knob, not the top.</td></tr>
+        <tr><td><strong>Shape</strong></td><td>0 (min)</td><td>Triangle &rarr; trapezoid &rarr; square, continuously. Minimum is a plain triangle.</td></tr>
+        <tr><td><strong>Bias</strong></td><td>centre</td><td>Offsets the LFO before shaping. Bipolar; pushed hard enough it rails the LFO fully open or fully shut &mdash; faithful to Carter's front-panel mod, not a bug.</td></tr>
+        <tr><td><strong>Mode</strong></td><td>0 (min &mdash; VCA)</td><td>0 = pure VCA (chop), full = pure VCF (throb), continuously blendable in between.</td></tr>
+        <tr><td><strong>Freq</strong> ("Register")</td><td>centre (~800 Hz)</td><td>Filter centre. Bipolar, &plusmn;2 octaves, so the knob covers roughly 200 Hz to 3.2 kHz.</td></tr>
+        <tr><td><strong>Reso</strong></td><td>0 (min)</td><td>Filter resonance. Stops short of self-oscillation by design &mdash; a saturating stage in the filter's feedback path bounds it, so the top of the knob is a resonant sweep, not a squeal.</td></tr>
+        <tr><td><strong>Dirt</strong></td><td>0 (min &mdash; clean)</td><td>Blends the clean VCA output against a driven, soft-clipped one. Drive rises alongside the mix &mdash; up to 3&times; &mdash; so turning Dirt up both adds distortion and pushes it harder, the way a JFET stage in the original circuit distorts more as it's driven harder. Sits after the VCA, so it's the chop itself being distorted, not a static overdrive with a tremolo bolted on after it.</td></tr>
+        <tr><td><strong>Level</strong></td><td>max (unity)</td><td>Output trim.</td></tr>
+      </table>
+      </div>
+    </div>
+
+    <div class="sec">
+      <div class="sec-head"><span class="sec-num">05</span><span class="sec-title">Starting points</span></div>
+      <p>Five settings worth dialling in as-is, then pulling apart. Knob values are approximate on-screen positions on a bipolar 0&ndash;50 scale (25 = centre).</p>
+      <h3>Classic chop <span style="font-weight:400; color:var(--faint); font-size:12.5px;">On &middot; Mode 0 &middot; Shape 0 &middot; Rate 30 &middot; Depth 35 &middot; Level 50</span></h3>
+      <p>Steady tremolo &mdash; a plain triangle LFO chopping the amplitude at a moderate rate.</p>
+      <h3>Square gate <span style="font-weight:400; color:var(--faint); font-size:12.5px;">On &middot; Mode 0 &middot; Shape 50 &middot; Depth 50 &middot; Rate 28</span></h3>
+      <p>Shape at maximum turns the LFO into a near-square wave, so the chop reads as a hard gate rather than a swell.</p>
+      <h3>Throb filter sweep <span style="font-weight:400; color:var(--faint); font-size:12.5px;">On &middot; Mode 50 &middot; Freq 30 &middot; Reso 35 &middot; Depth 30</span></h3>
+      <p>Mode fully toward the filter removes the amplitude chop entirely &mdash; the LFO sweeps a resonant filter instead, with no gating.</p>
+      <h3>Dirty chop <span style="font-weight:400; color:var(--faint); font-size:12.5px;">On &middot; Mode 0 &middot; Dirt 35 &middot; Depth 30</span></h3>
+      <p>The chop itself gets driven harder as it opens, rather than a clean chop followed by static distortion.</p>
+      <h3>Audio-rate buzz <span style="font-weight:400; color:var(--faint); font-size:12.5px;">On &middot; Mode 0 &middot; Depth 40 &middot; Rate 48&ndash;50</span></h3>
+      <p>Push Rate to the very top of its travel and the LFO crosses into audio-rate territory &mdash; the chop stops sounding like tremolo and starts sounding like a second, ring-mod-like tone.</p>
+    </div>
+
+    <div class="sec">
+      <div class="sec-head"><span class="sec-num">06</span><span class="sec-title">Reference</span></div>
+      <div class="table-scroll">
+      <table class="data">
+        <tr><th>Control</th><th>7Seg</th><th>Saved as</th></tr>
+        <tr><td>On</td><td><span class="tag">GON</span></td><td><span class="code-pill">gristleOn</span></td></tr>
+        <tr><td>Rate</td><td><span class="tag">GRAT</span></td><td><span class="code-pill">gristleRate</span></td></tr>
+        <tr><td>Depth</td><td><span class="tag">GDEP</span></td><td><span class="code-pill">gristleDepth</span></td></tr>
+        <tr><td>Shape</td><td><span class="tag">GSHP</span></td><td><span class="code-pill">gristleShape</span></td></tr>
+        <tr><td>Bias</td><td><span class="tag">GBIA</span></td><td><span class="code-pill">gristleBias</span></td></tr>
+        <tr><td>Mode</td><td><span class="tag">GMOD</span></td><td><span class="code-pill">gristleMode</span></td></tr>
+        <tr><td>Freq</td><td><span class="tag">GFRQ</span></td><td><span class="code-pill">gristleFreq</span></td></tr>
+        <tr><td>Reso</td><td><span class="tag">GRES</span></td><td><span class="code-pill">gristleRes</span></td></tr>
+        <tr><td>Dirt</td><td><span class="tag">GDRT</span></td><td><span class="code-pill">gristleDirt</span></td></tr>
+        <tr><td>Level</td><td><span class="tag">GLVL</span></td><td><span class="code-pill">gristleLevel</span></td></tr>
+      </table>
+      </div>
+      <div class="box warn">
+        <div class="label">Known limitations &mdash; read before judging it</div>
+        <p><strong>Bypass behaviour against the LFO timeline is not yet confirmed on hardware.</strong> This is open as issue #2 in the fork's tracker: whether switching On off and back on resumes the LFO phase cleanly or restarts it. Worth checking on real hardware rather than assuming either way.</p>
+      </div>
+      <div class="box">
+        <div class="label">Provenance</div>
+        <p>Roy Gwinn, <em>Practical Electronics</em>, 1975 &middot; Phonosonics kit, 1977 &middot; Chris Carter's Throbbing Gristle front-panel modification &middot; FSS TG3/TG4 Eurorack reissue, Gwinn + Carter, 2017. The soft clipper in the Dirt stage (<span class="code-pill">softClipCubic</span>) is shared with Sear. Source: <span class="code-pill">src/deluge/dsp/gristle.hpp</span>.</p>
+      </div>
+    </div>
+    <a class="back-top" href="#top">&uarr; Back to contents</a>
+  </section>
+
+  <section class="chapter" id="ch06">
+    <div class="eyebrow">Synthstrom Deluge &middot; Rudement Firmware</div>
+    <div class="the">The</div>
+    <h1>Sear</h1>
+    <div class="subtitle">Operating manual for the auto-levelling drive stage</div>
+    <p class="intro">A cubic soft-clipper with automatic level matching, followed by a one-pole tilt tone control. Per-voice and patched, so it behaves like any other modulation destination. Was called Heat until 2026-08-08.</p>
+    <div class="meta"><span>Sear &middot; STon</span><span>Edition of August 2026</span></div>
+
+    <div class="sec">
+      <div class="sec-head"><span class="sec-num">01</span><span class="sec-title">What it is</span></div>
+      <p>A cubic transfer curve rather than a second tanh &mdash; <span class="code-pill">Sound::saturate()</span> already gives a tanh-shaped drive via lookup table, so a second one would just duplicate an existing character. The cubic has a harder knee and a true ceiling at &plusmn;1, which reads as "pedal" beside the softer stock saturation, and it costs three multiplies with no table lookup, which matters running per voice.</p>
+      <div class="box warn">
+        <div class="label">Aliasing &mdash; a genuine limitation, not an oversight</div>
+        <p>There is no oversampling, and the cubic curve generates harmonics up to 3&times; the input frequency, so bright material driven hard <strong>will</strong> alias. Oversampling per voice on the Deluge's processor was judged too expensive. Sear sits after the ladder filter in the signal path, so rolling the low-pass down also tames the aliasing &mdash; that's the practical fix, not a setting on the effect itself.</p>
+      </div>
+      <div class="box">
+        <div class="label">The rename</div>
+        <p>This effect shipped as "Heat" until 2026-08-08, then was renamed Sear &mdash; XML attributes included (<span class="code-pill">sear</span>, <span class="code-pill">searTone</span>). That was safe only because the effect had never shipped and no saved song referenced the old tags. That window is closed: any future rename would need a read-side alias for the old spelling rather than a clean swap.</p>
+      </div>
+    </div>
+
+    <div class="sec">
+      <div class="sec-head"><span class="sec-num">02</span><span class="sec-title">Finding it</span></div>
+      <p><span class="code-pill">FX &rarr; Distortion</span>, alongside the other per-voice distortion stages &mdash; Saturation, Bitcrush, Decimation and Wavefold &mdash; as <strong>Sear</strong> (the drive) and <strong>STon</strong> (its tone control). Because it is patched and per-voice, it appears on synth clips and drums, not on kit-global or song FX.</p>
+      <div class="box">
+        <div class="label">Switching it off entirely</div>
+        <p><span class="code-pill">SETTINGS &rarr; COMMUNITY FEATURES &rarr; Sear</span> (<span class="code-pill">SEAR</span>), on by default. Hides the Sear drive and tone controls; processing already dialled in keeps running.</p>
+      </div>
+    </div>
+
+    <div class="sec">
+      <div class="sec-head"><span class="sec-num">03</span><span class="sec-title">Sear (the drive)</span></div>
+      <p>A patched param, so it can be modulated like any other. Pre-gain sweeps on an exponential taper &mdash; roughly a constant ratio per knob step, audible from knob position 3&ndash;5 with no dead zone:</p>
+      <div class="table-scroll">
+      <table class="data">
+        <tr><th>Knob</th><th class="r">0</th><th class="r">3</th><th class="r">5</th><th class="r">10</th><th class="r">15</th><th class="r">20</th><th class="r">25</th><th class="r">30</th><th class="r">35</th><th class="r">40</th><th class="r">45</th><th class="r">50</th></tr>
+        <tr><td>Gain</td><td class="r">1.0&times;</td><td class="r">1.5&times;</td><td class="r">1.8&times;</td><td class="r">3.2&times;</td><td class="r">5.6&times;</td><td class="r">9.6&times;</td><td class="r">16&times;</td><td class="r">29&times;</td><td class="r">51&times;</td><td class="r">90&times;</td><td class="r">154&times;</td><td class="r">256&times;</td></tr>
+      </table>
+      </div>
+      <div class="box">
+        <div class="label">Automatic level matching</div>
+        <p>Two one-pole followers track mean absolute level either side of the clipper, over roughly a 23 ms window, and the correction applied is their ratio. <strong>This is not a compressor and does not behave like one</strong> &mdash; it tracks the ratio of two levels, not a level, so when the input gets quieter the output gets quieter with it and the ratio barely moves. Ordinary note dynamics pass through untouched; only the amount the clipper is <em>adding</em> is corrected. A small residual loudness lift is kept in on purpose &mdash; correcting all the way to a flat 0 dB made the drive read as "nothing is happening," so the target rises gently with knob position, measuring about +2.3 dB of real output rise at the top of the knob.</p>
+        <p>Cold starts are handled by seeding each new voice from the Sound's own running state rather than starting silent: only the very first note a Sound ever plays is measured cold, and every note after that inherits an already-warm gain estimate.</p>
+      </div>
+    </div>
+
+    <div class="sec">
+      <div class="sec-head"><span class="sec-num">04</span><span class="sec-title">STon (the tone control)</span></div>
+      <p>An unpatched tilt tone control shaping what the drive bites on. A one-pole split into low and high halves, weighted so that at centre both halves sum back to the input exactly &mdash; measured flat to 0.00 dB. The pivot sits near 1 kHz, where a guitar-pedal tone stack usually puts it.</p>
+      <div class="table-scroll">
+      <table class="data">
+        <tr><th></th><th class="r">100 Hz</th><th class="r">1 kHz</th><th class="r">8 kHz</th></tr>
+        <tr><td>Dark (min)</td><td class="r">+5.8 dB</td><td class="r">&minus;1.7 dB</td><td class="r">&minus;18.5 dB</td></tr>
+        <tr><td>Centre (default)</td><td class="r">0.0 dB</td><td class="r">0.0 dB</td><td class="r">0.0 dB</td></tr>
+        <tr><td>Bright (max)</td><td class="r">&minus;7.6 dB</td><td class="r">+4.9 dB</td><td class="r">+5.7 dB</td></tr>
+      </table>
+      </div>
+    </div>
+
+    <div class="sec">
+      <div class="sec-head"><span class="sec-num">05</span><span class="sec-title">Reference</span></div>
+      <div class="table-scroll">
+      <table class="data">
+        <tr><th>Control</th><th>7Seg</th><th>Default</th></tr>
+        <tr><td>Sear</td><td><span class="tag">SEAR</span></td><td>minimum (bypass)</td></tr>
+        <tr><td>STon</td><td><span class="tag">STon</span></td><td>centre (flat)</td></tr>
+      </table>
+      </div>
+      <div class="box warn">
+        <div class="label">Known limitations</div>
+        <p>Aliasing on bright or hard-driven material &mdash; see above; there is no built-in remedy beyond rolling off the filter ahead of it. The per-block level-matching correction involves one 64-bit divide per voice when Sear is enabled; arithmetic puts that well under 1% of budget even at full polyphony, but it has not been profiled on hardware.</p>
+      </div>
+      <div class="box">
+        <div class="label">Provenance</div>
+        <p>Originally shipped as "Heat"; renamed Sear 2026-08-08. Shares its soft clipper (<span class="code-pill">softClipCubic</span>) with the Gristleator's Dirt stage. Source: <span class="code-pill">src/deluge/dsp/sear.hpp</span>.</p>
+      </div>
+    </div>
+    <a class="back-top" href="#top">&uarr; Back to contents</a>
+  </section>
+
+  <section class="chapter" id="ch07">
+    <div class="eyebrow">Synthstrom Deluge &middot; Rudement Firmware</div>
+    <div class="the">The</div>
+    <h1>Kit Split</h1>
+    <div class="subtitle">Operating manual for exploding a kit into single-sound kits</div>
+    <p class="intro">Explodes a kit into one single-sound kit per drum that has notes, carrying every clip on that kit across with it. Unlike every other feature in this manual, Kit Split ships <strong>off</strong> by default, because it is destructive.</p>
+    <div class="meta"><span>Kit Global FX &middot; Actions &middot; Split Kit</span><span>Edition of August 2026</span></div>
+
+    <div class="sec">
+      <div class="sec-head"><span class="sec-num">01</span><span class="sec-title">What it is</span></div>
+      <p>Every drum that has notes becomes its own kit holding exactly that one sound, with its own clip carrying only that drum's notes. In grid mode they land as N new columns where the source track was, drum 0 leftmost. This is a <strong>move</strong>, not a copy &mdash; the source kit is consumed.</p>
+      <p><strong>The unit is the kit, not the clip.</strong> If a kit carries a part and a variation of it &mdash; two clips in the same grid column, different sections &mdash; both are split in the same action, and each new kit receives one clip per source clip at its original section. Twelve drums with two variations gives twelve columns, each with the part on top and the variation underneath, exactly as they went in. It does not matter which of the clips you invoke it from.</p>
+      <p>This is not a convenience. Drums are moved rather than copied, so splitting one clip on its own would pull the drums out from under its siblings and leave them pointing at sounds that had moved to other kits. Taking the whole kit at once is the only coherent way to do it.</p>
+    </div>
+
+    <div class="sec">
+      <div class="sec-head"><span class="sec-num">02</span><span class="sec-title">What it's for</span></div>
+      <p>The plain reason is arrangement: a row you want to treat as its own track, with its own clip in the arranger, its own mute, and its own place in the grid.</p>
+      <p>The reason worth knowing about is <strong>preparing a song for stem export.</strong> Not because you need it to get separate files &mdash; the Deluge already exports a kit's drums as individual stems on its own. The reason is what a kit cannot do: every drum in one shares a single set of kit-global FX. One delay, one reverb, one filter, across all of them. Exporting drum stems gives you every drum through that same shared chain, or &mdash; with <span class="code-pill">Kit FX</span> switched off in <span class="code-pill">Configure Export</span> &mdash; every drum dry. What it will not give you is the kick through one treatment and the hats through another.</p>
+      <p>Splitting first changes that. Each sound becomes a real track with its own global FX chain, its own sends, its own gold knobs and its own automation, so you can treat each one differently on the Deluge and then export them as ordinary track stems &mdash; already sitting the way you want them before anything reaches a DAW.</p>
+      <div class="box">
+        <div class="label">Splitting for export? Do it last</div>
+        <p>Kit-global FX do not travel &mdash; see 04. The new kits come up neutral, so whatever you had set on the kit bus is gone. Dial the per-sound treatments in <em>after</em> the split rather than before.</p>
+        <p>And because the split is destructive and cannot be undone, save the song first. The usual order is: finish the arrangement, save, split, process each sound, export.</p>
+      </div>
+    </div>
+
+    <div class="sec">
+      <div class="sec-head"><span class="sec-num">03</span><span class="sec-title">Using it</span></div>
+      <p>On a kit clip, with affect-entire on:</p>
+      <div class="diagram">Kit Global FX &rarr; Actions &rarr; Split Kit &rarr; "Split into N"</div>
+      <p>Stepping into the submenu is the confirmation &mdash; the action sits one level down on purpose, and its own label states how many kits you are about to get. On a 7SEG that label reads <span class="code-pill">SP12</span> rather than the full sentence, so the count survives the four digits. From there it just happens, landing you in session view with the new columns already in place, each new clip already in affect-entire with its one drum selected and its gold knobs live.</p>
+      <div class="box">
+        <div class="label">You can do this mid-song</div>
+        <p>The transport does not have to stop. What has to stop is <em>this kit</em>: mute the track and split it while the rest of the song keeps playing, with no gap and no audible seam. The new tracks arrive muted, so you launch them when you want them &mdash; which also gives you a look at what you did before it reaches the mix.</p>
+        <p>If anything on the kit is still playing &mdash; including a variation in another section that you did not invoke this from &mdash; it refuses with <span class="code-pill">Mute the track first</span> (<span class="code-pill">MUTE</span> on 7SEG) rather than splitting underneath the playhead.</p>
+      </div>
+      <div class="box">
+        <div class="label">Switching it on</div>
+        <p><span class="code-pill">SETTINGS &rarr; COMMUNITY FEATURES &rarr; Kit Split</span> (<span class="code-pill">SPLT</span>), off by default &mdash; the only feature in this fork that ships disabled.</p>
+      </div>
+    </div>
+
+    <div class="sec">
+      <div class="sec-head"><span class="sec-num">04</span><span class="sec-title">What travels, and what doesn't</span></div>
+      <div class="table-scroll">
+      <table class="data">
+        <tr><th></th><th>Travels?</th></tr>
+        <tr><td>Notes, velocity, probability, iterance, fill</td><td>Yes</td></tr>
+        <tr><td>Per-row FX &mdash; filters, envelopes, patch cables, sends, sidechain</td><td>Yes</td></tr>
+        <tr><td>Kit-global volume and pan</td><td>Yes</td></tr>
+        <tr><td>Other kit-global FX &mdash; delay, reverb, filter, mod FX</td><td><strong>No</strong> &mdash; new kits come up neutral</td></tr>
+        <tr><td>Kit arpeggiator</td><td><strong>No</strong> &mdash; it indexed drums that no longer share a kit</td></tr>
+        <tr><td>Other clips on the same kit</td><td>Yes &mdash; each new kit gets one clip per source clip, at its own section</td></tr>
+        <tr><td>Drums with no notes anywhere on the kit</td><td>Skipped; they go away with the source kit</td></tr>
+      </table>
+      </div>
+      <p>Volume and pan travel because they are the output's gain and position rather than a wet effect, and each new kit holds exactly one drum &mdash; copying them across reproduces the mix the source had rather than multiplying it. A kit sitting at volume 43 comes back as N kits each at 43, not at the neutral default. Other kit-global FX are destroyed deliberately: inheriting a delay would have turned one delay into N.</p>
+      <p>Values only &mdash; automation on the source's volume or pan is not carried across. Volume and pan are read per source clip, so a part and its variation keep their own levels. New kits are named from their drum, with a number appended on collision.</p>
+      <p>A drum counts as having notes if <em>any</em> clip on the kit has notes for it. A drum whose part exists only in the variation still gets its own kit &mdash; otherwise that part would be silently thrown away. Where a clip has nothing to say about a drum, that new kit simply gets one fewer clip rather than an empty one.</p>
+    </div>
+
+    <div class="sec">
+      <div class="sec-head"><span class="sec-num">05</span><span class="sec-title">When it refuses</span></div>
+      <p>It will not run, and says so, if:</p>
+      <ul>
+        <li>any clip on the kit is playing &mdash; mute the track (<span class="code-pill">MUTE</span>)</li>
+        <li>the arranger is playing, or you are recording to the arranger (<span class="code-pill">STOP</span>)</li>
+        <li>fewer than two drums on the kit have notes</li>
+        <li>any clip on the kit is the sync-scaling clip</li>
+        <li>the kit has any instances in the arranger (splitting would gut them)</li>
+        <li>more than 64 drums have notes, or the kit carries more than 16 clips</li>
+      </ul>
+      <p>Several of these read wider than they used to, and deliberately so: the whole kit is being consumed, so a condition on any one of its clips is a condition on the operation.</p>
+      <div class="box">
+        <div class="label">Not a bug</div>
+        <p>Pressing <span class="code-pill">MIDI</span> or <span class="code-pill">CV</span> on a split track says <em>Clip not empty</em> (<span class="code-pill">CANT</span> on 7SEG). That's stock Deluge behaviour, not something the split introduced &mdash; any kit clip with notes refuses the same conversion.</p>
+      </div>
+      <div class="box warn">
+        <div class="label">Not undoable</div>
+        <p>The undo history is cleared before anything moves, exactly as creating a new instrument does. Every kit and clip is built before anything is moved, so if RAM runs out the song is untouched and you get an error rather than half a split. If something fails partway through committing, the source clips stay in place holding whatever drums haven't moved yet &mdash; nothing is lost, but nothing rolls back either.</p>
+      </div>
+    </div>
+
+    <div class="sec">
+      <div class="sec-head"><span class="sec-num">06</span><span class="sec-title">Reference</span></div>
+      <div class="box">
+        <div class="label">Available on both firmware lines</div>
+        <p>Kit Split ships as a small patch on top of each line (<span class="code-pill">feat/kit-split-13</span>, <span class="code-pill">feat/kit-split-muted-12</span>) rather than being merged into the day-to-day build. The behaviour described in this chapter is identical on both. They differ only where the APIs force it: drum naming (1.3 reads a name from MIDI/gate drums via <span class="code-pill">getDrumName()</span>; 1.2.1 has no such method, so those kits come out as <span class="code-pill">SPLIT</span>, <span class="code-pill">SPLIT2</span> &hellip; instead), the instrument-creation call, the on-card flag, and where the menu hangs &mdash; 1.3 adds the split to an existing Kit Global FX &rarr; Actions menu; 1.2.1 has no such submenu, so this patch creates it.</p>
+        <p>Display strings work the same way on both: the entry goes in <span class="code-pill">english.json</span> and <span class="code-pill">seven_segment.json</span>, and the <span class="code-pill">g_*.cpp</span> tables are generated from those by <span class="code-pill">generate.py</span> at build time. Editing a generated table by hand appears to work and then silently stops working at the next clean build, when the generator rewrites it from the JSON and the string drops out of the table &mdash; the popup comes up blank rather than failing to compile.</p>
+      </div>
+      <div class="box">
+        <div class="label">Provenance</div>
+        <p>Original to this fork, 2026.</p>
+      </div>
+    </div>
+    <a class="back-top" href="#top">&uarr; Back to contents</a>
+  </section>
+
+  <section class="chapter" id="ch08">
+    <div class="eyebrow">Synthstrom Deluge &middot; Rudement Firmware</div>
+    <div class="the">The</div>
+    <h1>Aux Sends</h1>
+    <div class="subtitle">Operating manual for the CV output send bus</div>
+    <p class="intro">The two CV sockets, used as an audio send bus. Turn a send up on a track and that track's audio appears at the socket &mdash; on its own, independent of the main mix &mdash; so it can feed a pedal, a mixer channel or a modular case while everything else carries on out of the mains.</p>
+    <div class="meta"><span>MAIN &middot; CV1 Send &middot; CV2 Send &middot; CV1/2 Level &middot; Stereo Split</span><span>Edition of August 2026</span></div>
+
+    <div class="sec">
+      <div class="sec-head"><span class="sec-num">01</span><span class="sec-title">What it is</span></div>
+      <p>An aux send, in the mixing-desk sense. Each track gets a send control; turning it up copies that track's audio to the CV outputs at whatever level you set, without taking it out of the main mix. Several tracks can feed the same socket at once, and they sum there.</p>
+      <p>The sockets keep their ordinary job when nothing is routed to them. With every send at zero they carry note voltages and gates exactly as before, and nothing about the feature is running.</p>
+    </div>
+
+    <div class="sec">
+      <div class="sec-head"><span class="sec-num">02</span><span class="sec-title">Finding it</span></div>
+      <div class="diagram">AUX             the sends and MAIN, per track
+                on the Kit-global (affect-entire), Audio Clip and Sound menus
+
+SETTINGS &rarr; AUX  CV1 Level, CV2 Level, Stereo Split &mdash; global</div>
+      <p>The <strong>AUX</strong> submenu appears wherever a track's own parameters live. It is not offered on the Sound menu when that menu is acting as the Drum editor, because a send has to isolate a whole track &mdash; a per-drum send has nothing it could do. The kit-wide send, which is the one that works, is on the Kit-global menu instead.</p>
+      <p><span class="code-pill">SETTINGS &rarr; AUX</span> is deliberately separate from <span class="code-pill">SETTINGS &rarr; CV</span>. That one is about pitch voltages; this one is about audio.</p>
+    </div>
+
+    <div class="sec">
+      <div class="sec-head"><span class="sec-num">03</span><span class="sec-title">The controls</span></div>
+      <h3>On the track &mdash; the <span class="tag">AUX</span> menu</h3>
+      <div class="table-scroll">
+      <table class="data">
+        <tr><th>Control</th><th>7Seg</th><th>What it does</th></tr>
+        <tr><td><strong>CV Send</strong><br>or <strong>CV1 Send + CV2 Send</strong></td><td><span class="tag">CV</span><br><span class="tag">CV1</span> <span class="tag">CV2</span></td><td>How much of this track goes to the sockets. One control when the pair is a single stereo destination, two when they are separate mono buses &mdash; see 04. Ordinary parameters: automatable, LEARN-able to a knob, reachable by pad and by scroll in Automation View.</td></tr>
+        <tr><td><strong>Main</strong></td><td><span class="tag">MAIN</span></td><td>Whether this track still goes to the main outputs. On by default. Turn it off to move a track entirely onto the send &mdash; the mixing-desk idea of a pre-fade send with the fader down.</td></tr>
+      </table>
+      </div>
+      <h3>In settings &mdash; <span class="code-pill">SETTINGS &rarr; AUX</span></h3>
+      <div class="table-scroll">
+      <table class="data">
+        <tr><th>Control</th><th>7Seg</th><th>What it does</th></tr>
+        <tr><td><strong>CV1 Level<br>CV2 Level</strong></td><td><span class="tag">CV1L</span><br><span class="tag">CV2L</span></td><td>Output level for each socket, 0&ndash;50. Each step is 1.2 dB, so the range is even the whole way down; 0 is a true mute rather than the bottom of the taper. The same value the gold knob on the stutter button's lower encoder drives, so the two always agree.</td></tr>
+        <tr><td><strong>Stereo Split</strong></td><td><span class="tag">SPLT</span></td><td>Whether the two sockets are one stereo destination or two independent mono ones. Third item in the menu, after the two levels. See 04.</td></tr>
+      </table>
+      </div>
+      <p>The split is in <span class="code-pill">SETTINGS</span> rather than on the track because it describes how your rig is patched, not what one clip is doing. Per-clip it would have allowed one clip to treat the pair as stereo while another treated it as two mono outs, which no actual patch ever means.</p>
+      <div class="box">
+        <div class="label">Main and where you are</div>
+        <p>MAIN takes effect when a clip is playing from the arranger. Reached from an Audio Clip or from a kit in affect-entire, it edits that clip's own copy, which is not the one the playback path reads &mdash; so it will not appear to do anything there. If you want a track off the mains, set it from the arranger.</p>
+      </div>
+    </div>
+
+    <div class="sec">
+      <div class="sec-head"><span class="sec-num">04</span><span class="sec-title">One destination, or two</span></div>
+      <p><strong>Stereo Split on.</strong> The two sockets are the left and right of one stereo destination. There is one send and one level, because there is one place the audio is going, and where a track sits across the pair comes from its own pan &mdash; the same pan control it has always had.</p>
+      <p><strong>Stereo Split off.</strong> The sockets are two separate mono aux buses feeding two different boxes. Two buses want two sends and two levels, the same as any mixer, and each track can go to either, both, or neither.</p>
+      <div class="box">
+        <div class="label">Only seeing one send control?</div>
+        <p>Then Stereo Split is on, and that is correct &mdash; one destination gets one send. If you wanted two independent sends, turn it off at <span class="code-pill">SETTINGS &rarr; AUX &rarr; Stereo Split</span> and <strong>CV1 Send</strong> and <strong>CV2 Send</strong> will both appear on the track. The reverse holds too: two sends showing means the split is off.</p>
+        <p>The same collapse happens to the levels. With the split on, <strong>CV2 Level</strong> has nothing to set and hides itself, because there is one destination and therefore one level.</p>
+      </div>
+      <div class="box warn">
+        <div class="label">The send is about 16 ms behind the mains</div>
+        <p>Fine for what a send is normally for &mdash; into a pedal, an amp, a mixer channel or a modular case, where it is heard on its own. But if you take the socket's output back into the same mix as the source track, the two copies will comb-filter against each other. Use the send to go somewhere, not to come straight back.</p>
+      </div>
+    </div>
+
+    <div class="sec">
+      <div class="sec-head"><span class="sec-num">05</span><span class="sec-title">On OLED, the screen and the sockets share a bus</span></div>
+      <p>Worth knowing before you use this on an OLED machine, because it is audible. The display and the CV converter are wired to the same serial bus there, and they have to take turns on it. On a 7-segment unit none of this applies.</p>
+      <div class="table-scroll">
+      <table class="data">
+        <tr><th>Screen state</th><th>Effect on the sockets</th></tr>
+        <tr><td><strong>Still</strong></td><td>Nothing at all. The screen is only redrawn when something on it changes, so a screen you are not touching costs nothing and the send is clean.</td></tr>
+        <tr><td><strong>Redrawing</strong></td><td>A tick, once per redraw, as the sockets hold their last value for the length of the screen transfer. Scrolling menu text is the worst case, because it redraws many times a second.</td></tr>
+        <tr><td><strong>7-segment</strong></td><td>Nothing else is on that bus, so the send is never interrupted.</td></tr>
+      </table>
+      </div>
+      <p>In practice: leave the screen alone while a send is carrying something you care about, and it will be silent. Menu-diving during a take is what you will hear.</p>
+      <div class="box warn">
+        <div class="label">A CV/gate track goes quiet while a send is up</div>
+        <p>Whenever any send is active, the sockets stop putting out note voltages. This is not a fault &mdash; the send bus drives both sockets continuously as audio, so there is no socket left to carry a pitch. Sends and CV/gate are two uses of the same two jacks, and you get one at a time.</p>
+      </div>
+    </div>
+
+    <div class="sec">
+      <div class="sec-head"><span class="sec-num">06</span><span class="sec-title">Reference</span></div>
+      <div class="box">
+        <div class="label">Switching it off entirely</div>
+        <p><span class="code-pill">SETTINGS &rarr; COMMUNITY FEATURES &rarr; AUX Sends</span> (<span class="tag">AUX</span> on 7SEG), on by default. Switching it off hides the AUX submenu and <span class="code-pill">SETTINGS &rarr; AUX</span>. As with every toggle in this firmware it hides menus rather than stopping processing, so a song already sending audio to the sockets keeps doing so.</p>
+      </div>
+      <div class="box">
+        <div class="label">Provenance</div>
+        <p>After sticknobills' AUX Sends, rebuilt here to run on both display types.</p>
+      </div>
+    </div>
+    <a class="back-top" href="#top">&uarr; Back to contents</a>
+  </section>
+
+  <section class="chapter" id="ch09">
+    <div class="eyebrow">Synthstrom Deluge &middot; Rudement Firmware</div>
+    <div class="the">The</div>
+    <h1>Chroma</h1>
+    <div class="subtitle">Operating manual for the Harmonic layout and the Brush</div>
+    <p class="intro">A chord explorer beside an isomorphic visualiser, on one 16-wide surface, plus a brush that stamps a held chord into the piano roll like a note. Pick a chord on the left and it sounds, names itself and lights its shape on the right, where colour and brightness carry the harmony rather than decorating it. This chapter covers the whole surface, the voicing engine behind it, the progression walker, and the four smaller tools that came with it.</p>
+    <div class="meta"><span>Harmonic &middot; Palette &middot; Iso &middot; Brush &middot; BRSH &middot; RCAP</span><span>Edition of August 2026</span></div>
+
+    <div class="sec">
+      <div class="sec-head"><span class="sec-num">01</span><span class="sec-title">What it is</span></div>
+      <p>Two seven-wide grids with two control columns wedged between them. On the left, a <strong>palette</strong>: one column per scale degree, stacking upward through an additive richness ladder from a single root note to a 13th. On the right, an <strong>isomorphic play surface</strong> tinted to the key's own colour, where the chord you picked lights as a shape you can play, extend or walk away from.</p>
+      <p>The two are not a keyboard and a decoration. The palette decides <em>which</em> chord; the iso panel shows you where that chord lives across the grid, which of its notes are sounding, and &mdash; with the overlays on &mdash; every other position it makes available, or how its voices moved from the chord before it.</p>
+      <p>Everything is scale-relative. There are no chord shapes to memorise and no chord quality is ever written on screen: the Roman numeral carries it, computed from whatever key and scale the song is in.</p>
+      <div class="box">
+        <div class="label">Two hard requirements</div>
+        <p><strong>Scale mode must be on.</strong> The whole layout is built from scale degrees; outside a scale it has nothing to say, and it refuses to open.</p>
+        <p><strong>Melodic tracks only.</strong> It will not open on a kit.</p>
+      </div>
+    </div>
+
+    <div class="sec">
+      <div class="sec-head"><span class="sec-num">02</span><span class="sec-title">Getting in</span></div>
+      <p>Hold <strong>KEYBOARD</strong> and turn the <strong>SELECT</strong> encoder to cycle layouts. Harmonic is last in the list, so it is one step back from Isomorphic turning anticlockwise. On OLED it names itself <em>Harmonic</em>; on a 7-segment display it is <span class="tag">HARM</span> on the 1.3 line and scrolls <span class="code-pill">HARMONIC</span> on 1.2.1.</p>
+      <h3>Your first minute</h3>
+      <div class="table-scroll">
+      <table class="data">
+        <tr><th>#</th><th>Do this</th><th>And watch</th></tr>
+        <tr><td>1</td><td>Press column 0, row 2 &mdash; bottom left, third row up</td><td>The tonic triad sounds and names itself</td></tr>
+        <tr><td>2</td><td>Look right</td><td>The same chord, lit in the column's own colour, with an amber pad an octave below it &mdash; that is the bass note</td></tr>
+        <tr><td>3</td><td>Look left</td><td>Two or three columns pulsing white on rows 2&ndash;5. That is the Calculator saying where this chord usually goes. Press one</td></tr>
+        <tr><td>4</td><td>Hold a chord pad and turn the vertical encoder</td><td>The voicing walks while the chord rings. Let go and it springs back</td></tr>
+        <tr><td>5</td><td>Hold LEARN and tap anything</td><td>The surface goes silent and every pad tells you what it is</td></tr>
+      </table>
+      </div>
+      <p>On a scale with fewer than seven notes you get fewer palette columns and the leftovers go black. The Calculator needs exactly seven and stays dark on anything else. Neither is a fault.</p>
+    </div>
+
+    <div class="sec">
+      <div class="sec-head"><span class="sec-num">03</span><span class="sec-title">The surface</span></div>
+      <p>Sixteen columns: palette 0&ndash;6, palette control 7, iso control 8, iso 9&ndash;15. <strong>SWAP</strong> mirrors the whole thing &mdash; palette right, iso left &mdash; and each control column moves with the grid it drives. Rows are numbered 0 at the bottom, 7 at the top, as the hardware is; every table here reads top-down, the way the column sits under your hand.</p>
+      <h3>The palette &mdash; columns are degrees, rows are richness</h3>
+      <div class="table-scroll">
+      <table class="data">
+        <tr><th>Row</th><th>Chord</th><th>Notes</th><th>Suffix shown</th></tr>
+        <tr><td>7</td><td>13th</td><td>root 3 5 7 9 11 13</td><td>13</td></tr>
+        <tr><td>6</td><td>11th</td><td>root 3 5 7 9 11</td><td>11</td></tr>
+        <tr><td>5</td><td>9th</td><td>root 3 5 7 9</td><td>9</td></tr>
+        <tr><td>4</td><td>7th</td><td>root 3 5 7</td><td>7</td></tr>
+        <tr><td>3</td><td>6th</td><td>triad + a major 6th, borrowed if the scale only has a &#9837;6</td><td>6</td></tr>
+        <tr><td>2</td><td><strong>Triad</strong></td><td>root 3 5</td><td>&mdash;</td></tr>
+        <tr><td>1</td><td>5th</td><td>root + 5th</td><td>5</td></tr>
+        <tr><td>0</td><td><strong>Root</strong></td><td>single note &mdash; the bass / anchor lane</td><td>&mdash;</td></tr>
+      </table>
+      </div>
+      <p>Each column has its own hue &mdash; red, cyan, yellow, blue, green, magenta, orange &mdash; chosen so neighbours never blend. Brightness fades as you climb, so a column reads as getting denser. A picked cell blows out to a near-white tint of its own hue, so it still pops on the dim upper rows.</p>
+      <p><strong>The name on screen is absolute then Roman, and the absolute half is only the root plus the suffix above.</strong> A I7 in C reads <span class="code-pill">C7 I7</span> &mdash; not <span class="code-pill">Cmaj7</span>, because the layout never writes a quality. A ii triad reads <span class="code-pill">D ii</span>.</p>
+      <p><em>sus2</em> and <em>sus4</em> are deliberately not on the ladder. They are alterations, made in EDIT mode by toggling the 3rd out and the 2nd or 4th in.</p>
+      <h3>The iso panel &mdash; what the colours mean</h3>
+      <div class="table-scroll">
+      <table class="data">
+        <tr><th>What you see</th><th>What it means</th></tr>
+        <tr><td>Chord colour, full bright</td><td>A note of the current voicing, at its primary (lowest) position</td></tr>
+        <tr><td>Chord colour, half bright</td><td>That voiced note repeating higher up the grid</td></tr>
+        <tr><td>Amber / gold</td><td>The <strong>bass spotlight</strong> &mdash; one octave below the voicing's lowest note. It sits at its true register, so it may be below your current scroll</td></tr>
+        <tr><td>Key colour, bright</td><td>A note sounding right now</td></tr>
+        <tr><td>Key colour, mid</td><td>The tonic, and any shape held in the chord bank</td></tr>
+        <tr><td>Key colour, faint</td><td>The scale backdrop</td></tr>
+        <tr><td>Dark</td><td>Off-scale &mdash; chromatic view only</td></tr>
+        <tr><td>White wash</td><td>A pad under your finger this instant</td></tr>
+      </table>
+      </div>
+      <p><strong>One catch the table cannot show: while a chord is sounding, every occurrence of it goes full bright.</strong> The primary/repeat distinction appears when the notes stop, so it teaches you the shape after you play it rather than during.</p>
+      <p>The <strong>vertical encoder scrolls the iso panel</strong>, octaves 1&ndash;8, whenever no chord pad is held. The palette's own octave is separate &mdash; the two <span class="code-pill">OCT</span> pads on the crimson column. Keeping them apart is the point: voice chords low, play the melody high. Free play on the iso clears the chord selection unless STICKY is on or the octave picker is open.</p>
+    </div>
+
+    <div class="sec">
+      <div class="sec-head"><span class="sec-num">04</span><span class="sec-title">The control columns</span></div>
+      <p>The names below are exactly what LEARN says when you tap that pad, so this page can be checked against the instrument. Crimson shapes the chord; purple shapes the surface.</p>
+      <h3>Palette control &mdash; crimson</h3>
+      <div class="table-scroll">
+      <table class="data">
+        <tr><th>Row</th><th>Control</th><th>What it does</th><th>Display</th></tr>
+        <tr><td>7</td><td>CALCULATOR</td><td>Next-chord suggestions on and off</td><td><span class="code-pill">CALC / OFF</span></td></tr>
+        <tr><td>6</td><td>SWAP SIDES</td><td>Mirror palette and iso</td><td><span class="code-pill">SWAP / NORM</span></td></tr>
+        <tr><td>5</td><td>PALETTE OCTAVE UP</td><td>Chord register, 1&ndash;8</td><td><span class="code-pill">OCT5</span></td></tr>
+        <tr><td>4</td><td>PALETTE OCTAVE DOWN</td><td>The same, downward</td><td><span class="code-pill">OCT3</span></td></tr>
+        <tr><td>3</td><td>OCTAVE STACK PICKER</td><td>Bottom iso row becomes seven octave toggles</td><td><span class="code-pill">PICK / STAK</span></td></tr>
+        <tr><td>2</td><td>SPREAD (DROP-ROOT)</td><td>Cycles 0&ndash;3. Silent until you replay the chord</td><td><span class="code-pill">SPR2</span></td></tr>
+        <tr><td>1</td><td>INVERSION</td><td>Root &rarr; 1st &rarr; 2nd &rarr; 3rd. Re-strikes, so you hear it</td><td><span class="code-pill">INV1</span></td></tr>
+        <tr><td>0</td><td>CLEAR</td><td>Clears the selection &mdash; or toggles VOICED/BARE while PROG is held</td><td><span class="code-pill">CLR</span></td></tr>
+      </table>
+      </div>
+      <h3>Iso control &mdash; purple</h3>
+      <div class="table-scroll">
+      <table class="data">
+        <tr><th>Row</th><th>Control</th><th>What it does</th><th>Display</th></tr>
+        <tr><td>7</td><td>VIEW: IN-KEY / CHROMATIC</td><td>Switches the iso mapping</td><td><span class="code-pill">KEY / CHRO</span></td></tr>
+        <tr><td>6</td><td>SHOW CHORD SHAPE</td><td>Light the voicing, or a clean grid</td><td><span class="code-pill">SHOW / HIDE</span></td></tr>
+        <tr><td>5</td><td>STICKY (HOLD CHORD)</td><td>Keep the chord through free play</td><td><span class="code-pill">HOLD / FREE</span></td></tr>
+        <tr><td>4</td><td>OVERLAY: ONE / LATTICE / DIFF</td><td>Cycles the three overlays</td><td><span class="code-pill">LATT / DIFF</span></td></tr>
+        <tr><td>3</td><td>SNAP ISO TO CHORD</td><td>On pick, jump the iso to the chord's octave</td><td><span class="code-pill">SNAP / STAY</span></td></tr>
+        <tr><td>2</td><td>PROGRESSION (HOLD + DIAL)</td><td>Momentary &mdash; hold it and dial</td><td>preset name</td></tr>
+        <tr><td>1</td><td>EDIT NOTES</td><td>Iso taps toggle notes in and out of the voicing</td><td><span class="code-pill">EDIT / PLAY</span></td></tr>
+        <tr><td>0</td><td>AUDITION (HOLD TO HEAR)</td><td>Momentary &mdash; hold to hear the voicing</td><td>&mdash;</td></tr>
+      </table>
+      </div>
+      <h3>The three overlays</h3>
+      <p><strong>ONE</strong> shows the voicing you picked, one shape.</p>
+      <p><strong>LATTICE</strong> shows every position of every chord tone across the grid, glowing faintly and fading upward, chord tones brighter than extensions &mdash; everywhere the chord is available to play.</p>
+      <p><strong>DIFF</strong> shows voice leading. Notes <strong>held</strong> from the previous chord sit steady, notes <strong>arriving</strong> breathe bright, and notes <strong>leaving</strong> ghost in the previous chord's colour, breathing in antiphase. Watch a ii&ndash;V&ndash;I and you see the voices walk.</p>
+      <h3>SNAP or STAY, and EDIT NOTES</h3>
+      <p><strong>SNAP</strong>, the default, keeps the iso locked to the chord's register so the shape is always visible. <strong>STAY</strong> parks it where you scrolled it &mdash; chords low in the left hand, melody high in the right.</p>
+      <p><strong>EDIT NOTES</strong> forces SHOW and STICKY on, stops single taps sounding, and makes each iso pad toggle that note in or out of the voicing. Every edit that lands on a chord the table recognises re-names it; sculpt something it does not know and the display simply keeps the last name. Nothing sounds while you sculpt &mdash; tap AUDITION to hear it.</p>
+    </div>
+
+    <div class="sec">
+      <div class="sec-head"><span class="sec-num">05</span><span class="sec-title">The voicing engine</span></div>
+      <p>Four transforms, always in this order: <span class="code-pill">base chord &rarr; INVERSION &rarr; SPREAD &rarr; WALK &rarr; OCTAVE STACK &rarr; what you hear</span>.</p>
+      <div class="table-scroll">
+      <table class="data">
+        <tr><th>Stage</th><th>Range</th><th>What it does</th></tr>
+        <tr><td>Inversion</td><td>0&ndash;3</td><td>Rotates: the lowest N notes go up an octave and the chord re-sorts</td></tr>
+        <tr><td>Spread</td><td>0&ndash;3</td><td>Drops the lowest N notes an octave &mdash; drop-root openings</td></tr>
+        <tr><td>Walk</td><td>&minus;24&hellip;+24</td><td>Walks the whole voicing a note at a time: each step up lifts the current lowest note an octave, each step down drops the current highest</td></tr>
+        <tr><td>Octave stack</td><td>&minus;3&hellip;+3</td><td>Copies the chord into any of seven octaves, base always on, deduplicated and clamped</td></tr>
+      </table>
+      </div>
+      <h3>The spring-loaded dial</h3>
+      <p>The part worth practising.</p>
+      <div class="table-scroll">
+      <table class="data">
+        <tr><th>Gesture</th><th>Result</th><th>Display</th></tr>
+        <tr><td>Hold a chord pad, turn the vertical encoder</td><td>The voicing walks while the chord rings</td><td><span class="code-pill">V3 V-2</span></td></tr>
+        <tr><td>Release the chord</td><td>Springs back to home</td><td>&mdash;</td></tr>
+        <tr><td>Click the vertical encoder</td><td>Springs back to home now</td><td><span class="code-pill">VOI0</span></td></tr>
+        <tr><td>Hold the encoder in and turn</td><td>Dials <em>where</em> home is</td><td><span class="code-pill">H4</span></td></tr>
+        <tr><td>Hold a chord pad, turn the horizontal encoder</td><td>Blooms the octave stack outward: &minus;1, +1, &minus;2, +2, &minus;3, +3</td><td><span class="code-pill">STK2</span></td></tr>
+      </table>
+      </div>
+      <p>The octave picker (crimson row 3) turns the bottom row of the iso into seven octave toggles: local columns 0&ndash;6 are octaves &minus;3 to +3, column 3 is the base and is always on. Toggling re-strikes the chord so you hear it. Press again and the row goes back to playing notes.</p>
+    </div>
+
+    <div class="sec">
+      <div class="sec-head"><span class="sec-num">06</span><span class="sec-title">Progressions and chord packs</span></div>
+      <p>Hold the purple <strong>PROG</strong> pad and the encoders take over: <strong>vertical</strong> browses which progression, <strong>horizontal</strong> walks its chords, wrapping so a vamp loops. Holding sustains the current step; release and the chord stays loaded. CLEAR while PROG is held toggles <span class="code-pill">VOIC / BARE</span>.</p>
+      <div class="box">
+        <div class="label">Every step change reloads the voicing</div>
+        <p>Whatever SPREAD, INVERSION and STACK you had dialled in is overwritten each time you turn the horizontal encoder &mdash; in both VOICED and BARE. All five built-ins bake a neutral voicing, so on those the practical difference is nil; the distinction only bites with chord packs that carry one.</p>
+      </div>
+      <h3>The five built-ins, all loaded as 7th chords rather than triads</h3>
+      <div class="table-scroll">
+      <table class="data">
+        <tr><th>Name</th><th>Degrees</th></tr>
+        <tr><td><span class="tag">251</span></td><td>ii &ndash; V &ndash; I</td></tr>
+        <tr><td><span class="tag">1564</span></td><td>I &ndash; V &ndash; vi &ndash; IV</td></tr>
+        <tr><td><span class="tag">EPIC</span></td><td>i &ndash; VI &ndash; III &ndash; VII</td></tr>
+        <tr><td><span class="tag">ANDL</span></td><td>Andalusian: i &ndash; VII &ndash; VI &ndash; V</td></tr>
+        <tr><td><span class="tag">DORI</span></td><td>Dorian vamp: i &ndash; IV</td></tr>
+      </table>
+      </div>
+      <p>They are scale-relative, so they resolve into whatever key and scale the song is in. Browsing to a different progression resets you to its first step.</p>
+      <h3>Chord packs</h3>
+      <p>Put <span class="code-pill">.chordpack</span> files in a <span class="code-pill">CHORDS/</span> folder at the root of the card and their progressions appear after the built-ins. They are scanned lazily on the first PROG press, never at boot, so a malformed pack cannot brick the instrument &mdash; it simply does not load.</p>
+      <div class="table-scroll">
+      <table class="data">
+        <tr><th>Field</th><th>Values</th></tr>
+        <tr><td><span class="code-pill">degree</span></td><td>1-based, clamped 1&ndash;7</td></tr>
+        <tr><td><span class="code-pill">rich</span></td><td><span class="code-pill">root</span> or 1, 5, triad, 6, 7, 9, 11, 13. Anything else becomes 7</td></tr>
+        <tr><td><span class="code-pill">octup / octdn</span></td><td>0&ndash;3 octave layers above / below the base</td></tr>
+        <tr><td><span class="code-pill">spread / inv</span></td><td>0&ndash;3 each</td></tr>
+      </table>
+      </div>
+      <p>Limits: 16 pack files, 48 progressions including the built-ins, 8 steps each, and 7-character names. Unknown tags are skipped, so your own metadata is safe. A progression with no name is auto-named <span class="code-pill">PACK</span>; one that yields no valid steps is dropped silently.</p>
+    </div>
+
+    <div class="sec">
+      <div class="sec-head"><span class="sec-num">07</span><span class="sec-title">The Harmonic Brush</span></div>
+      <p>Capture a chord anywhere, stamp it into the piano roll like a note. The reason it works from everywhere is that it captures <strong>the notes currently sounding</strong>, not a chord index &mdash; the Harmonic palette, Chord, Chord Library, or four notes you are simply holding down on the Piano layout are all the same to it.</p>
+      <div class="table-scroll">
+      <table class="data">
+        <tr><th></th><th>Step</th><th>Display</th></tr>
+        <tr><td><strong>Arm</strong></td><td>In a keyboard view, hold the chord and press the SELECT encoder. The brush survives the switch to the piano roll</td><td><span class="code-pill">PEND</span></td></tr>
+        <tr><td><strong>Place</strong></td><td>Press KEYBOARD to reach the piano roll, then tap a step. The chord auditions the moment you press and is written on release</td><td><span class="code-pill">PLCD</span></td></tr>
+        <tr><td>Length</td><td>Hold the start step and press any other column &mdash; either direction, last press wins</td><td>&mdash;</td></tr>
+        <tr><td>Re-voice</td><td>While holding the placement pad, turn SELECT. Clockwise lifts the lowest note an octave, anticlockwise drops the highest, re-auditioning as you turn</td><td><span class="code-pill">VUP / VDN</span></td></tr>
+        <tr><td>Again</td><td>It stays armed, so the same chord can go on several steps</td><td>&mdash;</td></tr>
+        <tr><td>Clear</td><td>Press SELECT while armed but not holding notes</td><td><span class="code-pill">CLR</span></td></tr>
+      </table>
+      </div>
+      <p>It disarms when you switch layout, when you click SELECT, or when you leave the piano roll for any other screen &mdash; <strong>which includes going back to Keyboard View</strong>. Arm it there, come here. Each stamped chord is one undo step. Melodic clips only.</p>
+    </div>
+
+    <div class="sec">
+      <div class="sec-head"><span class="sec-num">08</span><span class="sec-title">The three smaller tools</span></div>
+      <h3>The chord inspector</h3>
+      <p>Hold two or more notes anywhere &mdash; any keyboard layout, or two or more audition pads in the piano roll &mdash; and the display names the chord instead of the note. It matches what you hold against the chord table and spells it to the song's key, Roman first: <span class="code-pill">IM7 CM7</span>. The table's names are terse, so it reads <span class="code-pill">CM7</span>, not <span class="code-pill">Cmaj7</span>. Fewer than two notes, or a set the table does not recognise, and you get the ordinary single-note readout. It is read-only, and it is also what usually wins the display a moment after a palette pick &mdash; which is why the same chord can be named two ways in quick succession.</p>
+      <h3>Keyboard note preview</h3>
+      <p>With this on &mdash; it is by default &mdash; sequenced notes light the keyboard grid <em>during playback</em>. On the Harmonic iso panel that means your clip plays back as moving shapes on the visualiser: the progression walks under your fingers. It lights only the clip you are looking at, and clears on every path out of a note, so loops and re-triggers cannot leave a pad stuck lit.</p>
+      <h3>Retrospective capture</h3>
+      <p>Every note you play in Keyboard View is buffered in the background, <strong>even when you are not recording</strong>. SHIFT + RECORD dumps the buffer into the current clip. It holds 128 notes and keeps the earliest take rather than overwriting when it fills. Timing is kept in audio samples and converted at dump time, so it works with the transport stopped. The clip grows to fit, rounded to whole bars &mdash; two bars noodled over a one-bar loop becomes a real two-bar clip instead of folding back on itself. The display shows how many notes landed; <span class="code-pill">NONE</span> means the buffer was empty and <span class="code-pill">MELODIC ONLY</span> means you are on a kit. The buffer clears when you leave Keyboard View, switch layout or change track, so it is always <em>what I just played, here</em>.</p>
+    </div>
+
+    <div class="sec">
+      <div class="sec-head"><span class="sec-num">09</span><span class="sec-title">Reference</span></div>
+      <h3>Display codes</h3>
+      <div class="table-scroll">
+      <table class="data">
+        <tr><th>Code</th><th>Meaning</th><th>Code</th><th>Meaning</th></tr>
+        <tr><td><span class="code-pill">CALC / OFF</span></td><td>Calculator</td><td><span class="code-pill">KEY / CHRO</span></td><td>Iso view</td></tr>
+        <tr><td><span class="code-pill">SWAP / NORM</span></td><td>Handedness</td><td><span class="code-pill">SHOW / HIDE</span></td><td>Chord shape</td></tr>
+        <tr><td><span class="code-pill">OCT3</span></td><td>Palette octave</td><td><span class="code-pill">HOLD / FREE</span></td><td>Sticky</td></tr>
+        <tr><td><span class="code-pill">PICK / STAK</span></td><td>Octave picker</td><td><span class="code-pill">LATT DIFF ONE</span></td><td>Overlay</td></tr>
+        <tr><td><span class="code-pill">SPR2</span></td><td>Spread</td><td><span class="code-pill">SNAP / STAY</span></td><td>Iso follows chord</td></tr>
+        <tr><td><span class="code-pill">INV1</span></td><td>Inversion</td><td><span class="code-pill">EDIT / PLAY</span></td><td>Edit mode</td></tr>
+        <tr><td><span class="code-pill">STK2</span></td><td>Stack layers</td><td><span class="code-pill">VOIC / BARE</span></td><td>Progression voicing</td></tr>
+        <tr><td><span class="code-pill">V3 V-2</span></td><td>Voicing walk</td><td><span class="code-pill">PEND</span></td><td>Brush armed</td></tr>
+        <tr><td><span class="code-pill">VOI0</span></td><td>Sprung back to home</td><td><span class="code-pill">PLCD</span></td><td>Chord placed</td></tr>
+        <tr><td><span class="code-pill">H4</span></td><td>Voicing home</td><td><span class="code-pill">VUP / VDN</span></td><td>Brush re-voice</td></tr>
+        <tr><td><span class="code-pill">CLR</span></td><td>Cleared</td><td><span class="code-pill">NONE</span></td><td>Capture buffer empty</td></tr>
+        <tr><td><span class="code-pill">BANK / EMPTY</span></td><td>LEARN on a bank pad</td><td><span class="code-pill">MELODIC ONLY</span></td><td>Capture on a kit</td></tr>
+      </table>
+      </div>
+      <h3>Defaults on first entry</h3>
+      <p>Palette octave 3, iso octave 3, in-key view, Calculator on, chord shown, SNAP on, sticky off, both overlays off, no swap, edit mode off, octave picker closed, stack at the base octave only, spread 0, inversion 0, walk 0, home 0, progressions VOICED.</p>
+      <h3>Sidebar</h3>
+      <p>Stays at the factory velocity / mod default. The chord bank is opt-in: hold a sidebar column and turn the vertical encoder to switch it to chord memory. The <span class="code-pill">CHORD</span> column function is blocked in this layout.</p>
+      <div class="box">
+        <div class="label">Available on both firmware lines</div>
+        <p>Chroma ships as three commits on each line &mdash; <span class="code-pill">feat/chroma-13</span> and <span class="code-pill">feat/chroma-12</span> &mdash; and merged into each line's build as <span class="code-pill">integration/chroma-13</span> and <span class="code-pill">integration/chroma-12</span>. The layout source is byte-identical between them.</p>
+        <p>Three differences are visible from the front panel: the 7-segment layout name (<span class="code-pill">HARM</span> on 1.3, scrolling <span class="code-pill">HARMONIC</span> on 1.2.1), the Piano layout, which does not exist on the 1.2.1 line at all, and the number of new strings the port needed. Everything else behaves the same.</p>
+      </div>
+      <h3>Toggles</h3>
+      <div class="table-scroll">
+      <table class="data">
+        <tr><th>Feature</th><th>7Seg</th><th>Default</th><th>Switching it off hides</th></tr>
+        <tr><td>Chord Brush</td><td><span class="tag">BRSH</span></td><td>On</td><td>Chord capture and placement. The Harmonic layout itself stays</td></tr>
+        <tr><td>Retrospective Capture</td><td><span class="tag">RCAP</span></td><td>On</td><td>The SHIFT + RECORD dump</td></tr>
+        <tr><td>Keyboard Note Preview</td><td><span class="tag">PREV</span></td><td>On</td><td>The dim highlighting on the keyboard grid during playback</td></tr>
+      </table>
+      </div>
+    </div>
+    <a class="back-top" href="#top">&uarr; Back to contents</a>
+  </section>
+
+  <section class="chapter" id="ch10">
+    <div class="eyebrow">Synthstrom Deluge &middot; Rudement Firmware</div>
+    <div class="the">The</div>
+    <h1>MIDI Implementation Chart</h1>
+    <div class="subtitle">Reference for every CC assignment across this fork</div>
+    <p class="intro">Every default MIDI CC baked into this firmware, and every added control that has none, in one place. The nine earlier chapters describe each feature's controls; this one answers a single cross-cutting question for each of them &mdash; what happens when a CC arrives, or when you reach for LEARN. Figures are read from source, not measured on a controller, and are called out by firmware line where the two differ.</p>
+    <div class="meta"><span>CC &middot; FOLLOW &middot; LEARN</span><span>Edition of August 2026</span></div>
+
+    <div class="sec">
+      <div class="sec-head"><span class="sec-num">01</span><span class="sec-title">How to read this chart</span></div>
+      <p>Three separate things determine whether a MIDI CC does anything to a control, and this chart tracks all three:</p>
+      <p><strong>Default CC (MIDI Follow).</strong> A fixed CC baked into <span class="code-pill">defaultParamToCCMapping</span>, the table MIDI Follow mode loads from the moment <span class="code-pill">SETTINGS/MIDIFollow.XML</span> is first created. It works the instant you set a Follow channel &mdash; no LEARN required &mdash; and only for the context that control belongs to (per-voice, per-track, or song-global). Hand-editing the XML overrides it per parameter.</p>
+      <p><strong>Shortcut grid.</strong> A control needs a fixed pad position in one of the three grid-sized tables in <span class="code-pill">param.h</span> (patched, unpatched-non-global, unpatched-global) before it can have a default CC at all &mdash; MIDI Follow resolves an incoming CC back to a parameter by scanning the CC table for that same grid position. The same position also puts a control in the Automation View parameter list. No grid position means no default CC, full stop.</p>
+      <p><strong>MIDI Learn.</strong> The older, separate mechanism: hold LEARN and move a knob on your controller, and that CC drives this one control in this one song, regardless of grid position or MIDI Follow. Any real modulation-capable parameter supports it. A menu selection, a momentary action, or a bare on/off latch that never became a parameter (Wisps' Mode, Kit Split's split action) does not.</p>
+      <div class="box">
+        <div class="label">Where this is documented upstream</div>
+        <p>MIDI Follow mode itself &mdash; channels, feedback, the XML format &mdash; is covered in full in <span class="code-pill">docs/features/midi_follow_mode.md</span>, unchanged by this fork. This chapter only adds what that page can't: which of the CCs it lists belong to Rudement's own additions, and which of this fork's controls it silently leaves out.</p>
+      </div>
+    </div>
+
+    <div class="sec">
+      <div class="sec-head"><span class="sec-num">02</span><span class="sec-title">The Gristleator &mdash; chapter 05</span></div>
+      <p>All ten controls, including the On switch, sit on the shortcut grid and carry a default CC. Rate through Level use <strong>102&ndash;109</strong>, chosen because that range is undefined in the MIDI spec and unused elsewhere in the table; Dirt takes 110, next door. On took 89 specifically to match 1.3 &mdash; see the note under chapter 03 below.</p>
+      <div class="table-scroll">
+      <table class="data">
+        <tr><th>Control</th><th>7Seg</th><th class="r">Default CC</th></tr>
+        <tr><td>On</td><td><span class="tag">GON</span></td><td class="r">89</td></tr>
+        <tr><td>Rate</td><td><span class="tag">GRAT</span></td><td class="r">102</td></tr>
+        <tr><td>Depth</td><td><span class="tag">GDEP</span></td><td class="r">103</td></tr>
+        <tr><td>Shape</td><td><span class="tag">GSHP</span></td><td class="r">104</td></tr>
+        <tr><td>Bias</td><td><span class="tag">GBIA</span></td><td class="r">105</td></tr>
+        <tr><td>Mode</td><td><span class="tag">GMOD</span></td><td class="r">106</td></tr>
+        <tr><td>Freq</td><td><span class="tag">GFRQ</span></td><td class="r">107</td></tr>
+        <tr><td>Reso</td><td><span class="tag">GRES</span></td><td class="r">108</td></tr>
+        <tr><td>Level</td><td><span class="tag">GLVL</span></td><td class="r">109</td></tr>
+        <tr><td>Dirt</td><td><span class="tag">GDRT</span></td><td class="r">110</td></tr>
+      </table>
+      </div>
+      <div class="box warn">
+        <div class="label">A CC is inseparable from a grid position here</div>
+        <p>Straight from the source comment in <span class="code-pill">midi_follow.cpp</span>: this table is indexed by grid position, and MidiFollow resolves a received CC back to a parameter by scanning it for a position &mdash; not the other way round. Removing the Gristleator's pads from the shortcut tables would silently remove these ten CCs too, not just the on-screen shortcuts.</p>
+      </div>
+    </div>
+
+    <div class="sec">
+      <div class="sec-head"><span class="sec-num">03</span><span class="sec-title">The Four-Band EQ &mdash; chapter 02</span></div>
+      <p>All eight controls &mdash; the two stock shelves included &mdash; sit on the shortcut grid. The two mid bells share their row with the Gristleator's On switch, which is what forced the one change worth flagging: <strong>Low mid freq moved from CC 89 to CC 90</strong> so that On could take 89 and match 1.3. Nothing else on this row shifted.</p>
+      <div class="table-scroll">
+      <table class="data">
+        <tr><th>Control</th><th>7Seg</th><th class="r">Default CC</th></tr>
+        <tr><td>Bass amount</td><td><span class="tag">BASS</span></td><td class="r">86</td></tr>
+        <tr><td>Bass freq</td><td><span class="tag">Bfrq</span></td><td class="r">84</td></tr>
+        <tr><td>Low mid amount</td><td><span class="tag">LOW MID</span></td><td class="r">88</td></tr>
+        <tr><td>Low mid freq</td><td><span class="tag">LMfq</span></td><td class="r">90 <span style="color:var(--faint); font-weight:400;">(was 89)</span></td></tr>
+        <tr><td>High mid amount</td><td><span class="tag">HIGH MID</span></td><td class="r">111</td></tr>
+        <tr><td>High mid freq</td><td><span class="tag">HMfq</span></td><td class="r">112</td></tr>
+        <tr><td>Treble amount</td><td><span class="tag">TREBLE</span></td><td class="r">87</td></tr>
+        <tr><td>Treble freq</td><td><span class="tag">Tfrq</span></td><td class="r">85</td></tr>
+      </table>
+      </div>
+      <p style="color:var(--faint); font-size:13px;">Bass and treble are stock Deluge and their CCs predate this fork; included here for completeness, since a CC collision doesn't care which chapter documented a control first.</p>
+    </div>
+
+    <div class="sec">
+      <div class="sec-head"><span class="sec-num">04</span><span class="sec-title">Sear &mdash; chapter 06</span></div>
+      <p><strong>Sear</strong> (the drive) is a patched parameter and sits on the shortcut grid: default CC <strong>22</strong>. <strong>STon</strong> (the tone control) is unpatched and off the grid entirely &mdash; no default CC, not in the Automation View shortcut list. It is still an ordinary modulation-capable parameter, so MIDI Learn (hold LEARN, move a knob) works on it exactly as it would on any other unpatched control; there is simply nothing waiting for it out of the box.</p>
+      <div class="table-scroll">
+      <table class="data">
+        <tr><th>Control</th><th>7Seg</th><th class="r">Default CC</th></tr>
+        <tr><td>Sear</td><td><span class="tag">SEAR</span></td><td class="r">22</td></tr>
+        <tr><td>STon</td><td><span class="tag">STon</span></td><td class="r">&mdash;</td></tr>
+      </table>
+      </div>
+      <p>Sear's neighbour on the same shortcut row is Fold, a wavefolder that predates this fork and isn't one of its chapters &mdash; it holds CC 19, immediately below Sear's 22, for anyone auditing that region of the table.</p>
+    </div>
+
+    <div class="sec">
+      <div class="sec-head"><span class="sec-num">05</span><span class="sec-title">Bouls &mdash; chapter 03</span></div>
+      <p>Harmonics, Timbre and Morph were never given CCs of their own &mdash; as chapter 03 explains, they reuse three parameter slots that already existed for other oscillator types, and inherit whatever CC already controlled that slot. There is nothing Bouls-specific to remap: point a controller at Oscillator 1's Pulse Width and Wave Index, or Oscillator 2's Pulse Width, and Bouls answers.</p>
+      <div class="table-scroll">
+      <table class="data">
+        <tr><th>Bouls control</th><th>Borrowed slot</th><th class="r">Default CC</th></tr>
+        <tr><td>Harmonics</td><td>Osc 1 Pulse Width</td><td class="r">23</td></tr>
+        <tr><td>Timbre</td><td>Osc 1 Wave Index</td><td class="r">25</td></tr>
+        <tr><td>Morph</td><td>Osc 2 Pulse Width</td><td class="r">28</td></tr>
+      </table>
+      </div>
+      <p><strong>CC 25 is the exception worth knowing about.</strong> The wave-index parameter Timbre borrows is centred, and the engine treats everything below its midpoint as zero. The Bouls menus compensate for that; a CC does not. Timbre therefore only starts moving at CC 25 value 64, and the whole of a controller's lower travel does nothing. CC 23 and CC 28 are one-sided parameters and behave normally across their full range.</p>
+      <p>Model, Low-pass gate, LPG decay/colour and Aux output are menu selections, not modulatable parameters &mdash; no CC of any kind reaches them.</p>
+    </div>
+
+    <div class="sec">
+      <div class="sec-head"><span class="sec-num">06</span><span class="sec-title">Wisps &mdash; chapter 04</span></div>
+      <p>None of Wisps' nine continuous parameters sit on a shortcut grid, so none has a default CC and none appears in the Automation View parameter list or on the shortcut grid itself &mdash; chapter 04 says as much. Every one of them is still an ordinary automatable parameter underneath, so MIDI Learn works control by control, and a fixed CC can be hand-written into <span class="code-pill">SETTINGS/MIDIFollow.XML</span> for any of them; the tag is there with a value of 255 (unmapped) waiting to be edited.</p>
+      <div class="table-scroll">
+      <table class="data">
+        <tr><th>Control</th><th>7Seg</th><th class="r">Default CC</th><th>MIDI Learn</th></tr>
+        <tr><td>Blend</td><td><span class="tag">Blnd</span></td><td class="r">&mdash;</td><td>Yes</td></tr>
+        <tr><td>Position</td><td><span class="tag">Posn</span></td><td class="r">&mdash;</td><td>Yes</td></tr>
+        <tr><td>Size</td><td><span class="tag">Size</span></td><td class="r">&mdash;</td><td>Yes</td></tr>
+        <tr><td>Pitch</td><td><span class="tag">Ptch</span></td><td class="r">&mdash;</td><td>Yes</td></tr>
+        <tr><td>Density</td><td><span class="tag">Dens</span></td><td class="r">&mdash;</td><td>Yes</td></tr>
+        <tr><td>Texture</td><td><span class="tag">Text</span></td><td class="r">&mdash;</td><td>Yes</td></tr>
+        <tr><td>Spread</td><td><span class="tag">Sprd</span></td><td class="r">&mdash;</td><td>Yes</td></tr>
+        <tr><td>Feedback</td><td><span class="tag">Fdbk</span></td><td class="r">&mdash;</td><td>Yes</td></tr>
+        <tr><td>Reverb</td><td><span class="tag">Verb</span></td><td class="r">&mdash;</td><td>Yes</td></tr>
+        <tr><td>Mode</td><td><span class="tag">WISP</span></td><td class="r">&mdash;</td><td>No &mdash; not a parameter</td></tr>
+        <tr><td>Freeze</td><td>&mdash;</td><td class="r">&mdash;</td><td>No &mdash; not a parameter</td></tr>
+      </table>
+      </div>
+    </div>
+
+    <div class="sec">
+      <div class="sec-head"><span class="sec-num">07</span><span class="sec-title">Aux Sends &mdash; chapter 08</span></div>
+      <p>Chapter 08 states that CV Send is &ldquo;automatable, LEARN-able to a knob, reachable by pad and by scroll in Automation View&rdquo; &mdash; meaning it does hold a shortcut-grid position, on both firmware lines, and is therefore MIDI Follow-eligible in principle. This edition has not independently confirmed a default CC for it on either line, and does not print one here rather than guess.</p>
+      <div class="box warn">
+        <div class="label">Not present in the build this edition ships against</div>
+        <p>The <span class="code-pill">integration/chroma-12</span> branch this edition was checked against has had Aux Sends reverted entirely &mdash; it fixed a file-load freeze traced to the feature's SPI-bus-sharing code, and the revert kept the Gristleator, EQ, Bouls, Sear and Chroma work intact. Chapter 08 still describes the feature as it exists on other lines; treat its CC status as unverified until it's confirmed against the specific branch you're running.</p>
+      </div>
+    </div>
+
+    <div class="sec">
+      <div class="sec-head"><span class="sec-num">08</span><span class="sec-title">Kit Split and Chroma &mdash; chapters 07 &amp; 09</span></div>
+      <p><strong>Kit Split</strong> is a one-shot menu action, not a parameter of any kind &mdash; it has no CC, no shortcut-grid position, and nothing to MIDI-learn. Nothing about it belongs in a CC chart, and it is listed here only to say so explicitly.</p>
+      <p><strong>Chroma</strong> is a performance surface, not a bank of automatable parameters: the palette and iso grids pick and voice chords locally, and none of that is exposed as a modulation destination a MIDI CC could drive. The one place chapter 09 uses the word LEARN is the chord-bank sidebar (hold a sidebar column, turn the vertical encoder) &mdash; that binds a physical pad column to chord memory, and has nothing to do with incoming MIDI CCs. Neither feature appears in the reference table below.</p>
+    </div>
+
+    <div class="sec">
+      <div class="sec-head"><span class="sec-num">09</span><span class="sec-title">Reference &mdash; every default CC, by number</span></div>
+      <p>Every fixed CC this fork's additions occupy, in one sorted list &mdash; the fast way to check for a collision before assigning something new to a controller.</p>
+      <div class="table-scroll">
+      <table class="data">
+        <tr><th class="r">CC</th><th>Control</th><th>Chapter</th></tr>
+        <tr><td class="r">22</td><td>Sear</td><td>06 &middot; Sear</td></tr>
+        <tr><td class="r">23</td><td>Bouls &middot; Harmonics</td><td>03 &middot; Bouls</td></tr>
+        <tr><td class="r">25</td><td>Bouls &middot; Timbre</td><td>03 &middot; Bouls</td></tr>
+        <tr><td class="r">28</td><td>Bouls &middot; Morph</td><td>03 &middot; Bouls</td></tr>
+        <tr><td class="r">84</td><td>EQ &middot; Bass freq</td><td>02 &middot; Four-Band EQ</td></tr>
+        <tr><td class="r">85</td><td>EQ &middot; Treble freq</td><td>02 &middot; Four-Band EQ</td></tr>
+        <tr><td class="r">86</td><td>EQ &middot; Bass amount</td><td>02 &middot; Four-Band EQ</td></tr>
+        <tr><td class="r">87</td><td>EQ &middot; Treble amount</td><td>02 &middot; Four-Band EQ</td></tr>
+        <tr><td class="r">88</td><td>EQ &middot; Low mid amount</td><td>02 &middot; Four-Band EQ</td></tr>
+        <tr><td class="r">89</td><td>Gristleator &middot; On</td><td>05 &middot; The Gristleator</td></tr>
+        <tr><td class="r">90</td><td>EQ &middot; Low mid freq</td><td>02 &middot; Four-Band EQ</td></tr>
+        <tr><td class="r">102</td><td>Gristleator &middot; Rate</td><td>05 &middot; The Gristleator</td></tr>
+        <tr><td class="r">103</td><td>Gristleator &middot; Depth</td><td>05 &middot; The Gristleator</td></tr>
+        <tr><td class="r">104</td><td>Gristleator &middot; Shape</td><td>05 &middot; The Gristleator</td></tr>
+        <tr><td class="r">105</td><td>Gristleator &middot; Bias</td><td>05 &middot; The Gristleator</td></tr>
+        <tr><td class="r">106</td><td>Gristleator &middot; Mode</td><td>05 &middot; The Gristleator</td></tr>
+        <tr><td class="r">107</td><td>Gristleator &middot; Freq</td><td>05 &middot; The Gristleator</td></tr>
+        <tr><td class="r">108</td><td>Gristleator &middot; Reso</td><td>05 &middot; The Gristleator</td></tr>
+        <tr><td class="r">109</td><td>Gristleator &middot; Level</td><td>05 &middot; The Gristleator</td></tr>
+        <tr><td class="r">110</td><td>Gristleator &middot; Dirt</td><td>05 &middot; The Gristleator</td></tr>
+        <tr><td class="r">111</td><td>EQ &middot; High mid amount</td><td>02 &middot; Four-Band EQ</td></tr>
+        <tr><td class="r">112</td><td>EQ &middot; High mid freq</td><td>02 &middot; Four-Band EQ</td></tr>
+      </table>
+      </div>
+      <div class="box">
+        <div class="label">Provenance</div>
+        <p>Every CC above is read directly from <span class="code-pill">src/deluge/io/midi/midi_follow.cpp</span> (the <span class="code-pill">defaultParamToCCMapping</span> table) and <span class="code-pill">src/deluge/modulation/params/param.h</span> (the three shortcut-grid tables), cross-referenced by grid position, against <span class="code-pill">integration/chroma-12</span>. STon, all nine Wisps parameters, and Aux Sends are omitted deliberately &mdash; see their chapters above for why.</p>
+      </div>
+    </div>
+    <a class="back-top" href="#top">&uarr; Back to contents</a>
+  </section>
+
+</main>
+</div>
+
+<footer class="page-foot">The Rudement Features &middot; Synthstrom Deluge, Rudement Firmware &middot; Edition of August 2026 &middot; companion to Rudement&#8209;Features&#8209;Manual.pdf</footer>
+
+<script>
+(function(){
+  "use strict";
+
+  // ---------- build the search index ----------
+  // One entry per searchable block: heading rows, paragraphs, list items,
+  // table rows and callout labels, each tagged with its chapter + section
+  // so results can show a breadcrumb.
+  var BLOCK_SELECTOR = ':scope > h1, :scope > .subtitle, .sec-head, h3, .control-name, p, li, tr, .diagram';
+  var index = [];
+  var uidCounter = 0;
+
+  function textOf(el){
+    // Markup like "<td>A</td><td>B</td>" or "<span>A</span><span>B</span>"
+    // has no whitespace text node between the tags, so plain textContent
+    // would read as "AB". Insert a separating space wherever two element
+    // nodes sit directly adjacent (but never next to plain text, so
+    // "word</span>." still reads as "word.").
+    var clone = el.cloneNode(true);
+    (function fixAdjacent(node){
+      var child = node.firstChild;
+      while (child){
+        var next = child.nextSibling;
+        if (child.nodeType === 1 && next && next.nodeType === 1){
+          node.insertBefore(document.createTextNode(' '), next);
+        }
+        if (child.nodeType === 1) fixAdjacent(child);
+        child = next;
+      }
+    })(clone);
+    return (clone.textContent || '').replace(/\s+/g, ' ').trim();
+  }
+
+  function isHeaderRow(tr){
+    return !!(tr.closest('thead') || tr.querySelector('th'));
+  }
+
+  document.querySelectorAll('main .chapter').forEach(function(chapter){
+    var chapterTitleEl = chapter.querySelector('h1');
+    var chapterTitle = chapterTitleEl ? textOf(chapterTitleEl) : chapter.id;
+
+    var blocks = chapter.querySelectorAll(BLOCK_SELECTOR);
+    blocks.forEach(function(el){
+      // Skip nested duplicates: a tr's text already covers its td/th cells,
+      // and a .sec-head's text already covers its .sec-num/.sec-title spans,
+      // so we only need to guard against indexing a table's *header* row.
+      if (el.tagName === 'TR' && isHeaderRow(el)) return;
+
+      var raw = textOf(el);
+      if (!raw || raw.length < 2) return;
+
+      var sec = el.closest('.sec');
+      var secTitleEl = sec ? sec.querySelector('.sec-head .sec-title') : null;
+      var sectionLabel = secTitleEl ? textOf(secTitleEl) : '';
+
+      // Give the target element a stable anchor to scroll to.
+      if (!el.id) {
+        el.id = 'sridx-' + (++uidCounter);
+      }
+
+      index.push({
+        id: el.id,
+        text: raw,
+        lower: raw.toLowerCase(),
+        chapter: chapterTitle,
+        section: sectionLabel,
+        isHeading: (el.tagName === 'H1' || el.classList.contains('sec-head') || el.tagName === 'H3')
+      });
+    });
+  });
+
+  // ---------- searching ----------
+  function escapeHtml(s){
+    return s.replace(/[&<>"']/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+  function escapeRegExp(s){
+    return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  function search(query){
+    var words = query.toLowerCase().split(/\s+/).filter(Boolean);
+    if (!words.length) return [];
+    var results = [];
+    for (var i = 0; i < index.length; i++){
+      var entry = index[i];
+      var ok = true;
+      var firstPos = -1;
+      for (var w = 0; w < words.length; w++){
+        var pos = entry.lower.indexOf(words[w]);
+        if (pos === -1){ ok = false; break; }
+        if (firstPos === -1 || pos < firstPos) firstPos = pos;
+      }
+      if (!ok) continue;
+      // Rank: headings first, then earlier / shorter matches.
+      var score = (entry.isHeading ? 0 : 1000) + firstPos + entry.text.length * 0.01;
+      results.push({ entry: entry, firstPos: firstPos, score: score });
+    }
+    results.sort(function(a, b){ return a.score - b.score; });
+    return results.slice(0, 40);
+  }
+
+  function makeSnippet(entry, words){
+    var text = entry.text;
+    var windowSize = 140;
+    var start = 0;
+    if (text.length > windowSize){
+      var pos = entry.lower.indexOf(words[0]);
+      start = Math.max(0, pos - 40);
+      if (start + windowSize > text.length) start = Math.max(0, text.length - windowSize);
+    }
+    var slice = text.slice(start, start + windowSize);
+    var prefix = start > 0 ? '&hellip;' : '';
+    var suffix = (start + windowSize < text.length) ? '&hellip;' : '';
+    var html = escapeHtml(slice);
+    words.forEach(function(w){
+      if (!w) return;
+      var re = new RegExp('(' + escapeRegExp(w) + ')', 'ig');
+      html = html.replace(re, '<mark>$1</mark>');
+    });
+    return prefix + html + suffix;
+  }
+
+  // ---------- rendering ----------
+  var searchWrap = document.getElementById('sideSearch');
+  var input = document.getElementById('searchInput');
+  var clearBtn = document.getElementById('searchClear');
+  var kbdHint = document.getElementById('searchKbd');
+  var metaEl = document.getElementById('searchMeta');
+  var resultsEl = document.getElementById('searchResults');
+  var sideList = document.getElementById('sideList');
+  var sideFoot = document.getElementById('sideFoot');
+  var activeIndex = -1;
+  var currentResults = [];
+
+  function showNav(){
+    sideList.hidden = false;
+    sideFoot.hidden = false;
+    metaEl.hidden = true;
+    resultsEl.hidden = true;
+    resultsEl.innerHTML = '';
+    searchWrap.classList.remove('has-query');
+    activeIndex = -1;
+    currentResults = [];
+  }
+
+  function renderResults(query){
+    var words = query.toLowerCase().split(/\s+/).filter(Boolean);
+    currentResults = search(query);
+    activeIndex = -1;
+    sideList.hidden = true;
+    sideFoot.hidden = true;
+    metaEl.hidden = false;
+    resultsEl.hidden = false;
+    searchWrap.classList.add('has-query');
+
+    if (!currentResults.length){
+      metaEl.textContent = 'No matches for “' + query + '”';
+      resultsEl.innerHTML = '';
+      return;
+    }
+    metaEl.textContent = currentResults.length + (currentResults.length === 1 ? ' match' : ' matches');
+
+    var html = currentResults.map(function(r){
+      var entry = r.entry;
+      var path = entry.section ? (entry.chapter + ' › ' + entry.section) : entry.chapter;
+      return '<li><a href="#' + entry.id + '" data-target="' + entry.id + '">' +
+        '<div class="sr-path">' + escapeHtml(path) + '</div>' +
+        '<div class="sr-snippet">' + makeSnippet(entry, words) + '</div>' +
+        '</a></li>';
+    }).join('');
+    resultsEl.innerHTML = html;
+  }
+
+  function jumpTo(id){
+    var target = document.getElementById(id);
+    if (!target) return;
+    // The manual is long enough that an animated scroll to a far-off
+    // chapter can take seconds. scrollIntoView's behavior:'auto' means
+    // "defer to CSS scroll-behavior" (which is 'smooth' here), not
+    // "instant" — so suspend it for this jump and let the flash
+    // highlight (below) draw the eye instead of a multi-second scroll.
+    var root = document.documentElement;
+    var prevBehavior = root.style.scrollBehavior;
+    root.style.scrollBehavior = 'auto';
+    target.scrollIntoView({ behavior: 'auto', block: 'center' });
+    root.style.scrollBehavior = prevBehavior;
+    target.classList.remove('search-jump-flash');
+    // force reflow so the animation can retrigger on repeat clicks
+    void target.offsetWidth;
+    target.classList.add('search-jump-flash');
+    window.setTimeout(function(){ target.classList.remove('search-jump-flash'); }, 1800);
+  }
+
+  function setActive(idx){
+    var links = resultsEl.querySelectorAll('a');
+    if (!links.length) return;
+    if (idx < 0) idx = 0;
+    if (idx >= links.length) idx = links.length - 1;
+    links.forEach(function(a){ a.classList.remove('sr-active'); });
+    links[idx].classList.add('sr-active');
+    links[idx].scrollIntoView({ block: 'nearest' });
+    activeIndex = idx;
+  }
+
+  var debounceTimer = null;
+  input.addEventListener('input', function(){
+    window.clearTimeout(debounceTimer);
+    var query = input.value.trim();
+    debounceTimer = window.setTimeout(function(){
+      if (!query) showNav();
+      else renderResults(query);
+    }, 100);
+  });
+
+  input.addEventListener('keydown', function(e){
+    if (e.key === 'Escape'){
+      if (input.value){ input.value = ''; showNav(); }
+      else { input.blur(); }
+      return;
+    }
+    if (e.key === 'ArrowDown'){
+      if (!resultsEl.hidden && currentResults.length){ e.preventDefault(); setActive(activeIndex + 1); }
+      return;
+    }
+    if (e.key === 'ArrowUp'){
+      if (!resultsEl.hidden && currentResults.length){ e.preventDefault(); setActive(activeIndex - 1); }
+      return;
+    }
+    if (e.key === 'Enter'){
+      if (!resultsEl.hidden && currentResults.length){
+        e.preventDefault();
+        var idx = activeIndex >= 0 ? activeIndex : 0;
+        var links = resultsEl.querySelectorAll('a');
+        if (links[idx]) jumpTo(links[idx].dataset.target);
+      }
+      return;
+    }
+  });
+
+  clearBtn.addEventListener('click', function(){
+    input.value = '';
+    showNav();
+    input.focus();
+  });
+
+  resultsEl.addEventListener('click', function(e){
+    var a = e.target.closest('a');
+    if (!a) return;
+    e.preventDefault();
+    jumpTo(a.dataset.target);
+  });
+
+  document.addEventListener('keydown', function(e){
+    if (e.key === '/' && document.activeElement !== input){
+      var tag = document.activeElement && document.activeElement.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+      e.preventDefault();
+      input.focus();
+    }
+  });
+
+  input.addEventListener('focus', function(){ kbdHint.style.display = input.value ? 'none' : ''; });
+})();
+</script>
+
+</body>
+</html>
