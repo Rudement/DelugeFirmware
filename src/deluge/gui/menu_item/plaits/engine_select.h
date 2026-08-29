@@ -131,14 +131,33 @@ extern PlaitsLpgColour plaitsLpgColourMenu;
 class PlaitsHalfPrecisionParam final : public patched_param::Integer {
 public:
 	using patched_param::Integer::Integer;
-	/// Phase-width params are half-precision menu items: knob 0..50 maps to
-	/// patched 0..INT32_MAX. Must match osc::PulseWidth exactly, or the same
-	/// param would read differently depending on which door you came through.
+	/// Half-precision menu items: knob 0..50 maps to patched 0..INT32_MAX.
+	/// Must match osc::PulseWidth exactly, or the same param would read
+	/// differently depending on which door you came through.
+	///
+	/// All THREE of Harmonics, Timbre and Morph use this, including Timbre --
+	/// which borrows a wave-index param, whose standard menu scaling is
+	/// CENTRED (knob 25 == patched 0). Plaits wants 0.0 .. 1.0 and
+	/// hybridParamToUnit() clamps negatives, so under standard scaling the
+	/// whole bottom half of Timbre's travel arrived at the engine as zero:
+	/// dead below 25, and half the resolution of the other two above it.
+	/// Confirmed by ear on hardware before this was changed.
+	///
+	/// Half-precision scaling costs nothing in compatibility: the stored param
+	/// value and the engine-side mapping are both untouched, so a saved sound
+	/// plays back exactly as before -- only the number the menu shows for it
+	/// changes. osc::source::WaveIndex applies the same scaling when the osc
+	/// type is PLAITS, so both doors onto this param still agree.
+	///
+	/// NOT fixed by this: MIDI CC 25, the automation lane and the gold knob
+	/// write the param directly across its full bipolar range, so their bottom
+	/// halves still land on zero. Fixing those means remapping Timbre in
+	/// plaits_adapter.cpp, which WOULD move every saved sound.
 	int32_t getFinalValue() override;
 	void readCurrentValue() override;
 };
 
 extern PlaitsHalfPrecisionParam plaitsHarmonicsMenu;
-extern patched_param::Integer plaitsTimbreMenu;
+extern PlaitsHalfPrecisionParam plaitsTimbreMenu;
 extern PlaitsHalfPrecisionParam plaitsMorphMenu;
 } // namespace deluge::gui::menu_item

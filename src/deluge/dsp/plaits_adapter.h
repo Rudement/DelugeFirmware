@@ -99,8 +99,18 @@ public:
 	/// module or like a bare oscillator. See compute() for the whole argument.
 	bool lpg = false;
 
-	/// patch.decay, 0.0 .. 1.0. Drives the LPG's tail when `lpg` is set, and the
-	/// internal envelopes of the eight self-enveloped engines always.
+	/// patch.decay, 0.0 .. 1.0. Drives the LPG's tail when `lpg` is set -- and
+	/// nothing else that can be heard here.
+	///
+	/// It does NOT reach the eight self-enveloped engines, despite what an
+	/// earlier version of this comment claimed. patch.decay is not a member of
+	/// EngineParameters, so no engine is ever handed it. Voice::Render uses it
+	/// for the LPG envelope (bypassed for those eight) and for decay_envelope_,
+	/// which only reaches pitch/timbre/morph via the three
+	/// *_modulation_amount attenuverters -- all held at 0 in compute(). Their
+	/// decay comes from MORPH (drums, Inharmonic String, Modal Resonator) or
+	/// from the loaded patch's own envelopes (the six-op FM banks). Verified by
+	/// ear on hardware, 2026-08.
 	float decay = 0.5f;
 
 	/// patch.lpg_colour, 0.0 .. 1.0. VCA at one end, VCF at the other. Only read

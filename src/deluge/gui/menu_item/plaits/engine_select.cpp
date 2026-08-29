@@ -16,6 +16,7 @@
  */
 
 #include "engine_select.h"
+#include "definitions_cxx.hpp"
 #include "gui/menu_item/value_scaling.h"
 #include "gui/ui/sound_editor.h"
 #include "hid/display/display.h"
@@ -37,7 +38,7 @@ namespace params = deluge::modulation::params;
 
 PlaitsHalfPrecisionParam plaitsHarmonicsMenu{l10n::String::STRING_FOR_PLAITS_HARMONICS,
                                              params::LOCAL_OSC_A_PHASE_WIDTH};
-patched_param::Integer plaitsTimbreMenu{l10n::String::STRING_FOR_PLAITS_TIMBRE, params::LOCAL_OSC_A_WAVE_INDEX};
+PlaitsHalfPrecisionParam plaitsTimbreMenu{l10n::String::STRING_FOR_PLAITS_TIMBRE, params::LOCAL_OSC_A_WAVE_INDEX};
 PlaitsHalfPrecisionParam plaitsMorphMenu{l10n::String::STRING_FOR_PLAITS_MORPH, params::LOCAL_OSC_B_PHASE_WIDTH};
 
 int32_t PlaitsHalfPrecisionParam::getFinalValue() {
@@ -45,8 +46,13 @@ int32_t PlaitsHalfPrecisionParam::getFinalValue() {
 }
 
 void PlaitsHalfPrecisionParam::readCurrentValue() {
-	this->setValue(computeCurrentValueForHalfPrecisionMenuItem(
-	    soundEditor.currentParamManager->getPatchedParamSet()->getValue(getP())));
+	// Clamped because Timbre's param is centred: a sound saved before Timbre
+	// moved to half-precision scaling can hold a negative value, which reads
+	// back as a negative knob position. Those sounds were already reaching the
+	// engine as zero, so pinning them to 0 shows what is actually being heard.
+	int32_t stored = soundEditor.currentParamManager->getPatchedParamSet()->getValue(getP());
+	int32_t knob = computeCurrentValueForHalfPrecisionMenuItem(stored);
+	this->setValue(std::clamp<int32_t>(knob, kMinMenuValue, kMaxMenuValue));
 }
 
 void PlaitsAux::readCurrentValue() {

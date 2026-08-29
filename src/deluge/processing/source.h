@@ -65,14 +65,22 @@ public:
 	///
 	/// No effect on the eight self-enveloped engines (the three six-op FM
 	/// banks, Inharmonic String, Modal Resonator and the three drums): upstream
-	/// forces lpg_bypass for those regardless. plaitsDecay still reaches them.
+	/// forces lpg_bypass for those regardless. Neither does plaitsDecay --
+	/// see below.
 	bool plaitsLpg = false;
 
 	/// LPG decay, 0..50 to match the menu. Maps to Plaits' patch.decay.
 	///
-	/// Read even when plaitsLpg is off, because the self-enveloped engines use
-	/// patch.decay for their own envelopes -- this is what finally gives the
-	/// three drums a decay control instead of the hardcoded 0.5 they had.
+	/// ONLY audible while plaitsLpg is on, and only on the sixteen engines that
+	/// are not self-enveloped. patch.decay is not part of EngineParameters, so
+	/// no engine ever sees it; inside Voice::Render it feeds exactly two
+	/// things -- the LPG envelope's timing, and decay_envelope_, which reaches
+	/// pitch/timbre/morph only through the three *_modulation_amount
+	/// attenuverters that plaits_adapter.cpp deliberately holds at 0. For the
+	/// self-enveloped engines lpg_bypass is forced true, so the first is dead
+	/// too, and this control does nothing at all. Their decay lives on MORPH
+	/// (the drums, the string, the resonator) or inside the loaded patch (the
+	/// FM banks). Verified by ear on hardware.
 	uint8_t plaitsDecay = 25;
 
 	/// LPG colour, 0..50. Maps to patch.lpg_colour: how much the gate acts as a
