@@ -2,6 +2,7 @@
 #include "gui/menu_item/eq/eq_freq_param.h"
 #include "gui/menu_item/eq/eq_gain_param.h"
 #include "gui/menu_item/active_scales.h"
+#include "gui/menu_item/clouds/mode.h"
 #include "gui/menu_item/arpeggiator/midi_cv/gate.h"
 #include "gui/menu_item/arpeggiator/midi_cv/ratchet_amount.h"
 #include "gui/menu_item/arpeggiator/midi_cv/ratchet_probability.h"
@@ -323,6 +324,8 @@ using EqMidGain = rf::Gated<eq::EqGainParam, RuntimeFeatureSettingType::FourBand
 using EqMidFreq = rf::Gated<eq::EqFreqParam, RuntimeFeatureSettingType::FourBandEq>;
 using GristleParam = rf::Gated<UnpatchedParam, RuntimeFeatureSettingType::EnableGristleizer>;
 using GristleMenu = rf::Gated<Submenu, RuntimeFeatureSettingType::EnableGristleizer>;
+using CloudsParam = rf::Gated<UnpatchedParam, RuntimeFeatureSettingType::EnableCloudsFX>;
+using CloudsMenu = rf::Gated<Submenu, RuntimeFeatureSettingType::EnableCloudsFX>;
 using SearPatched = rf::Gated<patched_param::Integer, RuntimeFeatureSettingType::EnableSear>;
 using SearUnpatched = rf::Gated<UnpatchedParam, RuntimeFeatureSettingType::EnableSear>;
 
@@ -397,6 +400,25 @@ GristleMenu gristleMenu{
         &gristleLevelMenu,
     },
 };
+
+clouds_fx::Mode cloudsModeMenu{STRING_FOR_CLOUDS_MODE, STRING_FOR_CLOUDS_MODE};
+clouds_fx::Freeze cloudsFreezeMenu{STRING_FOR_CLOUDS_FREEZE, STRING_FOR_CLOUDS_FREEZE};
+
+CloudsParam cloudsPositionMenu{STRING_FOR_CLOUDS_POSITION_SHORT, STRING_FOR_CLOUDS_POSITION,
+                               params::UNPATCHED_CLOUDS_POSITION};
+CloudsParam cloudsSizeMenu{STRING_FOR_CLOUDS_SIZE_SHORT, STRING_FOR_CLOUDS_SIZE, params::UNPATCHED_CLOUDS_SIZE};
+CloudsParam cloudsPitchMenu{STRING_FOR_CLOUDS_PITCH_SHORT, STRING_FOR_CLOUDS_PITCH, params::UNPATCHED_CLOUDS_PITCH};
+CloudsParam cloudsDensityMenu{STRING_FOR_CLOUDS_DENSITY_SHORT, STRING_FOR_CLOUDS_DENSITY,
+                              params::UNPATCHED_CLOUDS_DENSITY};
+CloudsParam cloudsTextureMenu{STRING_FOR_CLOUDS_TEXTURE_SHORT, STRING_FOR_CLOUDS_TEXTURE,
+                              params::UNPATCHED_CLOUDS_TEXTURE};
+CloudsParam cloudsBlendMenu{STRING_FOR_CLOUDS_BLEND_SHORT, STRING_FOR_CLOUDS_BLEND, params::UNPATCHED_CLOUDS_BLEND};
+CloudsParam cloudsSpreadMenu{STRING_FOR_CLOUDS_SPREAD_SHORT, STRING_FOR_CLOUDS_SPREAD,
+                             params::UNPATCHED_CLOUDS_SPREAD};
+CloudsParam cloudsFeedbackMenu{STRING_FOR_CLOUDS_FEEDBACK_SHORT, STRING_FOR_CLOUDS_FEEDBACK,
+                               params::UNPATCHED_CLOUDS_FEEDBACK};
+CloudsParam cloudsReverbMenu{STRING_FOR_CLOUDS_REVERB_SHORT, STRING_FOR_CLOUDS_REVERB,
+                             params::UNPATCHED_CLOUDS_REVERB};
 
 // Delay ---------------------------------------------------------------------------------
 patched_param::Integer delayFeedbackMenu{STRING_FOR_AMOUNT, STRING_FOR_DELAY_AMOUNT, params::GLOBAL_DELAY_FEEDBACK};
@@ -671,6 +693,35 @@ Submenu globalDistortionMenu{
     },
 };
 
+// Clouds ----------------------------------------------------------------------
+// Nine parameters plus a mode and a freeze, which is why this is its own
+// submenu rather than another entry in the mod-FX type list: mod FX has four
+// param slots and Clouds needs more than twice that.
+//
+// MENU-ONLY, DELIBERATELY. None of these eleven items appears in the shortcut
+// grids. All three 1.2.1 grid tables were swept against defaultParamToCCMapping
+// and there is no free CC-bearing position left: every grid cell that carries a
+// CC is already spoken for, so adding Clouds would have to evict an existing
+// param's CC and silently break MIDI-learn for it in songs already saved. The
+// same call was made for Gristle On. Clouds is reachable through the vertical
+// Submenu tree only -- SHIFT + a blank grid pad, then FX > CLOUDS.
+CloudsMenu cloudsMenu{
+    STRING_FOR_CLOUDS,
+    {
+        &cloudsModeMenu,
+        &cloudsBlendMenu,
+        &cloudsPositionMenu,
+        &cloudsSizeMenu,
+        &cloudsPitchMenu,
+        &cloudsDensityMenu,
+        &cloudsTextureMenu,
+        &cloudsSpreadMenu,
+        &cloudsFeedbackMenu,
+        &cloudsReverbMenu,
+        &cloudsFreezeMenu,
+    },
+};
+
 Submenu globalFXMenu{
     STRING_FOR_FX,
     {
@@ -680,6 +731,7 @@ Submenu globalFXMenu{
         &globalModFXMenu,
         &globalDistortionMenu,
         &gristleMenu,
+        &cloudsMenu,
     },
 };
 
@@ -747,6 +799,7 @@ Submenu audioClipFXMenu{
         &globalModFXMenu,
         &audioClipDistortionMenu,
         &gristleMenu,
+        &cloudsMenu,
     },
 };
 

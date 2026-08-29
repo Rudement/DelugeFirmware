@@ -43,6 +43,7 @@ struct Grain {
 };
 
 class Clip;
+class CloudsAdapter;
 class Knob;
 class MIDIDevice;
 class ModelStack;
@@ -147,6 +148,51 @@ public:
 	LFO modFXLFO;
 
 	RMSFeedbackCompressor compressor;
+
+	// Clouds ----------------------------------------------------------------
+	// State lives here, alongside modFXType, so the menu items can reach it
+	// through soundEditor.currentModControllable like every other FX setting.
+	// RENDERING, though, happens only in
+	// GlobalEffectable::processFXForGlobalEffectable -- Clouds' nine
+	// parameters are UNPATCHED_GLOBAL, and a Sound's unpatched param set is
+	// UnpatchedSound, which is far shorter. Reading them off a Sound would
+	// run off the end of that array. The Clouds menu is therefore only ever
+	// added to the global FX tree; do not hang it off a Sound.
+	CloudsMode cloudsMode{CloudsMode::OFF};
+	bool cloudsFreeze{false};
+	CloudsAdapter* cloudsFX{nullptr};
+
+	/// Switch Clouds to `mode`. Constructs the adapter on the first non-OFF
+	/// mode and tears it down again on OFF, so the engine costs nothing --
+	/// neither the ~180 KB working buffer nor the per-block resampling --
+	/// while it is switched off. Returns false if the adapter could not be
+	/// allocated, in which case the mode stays OFF.
+	bool setCloudsMode(CloudsMode mode);
+	void disableClouds();
+
+	/// Deferred Clouds mode application.
+	///
+	/// Value<T>::selectEncoderAction() calls writeCurrentValue() on EVERY encoder
+	/// detent, so spinning the mode dial applied every mode it passed over: a full
+	/// reset-path Prepare() plus the engine's own internal reallocation, inside a
+	/// critical section with interrupts disabled, once per click for as long as the
+	/// dial kept turning. Coalesce instead -- remember the latest request and let the
+	/// main loop apply it once the dial has been still. Only the mode the user
+	/// actually lands on is ever built.
+	static void requestCloudsMode(ModControllableAudio* owner, CloudsMode mode);
+	/// Apply a pending request whose dial has gone quiet. Called from the same
+	/// repeating task as CloudsAdapter::tickAllPrepares().
+	static void tickPendingCloudsMode();
+	/// Apply a pending request now, regardless of the settle timer. For leaving the
+	/// menu, so what is on screen is what is running.
+	static void flushPendingCloudsMode();
+	/// What the menu should show for `owner`: the pending mode if a request is
+	/// outstanding, otherwise the one actually running.
+	static CloudsMode displayedCloudsModeFor(ModControllableAudio* owner);
+
+	static ModControllableAudio* pendingCloudsModeOwner;
+	static CloudsMode pendingCloudsMode;
+	static uint32_t pendingCloudsModeAt;
 
 	// Grain
 	int32_t wrapsToShutdown;

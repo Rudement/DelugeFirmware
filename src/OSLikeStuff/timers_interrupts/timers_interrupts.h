@@ -30,6 +30,14 @@ extern "C" {
 // ref http://www.rdrop.com/users/paulmck/scalability/paper/whymb.2010.07.23a.pdf
 // in future if we start using user mode this won't work from there
 
+/// enter critical section - must be in system mode, and must be paired with EXIT_CRITICAL_SECTION()
+/// these can be nested, but you must exit the same number of times as you enter
+/// use the RAII CriticalSectionGuard from C++ code instead to avoid manual management
+void ENTER_CRITICAL_SECTION();
+
+/// exit critical section - ensure it's paired with ENTER_CRITICAL_SECTION()
+void EXIT_CRITICAL_SECTION();
+
 /// disable all interrupts - must be in system mode
 static inline __attribute__((no_instrument_function)) void DISABLE_ALL_INTERRUPTS() {
 	// memory creates a memory barrier in GCC to avoid reordering
@@ -60,6 +68,11 @@ void setupTimerWithInterruptHandler(int timerNo, int scale, void (*handler)(uint
 void setupRunningClock(int timer, int preScale);
 void setupAndEnableInterrupt(void (*handler)(uint32_t), uint16_t interruptID, uint8_t priority);
 #ifdef __cplusplus
+
+struct CriticalSectionGuard {
+	CriticalSectionGuard() { ENTER_CRITICAL_SECTION(); }
+	~CriticalSectionGuard() { EXIT_CRITICAL_SECTION(); }
+};
 }
 #endif
 

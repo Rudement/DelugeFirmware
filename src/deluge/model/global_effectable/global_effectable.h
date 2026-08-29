@@ -39,6 +39,11 @@ public:
 	void processFXForGlobalEffectable(StereoSample* inputBuffer, int32_t numSamples, int32_t* postFXVolume,
 	                                  ParamManager* paramManager, const Delay::State& delayWorkingState,
 	                                  bool grainHadInput = true);
+	/// Clouds, in place, at the head of the FX chain. GlobalEffectable-only:
+	/// its params are UNPATCHED_GLOBAL. See the comment on
+	/// ModControllableAudio::cloudsMode for why the state lives up there but
+	/// the rendering lives here.
+	void processClouds(StereoSample* buffer, int32_t numSamples, ParamManager* paramManager);
 
 	void writeAttributesToFile(Serializer& writer, bool writeToFile);
 	void writeTagsToFile(Serializer& writer, ParamManager* paramManager, bool writeToFile);

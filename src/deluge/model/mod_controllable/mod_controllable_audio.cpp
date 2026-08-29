@@ -18,10 +18,13 @@
 #include "model/mod_controllable/mod_controllable_audio.h"
 #include "definitions_cxx.hpp"
 #include "deluge/model/settings/runtime_feature_settings.h"
+#include "OSLikeStuff/timers_interrupts/timers_interrupts.h"
+#include "dsp/clouds_adapter.h"
 #include "dsp/eq_bands.hpp"
 #include "dsp/gristle.hpp"
 #include "dsp/stereo_sample.h"
 #include "gui/l10n/l10n.h"
+#include "hid/display/display.h"
 #include "gui/views/automation_view.h"
 #include "gui/views/performance_session_view.h"
 #include "gui/views/session_view.h"
@@ -116,6 +119,12 @@ ModControllableAudio::~ModControllableAudio() {
 	if (modFXGrainBuffer) {
 		delugeDealloc(modFXGrainBuffer);
 	}
+	// Before disableClouds(), and unconditional: a pending mode request pointing at
+	// an object about to stop existing is a dangling pointer the tick would follow.
+	if (pendingCloudsModeOwner == this) {
+		pendingCloudsModeOwner = nullptr;
+	}
+	disableClouds();
 }
 
 void ModControllableAudio::cloneFrom(ModControllableAudio* other) {
@@ -123,6 +132,12 @@ void ModControllableAudio::cloneFrom(ModControllableAudio* other) {
 	hpfMode = other->hpfMode;
 	clippingAmount = other->clippingAmount;
 	modFXType = other->modFXType;
+	// Clouds' mode and freeze are copied; the adapter itself deliberately is
+	// not. It holds a live recording buffer and its own resampler phase, and
+	// the clone gets its own on first render via setCloudsMode() below. A
+	// shared pointer here would be a double free.
+	cloudsFreeze = other->cloudsFreeze;
+	setCloudsMode(other->cloudsMode);
 	bassFreq = other->bassFreq; // Eventually, these shouldn't be variables like this
 	trebleFreq = other->trebleFreq;
 	lowMidFreqLo = other->lowMidFreqLo;
@@ -964,6 +979,13 @@ inline void ModControllableAudio::doEQ(bool doBass, bool doTreble, bool doLowMid
 
 void ModControllableAudio::writeAttributesToFile(Serializer& writer) {
 	writer.writeAttribute("modFXType", (char*)fxTypeToString(modFXType));
+	// Only written when Clouds is actually on, so songs that never touch it
+	// stay byte-identical to what earlier firmware wrote. stringToCloudsMode
+	// maps the absent attribute to OFF on the way back in.
+	if (cloudsMode != CloudsMode::OFF) {
+		writer.writeAttribute("cloudsMode", (char*)cloudsModeToString(cloudsMode));
+		writer.writeAttribute("cloudsFreeze", cloudsFreeze ? 1 : 0);
+	}
 	writer.writeAttribute("lpfMode", (char*)lpfTypeToString(lpfMode));
 	// Community Firmware parameters (always write them after the official ones, just before closing the parent tag)
 	writer.writeAttribute("hpfMode", (char*)lpfTypeToString(hpfMode));
@@ -1349,6 +1371,22 @@ Error ModControllableAudio::readTagFromFile(Deserializer& reader, char const* ta
 	else if (!strcmp(tagName, "clippingAmount")) {
 		clippingAmount = reader.readTagOrAttributeValueInt();
 		reader.exitTag("clippingAmount");
+	}
+
+	else if (!strcmp(tagName, "cloudsMode")) {
+		// setCloudsMode allocates, and can legitimately fail on a full heap.
+		// Failing here is not a load error -- the song still opens, Clouds is
+		// just off -- so its return value is deliberately not checked.
+		setCloudsMode(stringToCloudsMode(reader.readTagOrAttributeValue()));
+		reader.exitTag("cloudsMode");
+	}
+
+	else if (!strcmp(tagName, "cloudsFreeze")) {
+		cloudsFreeze = reader.readTagOrAttributeValueInt() != 0;
+		if (cloudsFX != nullptr) {
+			cloudsFX->setFreeze(cloudsFreeze);
+		}
+		reader.exitTag("cloudsFreeze");
 	}
 
 	else if (!strcmp(tagName, "delay")) {
@@ -2052,6 +2090,126 @@ void ModControllableAudio::clearModFXMemory() {
 	else if (modFXType == ModFXType::PHASER) {
 		memset(allpassMemory, 0, sizeof(allpassMemory));
 		memset(&phaserMemory, 0, sizeof(phaserMemory));
+	}
+}
+
+bool ModControllableAudio::setCloudsMode(CloudsMode mode) {
+	if (mode == CloudsMode::OFF) {
+		disableClouds();
+		cloudsMode = CloudsMode::OFF;
+		return true;
+	}
+
+	if (cloudsFX == nullptr) {
+		// Not allocStealable: the adapter object itself is small and must not
+		// vanish underneath a render. Only its working buffer is stealable,
+		// and that is managed inside the adapter.
+		void* memory = GeneralMemoryAllocator::get().allocLowSpeed(sizeof(CloudsAdapter));
+		if (memory == nullptr) {
+			return false;
+		}
+		cloudsFX = new (memory) CloudsAdapter();
+		if (!cloudsFX->isValid()) {
+			// The upstream processor object failed to allocate; do not leave a
+			// half-built adapter behind for the render path to trip over.
+			disableClouds();
+			return false;
+		}
+	}
+
+	cloudsMode = mode;
+
+	// The whole sequence has to be protected, not just the prepare: setMode()
+	// changes the engine's playback mode, and until Prepare() has caught up any
+	// Prepare() call sees playback_mode_changed and takes the reset path -- fourteen
+	// Init/Allocate calls. What protects it is CloudsAdapter::rebuilding_, which
+	// makes the render path pass audio through dry for the duration.
+	//
+	// It used to be a CriticalSectionGuard across these three calls. That worked, in
+	// the sense that nothing raced -- but it stalled the audio thread for the entire
+	// rebuild, and Prepare()'s reset path in Stretch is long enough that the stall
+	// itself took the device down. The engine's own comment about a stall reading as
+	// a missed deadline was the clue. Dry audio for 20 ms beats no audio at all.
+	cloudsFX->setMode(mode);
+	cloudsFX->setFreeze(cloudsFreeze);
+	cloudsFX->prepareOffAudioThread();
+	return true;
+}
+
+namespace {
+// Two seconds at 44.1 kHz, and the number is measured rather than chosen.
+//
+// It started at 200 ms, on the reasoning that this only had to swallow a fast spin.
+// It does not: 200 ms is shorter than the gap between clicks when someone browses
+// the list at a normal pace, so a deliberate click-pause-click walk applied EVERY
+// mode it passed over -- a full engine rebuild each, seconds apart. That is what
+// was still taking the device down after the interrupt stall was removed, and it
+// is why Oliverb and Stretch were the ones that showed it: their Prepare() is the
+// expensive one. At 2 s the same walk applies once, and it stops.
+//
+// Long, but not felt: pressing select applies immediately, so the wait only exists
+// if you turn the dial and then do nothing. If the cost of a rebuild ever comes
+// down, this can come down with it.
+constexpr uint32_t kCloudsModeSettleSamples = 44100 * 2;
+} // namespace
+
+ModControllableAudio* ModControllableAudio::pendingCloudsModeOwner = nullptr;
+CloudsMode ModControllableAudio::pendingCloudsMode = CloudsMode::OFF;
+uint32_t ModControllableAudio::pendingCloudsModeAt = 0;
+
+void ModControllableAudio::requestCloudsMode(ModControllableAudio* owner, CloudsMode mode) {
+	if (owner == nullptr) {
+		return;
+	}
+	pendingCloudsModeOwner = owner;
+	pendingCloudsMode = mode;
+	pendingCloudsModeAt = AudioEngine::audioSampleTimer;
+}
+
+void ModControllableAudio::flushPendingCloudsMode() {
+	ModControllableAudio* owner = pendingCloudsModeOwner;
+	CloudsMode mode = pendingCloudsMode;
+	// Cleared FIRST. setCloudsMode() can take milliseconds and displayedCloudsModeFor()
+	// must not keep reporting a pending mode while it runs, or a failed allocation
+	// would leave the menu showing a mode that is not running.
+	pendingCloudsModeOwner = nullptr;
+	if (owner == nullptr || owner->cloudsMode == mode) {
+		return;
+	}
+	if (!owner->setCloudsMode(mode)) {
+		// setCloudsMode leaves the mode OFF on allocation failure, so say so rather
+		// than letting the menu show a mode that never started.
+		display->displayError(Error::INSUFFICIENT_RAM);
+	}
+}
+
+void ModControllableAudio::tickPendingCloudsMode() {
+	if (pendingCloudsModeOwner == nullptr) {
+		return;
+	}
+	// Unsigned subtraction, so the sample timer wrapping is not a special case.
+	if (AudioEngine::audioSampleTimer - pendingCloudsModeAt < kCloudsModeSettleSamples) {
+		return;
+	}
+	flushPendingCloudsMode();
+}
+
+CloudsMode ModControllableAudio::displayedCloudsModeFor(ModControllableAudio* owner) {
+	if (owner == nullptr) {
+		return CloudsMode::OFF;
+	}
+	if (owner == pendingCloudsModeOwner) {
+		return pendingCloudsMode;
+	}
+	return owner->cloudsMode;
+}
+
+void ModControllableAudio::disableClouds() {
+	if (cloudsFX != nullptr) {
+		cloudsFX->releaseBuffer();
+		cloudsFX->~CloudsAdapter();
+		delugeDealloc(cloudsFX);
+		cloudsFX = nullptr;
 	}
 }
 

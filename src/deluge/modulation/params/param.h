@@ -250,6 +250,20 @@ enum UnpatchedGlobal : ParamType {
 	UNPATCHED_SIDECHAIN_VOLUME,
 	UNPATCHED_PITCH_ADJUST,
 	UNPATCHED_TEMPO,
+	// Clouds. Appended at the end rather than grouped with the other FX params:
+	// these IDs are the index automation and MIDI-follow store, so inserting anything above
+	// an existing entry would silently repoint every saved song's automation onto a different
+	// parameter. AUX Sends was reverted on this line, so its CV masters are gone and Clouds
+	// lands directly after UNPATCHED_TEMPO. New global params go on the end, always.
+	UNPATCHED_CLOUDS_POSITION,
+	UNPATCHED_CLOUDS_SIZE,
+	UNPATCHED_CLOUDS_PITCH,
+	UNPATCHED_CLOUDS_DENSITY,
+	UNPATCHED_CLOUDS_TEXTURE,
+	UNPATCHED_CLOUDS_BLEND,
+	UNPATCHED_CLOUDS_SPREAD,
+	UNPATCHED_CLOUDS_FEEDBACK,
+	UNPATCHED_CLOUDS_REVERB,
 	UNPATCHED_GLOBAL_MAX_NUM,
 };
 
