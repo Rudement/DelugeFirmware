@@ -43,7 +43,15 @@ public:
 		char number[12];
 		intToString(count, number);
 
-		strcpy(buffer, "Split into ");
+		// 7SEG draws this through setText(), which keeps only the first four characters - "Split into 12"
+		// arrives as "SPLI" and the count is lost, which is the whole reason this label states a number
+		// instead of being a bare yes/no. kMaxSplitKits is 64, so two digits always fit alongside "SP".
+		if (display->have7SEG()) {
+			strcpy(buffer, "SP");
+		}
+		else {
+			strcpy(buffer, "Split into ");
+		}
 		strncat(buffer, number, sizeof(buffer) - strlen(buffer) - 1);
 		return {buffer};
 	}
