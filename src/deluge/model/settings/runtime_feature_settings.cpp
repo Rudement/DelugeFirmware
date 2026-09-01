@@ -236,6 +236,12 @@ void RuntimeFeatureSettings::init() {
 	SetupOnOffSetting(settings[RuntimeFeatureSettingType::SceneCapture],
 	                  STRING_FOR_COMMUNITY_FEATURE_SCENE_CAPTURE, "sceneCapture",
 	                  RuntimeFeatureStateToggle::Off);
+
+	// GridColumnReorder -- holding a clip pad in grid view and turning the horizontal encoder drags
+	// that whole column sideways, reordering the tracks (and so the arranger's rows).
+	SetupOnOffSetting(settings[RuntimeFeatureSettingType::GridColumnReorder],
+	                  STRING_FOR_COMMUNITY_FEATURE_GRID_COLUMN_REORDER, "gridColumnReorder",
+	                  RuntimeFeatureStateToggle::Off);
 }
 
 void RuntimeFeatureSettings::readSettingsFromFile(StorageManager& bdsm) {

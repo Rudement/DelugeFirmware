@@ -1050,6 +1050,14 @@ void SessionView::clipPressEnded() {
 	if (gridFirstPressedX != -1 && gridFirstPressedY != -1 && gridSecondPressedX != -1 && gridSecondPressedY != -1) {
 		display->popupTextTemporary("COPY CANCELED");
 	}
+	// A column drag runs the grid scroll outside its normal range so the dragged column can stay under
+	// the finger. Put it back in range now the drag is over, which also settles the grid with the moved
+	// column in its new place.
+	if (gridDragTrack != nullptr) {
+		currentSong->songGridScrollX = std::clamp<int32_t>(
+		    currentSong->songGridScrollX, 0, std::max<int32_t>(0, (int32_t)gridTrackCount() - kDisplayWidth + 1));
+	}
+
 	gridResetPresses();
 
 	currentUIMode = UI_MODE_NONE;
@@ -4344,6 +4352,49 @@ char const* SessionView::getMacroKindString(SessionMacroKind kind) {
 }
 
 ActionResult SessionView::gridHandleScroll(int32_t offsetX, int32_t offsetY) {
+	// Holding a clip pad and turning the horizontal encoder drags that whole column sideways,
+	// reordering the tracks. The vertical twin of this gesture (colour) is directly below.
+	if (currentUIMode == UI_MODE_CLIP_PRESSED_IN_SONG_VIEW && offsetX != 0 && gridSecondPadInactive()
+	    && runtimeFeatureSettings.get(RuntimeFeatureSettingType::GridColumnReorder)
+	           == RuntimeFeatureStateToggle::On) {
+
+		if (sdRoutineLock) {
+			return ActionResult::REMIND_ME_OUTSIDE_CARD_ROUTINE;
+		}
+
+		// Not allowed if recording arrangement - the arranger's row order is this same list
+		if (playbackHandler.recording == RecordingMode::ARRANGEMENT) {
+			display->displayPopup(deluge::l10n::get(deluge::l10n::String::STRING_FOR_RECORDING_TO_ARRANGEMENT));
+			return ActionResult::DEALT_WITH;
+		}
+
+		if (gridDragTrack == nullptr) {
+			gridDragTrack = gridTrackFromX(gridFirstPressedX, gridTrackCount());
+		}
+
+		if (gridDragTrack != nullptr) {
+			// Releasing must not open whichever clip has taken this pad's place
+			performActionOnPadRelease = false;
+
+			if (gridMoveTrack(gridDragTrack, offsetX)) {
+				// Output order is not modelled in the action log
+				actionLogger.deleteAllLogs();
+
+				// Drag the column against the scroll so it stays under the finger and the rest of the
+				// grid moves around it, which is how rows mode and the arranger both behave. This is
+				// deliberately not clamped the way a normal scroll is: with kDisplayWidth tracks or
+				// fewer songGridScrollX sits at 0 with nowhere to go, and clamping here would slide
+				// the column out from under the pad being held. clipPressEnded() puts the scroll back
+				// in range once the drag is over.
+				currentSong->songGridScrollX += offsetX;
+
+				requestRendering(getRootUI(), 0xFFFFFFFF, 0xFFFFFFFF);
+			}
+		}
+
+		return ActionResult::DEALT_WITH;
+	}
+
 	if (currentUIMode == UI_MODE_CLIP_PRESSED_IN_SONG_VIEW && offsetY != 0) {
 		auto track = gridTrackFromX(gridFirstPressedX, gridTrackCount());
 		if (track != nullptr) {
@@ -4513,6 +4564,57 @@ void SessionView::gridTransitionToViewForClip(Clip* clip) {
 
 	// Hook point for specificMidiDevice
 	iterateAndCallSpecificDeviceHook(MIDIDeviceUSBHosted::Hook::HOOK_ON_TRANSITION_TO_CLIP_VIEW);
+}
+
+// Moves one track one column across the grid. offsetX > 0 moves it to the right on the display, which is
+// EARLIER in the output list - the grid's X axis runs backwards, firstOutput being the rightmost column.
+// Outputs with no active clip occupy no column, so they are skipped rather than swapped with, otherwise a
+// detent of the knob could produce a list change the display cannot show.
+bool SessionView::gridMoveTrack(Output* track, int32_t offsetX) {
+	if (track == nullptr || offsetX == 0) {
+		return false;
+	}
+
+	Output** slot = &currentSong->firstOutput; // ends up pointing at track
+	Output** visibleBefore = nullptr;          // slot holding the nearest visible output before track
+	while (*slot != nullptr && *slot != track) {
+		if ((*slot)->getActiveClip() != nullptr) {
+			visibleBefore = slot;
+		}
+		slot = &((*slot)->next);
+	}
+
+	if (*slot == nullptr) {
+		return false; // not in the list
+	}
+
+	// Rightwards - move earlier, in front of the visible output before it
+	if (offsetX > 0) {
+		if (visibleBefore == nullptr) {
+			return false; // already the rightmost column
+		}
+
+		*slot = track->next;
+		track->next = *visibleBefore;
+		*visibleBefore = track;
+	}
+
+	// Leftwards - move later, behind the next visible output after it
+	else {
+		Output* after = track->next;
+		while (after != nullptr && after->getActiveClip() == nullptr) {
+			after = after->next;
+		}
+		if (after == nullptr) {
+			return false; // already the leftmost column
+		}
+
+		*slot = track->next;
+		track->next = after->next;
+		after->next = track;
+	}
+
+	return true;
 }
 
 const uint32_t SessionView::gridTrackCount() {

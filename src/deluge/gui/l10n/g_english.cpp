@@ -473,6 +473,7 @@ PLACE_SDRAM_DATA Language english{
         {STRING_FOR_COMMUNITY_FEATURE_GRISTLEIZER, "Gristleator"},
         {STRING_FOR_COMMUNITY_FEATURE_SEAR, "Sear"},
         {STRING_FOR_COMMUNITY_FEATURE_SCENE_CAPTURE, "Scene Capture"},
+        {STRING_FOR_COMMUNITY_FEATURE_GRID_COLUMN_REORDER, "Grid Column Reorder"},
         {STRING_FOR_NO_FREE_ROW, "No free row to capture into"},
         {STRING_FOR_NOTHING_PLAYING, "Nothing is playing"},
         {STRING_FOR_TRACK_STILL_HAS_CLIPS_IN_SESSION, "Track still has clips in session"},

@@ -222,12 +222,16 @@ private:
 	int32_t gridFirstPressedY = -1;
 	int32_t gridSecondPressedX = -1;
 	int32_t gridSecondPressedY = -1;
+	// Track grabbed for sideways dragging with the horizontal encoder. Held as a pointer because the
+	// column slides out from under the finger, which makes gridFirstPressedX stale after the first move.
+	Output* gridDragTrack = nullptr;
 	inline bool gridSecondPadInactive() { return (gridSecondPressedX == -1 && gridSecondPressedY == -1); }
 
 	inline void gridResetPresses(bool first = true, bool second = true) {
 		if (first) {
 			gridFirstPressedX = -1;
 			gridFirstPressedY = -1;
+			gridDragTrack = nullptr;
 		}
 		if (second) {
 			gridSecondPressedX = -1;
@@ -245,6 +249,7 @@ private:
 	void setupNewClip(Clip* newClip);
 
 	bool gridCaptureScene();
+	bool gridMoveTrack(Output* track, int32_t offsetX);
 	void gridStartSection(uint32_t section, bool instant);
 	void gridToggleClipPlay(Clip* clip, bool instant);
 

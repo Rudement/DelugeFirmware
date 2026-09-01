@@ -60,6 +60,7 @@ SettingToggle menuChordBrush(RuntimeFeatureSettingType::ChordBrush);
 SettingToggle menuKeyboardNotePreview(RuntimeFeatureSettingType::KeyboardNotePreview);
 SettingToggle menuRetrospectiveCapture(RuntimeFeatureSettingType::RetrospectiveCapture);
 SettingToggle menuSceneCapture(RuntimeFeatureSettingType::SceneCapture);
+SettingToggle menuGridColumnReorder(RuntimeFeatureSettingType::GridColumnReorder);
 
 std::array<MenuItem*, RuntimeFeatureSettingType::MaxElement - kNonTopLevelSettings> subMenuEntries{
     &menuDrumRandomizer,
@@ -94,7 +95,8 @@ std::array<MenuItem*, RuntimeFeatureSettingType::MaxElement - kNonTopLevelSettin
     &menuChordBrush,
     &menuKeyboardNotePreview,
     &menuRetrospectiveCapture,
-    &menuSceneCapture};
+    &menuSceneCapture,
+    &menuGridColumnReorder};
 
 Settings::Settings(l10n::String name, l10n::String title) : menu_item::Submenu(name, title, subMenuEntries) {
 }
