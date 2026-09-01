@@ -249,10 +249,12 @@ private:
 	Clip* gridCreateClipInTrack(Output* targetOutput);
 	AudioClip* gridCreateAudioClipWithNewTrack();
 	InstrumentClip* gridCreateInstrumentClipWithNewTrack(OutputType type);
-	Clip* gridCreateClip(uint32_t targetSection, Output* targetOutput = nullptr, Clip* sourceClip = nullptr);
+	Clip* gridCreateClip(uint32_t targetSection, Output* targetOutput = nullptr, Clip* sourceClip = nullptr,
+	                     bool startMuted = false);
 	void gridClonePad(uint32_t sourceX, uint32_t sourceY, uint32_t targetX, uint32_t targetY);
 	void setupNewClip(Clip* newClip);
 
+	bool gridCaptureScene();
 	void gridStartSection(uint32_t section, bool instant);
 	void gridToggleClipPlay(Clip* clip, bool instant);
 

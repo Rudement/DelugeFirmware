@@ -80,6 +80,7 @@ SettingToggle menuEnableCloudsFX(RuntimeFeatureSettingType::EnableCloudsFX);
 SettingToggle menuEnableGristleizer(RuntimeFeatureSettingType::EnableGristleizer);
 SettingToggle menuEnableSear(RuntimeFeatureSettingType::EnableSear);
 SettingToggle menuKeyboardNotePreview(RuntimeFeatureSettingType::KeyboardNotePreview);
+SettingToggle menuSceneCapture(RuntimeFeatureSettingType::SceneCapture);
 
 std::array<MenuItem*, RuntimeFeatureSettingType::MaxElement - kNonTopLevelSettings> subMenuEntries{
     &menuDrumRandomizer,
@@ -112,7 +113,8 @@ std::array<MenuItem*, RuntimeFeatureSettingType::MaxElement - kNonTopLevelSettin
     &menuEnableCloudsFX,
     &menuEnableGristleizer,
     &menuEnableSear,
-    &menuKeyboardNotePreview};
+    &menuKeyboardNotePreview,
+    &menuSceneCapture};
 
 Settings::Settings(l10n::String name, l10n::String title) : menu_item::Submenu(name, title, subMenuEntries) {
 }

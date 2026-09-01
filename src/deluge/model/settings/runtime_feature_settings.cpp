@@ -206,8 +206,8 @@ void RuntimeFeatureSettings::init() {
 	                  "roundedCorners", RuntimeFeatureStateToggle::On);
 
 	// Kit Split
-	SetupOnOffSetting(settings[RuntimeFeatureSettingType::KitSplit], STRING_FOR_COMMUNITY_FEATURE_KIT_SPLIT,
-	                  "kitSplit", RuntimeFeatureStateToggle::Off);
+	SetupOnOffSetting(settings[RuntimeFeatureSettingType::KitSplit], STRING_FOR_COMMUNITY_FEATURE_KIT_SPLIT, "kitSplit",
+	                  RuntimeFeatureStateToggle::Off);
 
 	// The Rudement additions. On by default - the toggle is there to take them away, not to opt in.
 	SetupOnOffSetting(settings[RuntimeFeatureSettingType::FourBandEq], STRING_FOR_COMMUNITY_FEATURE_FOUR_BAND_EQ,
@@ -218,13 +218,18 @@ void RuntimeFeatureSettings::init() {
 	                  "enableCloudsFX", RuntimeFeatureStateToggle::On);
 	SetupOnOffSetting(settings[RuntimeFeatureSettingType::EnableGristleizer], STRING_FOR_COMMUNITY_FEATURE_GRISTLEIZER,
 	                  "enableGristleizer", RuntimeFeatureStateToggle::On);
-	SetupOnOffSetting(settings[RuntimeFeatureSettingType::EnableSear], STRING_FOR_COMMUNITY_FEATURE_SEAR,
-	                  "enableSear", RuntimeFeatureStateToggle::On);
+	SetupOnOffSetting(settings[RuntimeFeatureSettingType::EnableSear], STRING_FOR_COMMUNITY_FEATURE_SEAR, "enableSear",
+	                  RuntimeFeatureStateToggle::On);
 
 	// KeyboardNotePreview — light up played notes on the keyboard grid (incl. during playback)
 	SetupOnOffSetting(settings[RuntimeFeatureSettingType::KeyboardNotePreview],
 	                  STRING_FOR_COMMUNITY_FEATURE_KEYBOARD_NOTE_PREVIEW, "keyboardNotePreview",
 	                  RuntimeFeatureStateToggle::On);
+
+	// SceneCapture -- SAVE + a grid section pad copies the currently sounding clips into a new,
+	// muted row below the populated ones, recalled later by that row's section pad.
+	SetupOnOffSetting(settings[RuntimeFeatureSettingType::SceneCapture], STRING_FOR_COMMUNITY_FEATURE_SCENE_CAPTURE,
+	                  "sceneCapture", RuntimeFeatureStateToggle::Off);
 }
 
 void RuntimeFeatureSettings::factoryReset(bool showPopup) {
