@@ -236,11 +236,6 @@ void RuntimeFeatureSettings::init() {
 	SetupOnOffSetting(settings[RuntimeFeatureSettingType::EnableSear], STRING_FOR_COMMUNITY_FEATURE_SEAR, "enableSear",
 	                  RuntimeFeatureStateToggle::On);
 
-	// KeyboardNotePreview — light up played notes on the keyboard grid (incl. during playback)
-	SetupOnOffSetting(settings[RuntimeFeatureSettingType::KeyboardNotePreview],
-	                  STRING_FOR_COMMUNITY_FEATURE_KEYBOARD_NOTE_PREVIEW, "keyboardNotePreview",
-	                  RuntimeFeatureStateToggle::On);
-
 	// SceneCapture -- SAVE + a grid section pad copies the currently sounding clips into a new,
 	// muted row below the populated ones, recalled later by that row's section pad.
 	SetupOnOffSetting(settings[RuntimeFeatureSettingType::SceneCapture], STRING_FOR_COMMUNITY_FEATURE_SCENE_CAPTURE,
