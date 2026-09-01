@@ -218,6 +218,10 @@ public:
 	void sendAuditionNote(bool on, uint8_t yDisplay, uint8_t velocity, uint32_t sampleSyncLength);
 	/// Audible preview of the armed Harmonic Brush chord while placing it in the piano roll.
 	void auditionChordPreview(bool on);
+	/// Bring the just-placed chord onto the screen. Its pitches come from the keyboard grid, which is
+	/// often octaves away from wherever the piano roll happens to be scrolled, so without this the
+	/// notes are real and audible but invisible - and undoing them looks like it did nothing.
+	void scrollToShowPendingChord();
 
 	// made these public so they can be accessed by the automation clip view
 	void setLedStates();
@@ -294,6 +298,13 @@ public:
 	int32_t chordBrushStartX = -1;
 	int32_t chordBrushStartY = -1;
 	int32_t chordBrushEndX = -1;
+
+	// Exactly which notes the brush preview is currently sounding. Kept here rather than re-read from
+	// the pending chord at note-off time, because the chord can be cleared or re-voiced mid-preview -
+	// and then asking it again ends the wrong notes, or none, leaving them stuck on. Sized for the
+	// pending-chord maximum; the .cpp static_asserts that.
+	int16_t chordPreviewNotes[16] = {};
+	uint8_t chordPreviewCount = 0;
 
 	// adjust note parameters
 	void adjustVelocity(int32_t velocityChange);

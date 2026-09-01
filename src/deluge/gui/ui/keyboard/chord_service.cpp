@@ -124,6 +124,12 @@ bool ChordService::placePendingAt(int32_t pos, int32_t length) {
 	// A fresh action per placement (NOT_ALLOWED = don't merge with the previous one), shared by every
 	// note in THIS chord. So one chord = one undo step, and each stamped chord undoes independently.
 	Action* action = actionLogger.getNewAction(ActionType::NOTE_EDIT, ActionAddition::NOT_ALLOWED);
+	if (action != nullptr) {
+		// Capture the view scroll up front, the way the ordinary note-placement path does. Without it
+		// the undo has nothing to restore the piano roll to, so reverting the notes can leave the
+		// screen showing somewhere else entirely.
+		action->updateYScrollClipViewAfter(clip);
+	}
 
 	bool placedAny = false;
 	for (uint8_t i = 0; i < pendingChord_.count; i++) {

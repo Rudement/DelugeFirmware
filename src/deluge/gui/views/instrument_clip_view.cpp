@@ -1961,6 +1961,8 @@ ActionResult InstrumentClipView::padAction(int32_t x, int32_t y, int32_t velocit
 					}
 					length = std::min(length, clip->loopLength - pos);
 					if (length > 0 && ui::keyboard::ChordService::placePendingAt(pos, length)) {
+						scrollToShowPendingChord(); // the chord's pitches may be nowhere near the current scroll
+						recalculateColours();       // placement can have created new note rows
 						uiNeedsRendering(this);
 					}
 					chordBrushStartX = -1;
@@ -4856,27 +4858,74 @@ void InstrumentClipView::sendAuditionNote(bool on, uint8_t yDisplay, uint8_t vel
 }
 
 void InstrumentClipView::auditionChordPreview(bool on) {
+	static_assert(sizeof(InstrumentClipView::chordPreviewNotes) / sizeof(int16_t)
+	                  >= ui::keyboard::kMaxPendingChordNotes,
+	              "chordPreviewNotes must hold a whole pending chord");
 	Instrument* instrument = getCurrentInstrument();
 	if (instrument == nullptr || instrument->type == OutputType::KIT) {
 		return; // melodic only
 	}
+	char modelStackMemory[MODEL_STACK_MAX_SIZE];
+	ModelStack* modelStack = setupModelStackWithSong(modelStackMemory, currentSong);
+
+	// Always end exactly what we started, from our own record. The armed chord is not a reliable
+	// source at note-off time: clearing it (select-encoder click, or leaving the view) or re-voicing
+	// it changes what getPendingNotes returns, and the notes we actually started then never get
+	// their note-off - which is the audition sticking on.
+	for (uint8_t i = 0; i < chordPreviewCount; i++) {
+		static_cast<MelodicInstrument*>(instrument)->endAuditioningForNote(modelStack, chordPreviewNotes[i]);
+	}
+	chordPreviewCount = 0;
+
+	if (!on) {
+		return;
+	}
 	int16_t notes[ui::keyboard::kMaxPendingChordNotes];
 	uint8_t velocity = 64;
 	uint8_t count = ui::keyboard::ChordService::getPendingNotes(notes, ui::keyboard::kMaxPendingChordNotes, &velocity);
+	for (uint8_t i = 0; i < count; i++) {
+		static_cast<MelodicInstrument*>(instrument)
+		    ->beginAuditioningForNote(modelStack, notes[i], velocity, zeroMPEValues, MIDI_CHANNEL_NONE, 0);
+		chordPreviewNotes[chordPreviewCount++] = notes[i];
+	}
+}
+
+void InstrumentClipView::scrollToShowPendingChord() {
+	InstrumentClip* clip = getCurrentInstrumentClip();
+	if (clip == nullptr || currentSong == nullptr) {
+		return;
+	}
+	int16_t notes[ui::keyboard::kMaxPendingChordNotes];
+	uint8_t count = ui::keyboard::ChordService::getPendingNotes(notes, ui::keyboard::kMaxPendingChordNotes, nullptr);
 	if (count == 0) {
 		return;
 	}
-	char modelStackMemory[MODEL_STACK_MAX_SIZE];
-	ModelStack* modelStack = setupModelStackWithSong(modelStackMemory, currentSong);
+	int32_t lo = 2147483647;
+	int32_t hi = -2147483647;
 	for (uint8_t i = 0; i < count; i++) {
-		if (on) {
-			static_cast<MelodicInstrument*>(instrument)
-			    ->beginAuditioningForNote(modelStack, notes[i], velocity, zeroMPEValues, MIDI_CHANNEL_NONE, 0);
-		}
-		else {
-			static_cast<MelodicInstrument*>(instrument)->endAuditioningForNote(modelStack, notes[i]);
-		}
+		int32_t v = clip->getYVisualFromYNote(notes[i], currentSong);
+		lo = std::min(lo, v);
+		hi = std::max(hi, v);
 	}
+	if (lo >= clip->yScroll && hi < clip->yScroll + kDisplayHeight) {
+		return; // already on screen - don't move the user's view for nothing
+	}
+	// Centre the chord's span when it fits; otherwise show it from its lowest note up.
+	int32_t span = std::min<int32_t>(hi - lo, kDisplayHeight - 1);
+	int32_t desired = lo - (kDisplayHeight - 1 - span) / 2;
+	if (desired < 0) {
+		desired = 0;
+	}
+	int32_t delta = desired - clip->yScroll;
+	if (delta == 0) {
+		return;
+	}
+	char modelStackMemory[MODEL_STACK_MAX_SIZE];
+	ModelStackWithTimelineCounter* modelStack = currentSong->setupModelStackWithCurrentClip(modelStackMemory);
+	// Go through the normal scroller so the limits, the audition state and the redraw are all handled
+	// the way the vertical encoder handles them. If it refuses (chord at the very edge of the note
+	// range) we simply leave the view where it is.
+	scrollVertical(delta, false, false, modelStack);
 }
 
 uint8_t InstrumentClipView::getVelocityForAudition(uint8_t yDisplay, uint32_t* sampleSyncLength) {
