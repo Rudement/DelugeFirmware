@@ -173,7 +173,7 @@ void RuntimeFeatureSettings::init() {
 
 	// ChordBrush
 	SetupOnOffSetting(settings[RuntimeFeatureSettingType::ChordBrush], STRING_FOR_COMMUNITY_FEATURE_CHORD_BRUSH,
-	                  "chordBrush", RuntimeFeatureStateToggle::On);
+	                  "chordBrush", RuntimeFeatureStateToggle::Off);
 
 	// KeyboardNotePreview — light up played notes on the keyboard grid (incl. during playback)
 	SetupOnOffSetting(settings[RuntimeFeatureSettingType::KeyboardNotePreview],
@@ -184,7 +184,7 @@ void RuntimeFeatureSettings::init() {
 	// recording); SHIFT+RECORD dumps them into the clip. "Never lose a noodled idea."
 	SetupOnOffSetting(settings[RuntimeFeatureSettingType::RetrospectiveCapture],
 	                  STRING_FOR_COMMUNITY_FEATURE_RETROSPECTIVE_CAPTURE, "retrospectiveCapture",
-	                  RuntimeFeatureStateToggle::On);
+	                  RuntimeFeatureStateToggle::Off);
 
 	// AlternativePlaybackStartBehaviour
 	SetupOnOffSetting(settings[RuntimeFeatureSettingType::AlternativePlaybackStartBehaviour],

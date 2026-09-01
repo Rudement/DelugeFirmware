@@ -286,11 +286,25 @@ static void captureDumpToCurrentClip() {
 	}
 	int32_t target = (curLen > 0) ? curLen : spanTicks;
 	if (curLen > 0) {
+		// Cap the bar count BEFORE multiplying. spanTicks comes from wall-clock samples, so a long
+		// noodle - or keyboard view left open with the transport stopped - makes it enormous, and
+		// bars * curLen then overflows or asks for a clip longer than the sequencer can hold. The
+		// model refuses that by freezing, which is not a useful way to find out.
+		int32_t maxBars = kMaxSequenceLength / curLen;
+		if (maxBars < 1) {
+			maxBars = 1;
+		}
 		int32_t bars = (spanTicks + curLen / 2) / curLen; // round to nearest whole bar
 		if (bars < 1) {
 			bars = 1;
 		}
+		if (bars > maxBars) {
+			bars = maxBars;
+		}
 		target = bars * curLen;
+	}
+	if (target > kMaxSequenceLength) {
+		target = kMaxSequenceLength;
 	}
 	if (target > clip->loopLength) {
 		int32_t oldLength = clip->loopLength;
@@ -310,8 +324,13 @@ static void captureDumpToCurrentClip() {
 		}
 		if (target > 0) {
 			pos %= target;
-			if (len > target) {
-				len = target;
+			// Clamp against the REMAINING length, not the whole loop: pos + len running past the loop
+			// end violates the note row's ordering invariant, and the Deluge answers that with a freeze.
+			if (len > target - pos) {
+				len = target - pos;
+			}
+			if (len < 1) {
+				len = 1;
 			}
 		}
 		bool altered = false;

@@ -1915,9 +1915,13 @@ ActionResult InstrumentClipView::padAction(int32_t x, int32_t y, int32_t velocit
 		// column = chord stretched to span both. The chord keeps its own pitches; only the column(s)
 		// matter. We place once per gesture with the resolved length, so all notes stay aligned.
 		if (runtimeFeatureSettings.get(RuntimeFeatureSettingType::ChordBrush) == RuntimeFeatureStateToggle::On
-		    && ui::keyboard::ChordService::hasPending()
+		    && ui::keyboard::ChordService::hasPending() && getCurrentInstrumentClip() != nullptr
+		    && getCurrentInstrumentClip()->output != nullptr
 		    && getCurrentInstrumentClip()->output->type != OutputType::KIT) {
 			InstrumentClip* clip = getCurrentInstrumentClip();
+			// Claim a pad event ONLY when it actually drives the gesture. Consuming everything while a
+			// chord happens to be armed makes the whole piano roll stop responding, which reads as a
+			// hang - and a chord is easy to arm by accident (select-encoder click while holding notes).
 			if (velocity) { // press
 				if (isUIModeWithinRange(editPadActionUIModes)) {
 					if (chordBrushStartX < 0) {
@@ -1932,34 +1936,39 @@ ActionResult InstrumentClipView::padAction(int32_t x, int32_t y, int32_t velocit
 						// length can be extended OR shortened (last press wins).
 						chordBrushEndX = x;
 					}
+					return ActionResult::DEALT_WITH;
+				}
+				// Outside the edit-pad modes the press belongs to whatever else was happening.
+			}
+			else if (chordBrushStartX >= 0) {
+				// Releases only matter while a gesture is actually in progress. A stray release with
+				// no anchor down is not ours to swallow.
+				// Release of the start pad commits the chord, using the final end column for length.
+				if (x == chordBrushStartX && y == chordBrushStartY) {
+					auditionChordPreview(false); // stop the preview before writing the notes
+					int32_t pos;
+					int32_t length;
+					if (chordBrushEndX >= 0) {
+						int32_t lo = std::min(chordBrushStartX, chordBrushEndX);
+						int32_t hi = std::max(chordBrushStartX, chordBrushEndX);
+						pos = getPosFromSquare(lo);
+						length = getPosFromSquare(hi + 1) - pos;
+					}
+					else {
+						// Tapped a single column => one-step chord.
+						pos = getPosFromSquare(chordBrushStartX);
+						length = getSquareWidth(chordBrushStartX, clip->loopLength);
+					}
+					length = std::min(length, clip->loopLength - pos);
+					if (length > 0 && ui::keyboard::ChordService::placePendingAt(pos, length)) {
+						uiNeedsRendering(this);
+					}
+					chordBrushStartX = -1;
+					chordBrushStartY = -1;
+					chordBrushEndX = -1;
 				}
 				return ActionResult::DEALT_WITH;
 			}
-			// Release of the start pad commits the chord, using the final end column for length.
-			if (chordBrushStartX >= 0 && x == chordBrushStartX && y == chordBrushStartY) {
-				auditionChordPreview(false); // stop the preview before writing the notes
-				int32_t pos;
-				int32_t length;
-				if (chordBrushEndX >= 0) {
-					int32_t lo = std::min(chordBrushStartX, chordBrushEndX);
-					int32_t hi = std::max(chordBrushStartX, chordBrushEndX);
-					pos = getPosFromSquare(lo);
-					length = getPosFromSquare(hi + 1) - pos;
-				}
-				else {
-					// Tapped a single column => one-step chord.
-					pos = getPosFromSquare(chordBrushStartX);
-					length = getSquareWidth(chordBrushStartX, clip->loopLength);
-				}
-				length = std::min(length, clip->loopLength - pos);
-				if (length > 0 && ui::keyboard::ChordService::placePendingAt(pos, length)) {
-					uiNeedsRendering(this);
-				}
-				chordBrushStartX = -1;
-				chordBrushStartY = -1;
-				chordBrushEndX = -1;
-			}
-			return ActionResult::DEALT_WITH;
 		}
 
 		// Perhaps the user wants to enter the SoundEditor via a shortcut. They can do this by holding an audition pad
