@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>The Rudement Features — Synthstrom Deluge, Rudement Firmware</title>
+<title>Rudement Features Manual 2026-09-01 — Synthstrom Deluge, Rudement Firmware</title>
 <style>
   :root{
     --ink:#1a1a1a;
@@ -494,6 +494,39 @@
   .chapter a{color:inherit; text-decoration:none; border-bottom:1px solid var(--line);}
   .chapter a:hover{border-bottom-color:var(--num);}
   @media print{ .chapter a{border-bottom:none;} }
+
+  /* ===== phones =====
+     The desktop layout gives the text 56px of side padding and lets every figure
+     scale to the column. On a 375px screen that leaves about 260px of line and
+     shrinks a 572px-wide figure to two thirds, which takes its 7px labels below
+     legible. So: narrow the padding, and let figures keep their own width and
+     scroll sideways instead of shrinking. */
+  @media (max-width: 640px){
+    body{font-size:16px;}
+    main{padding:0 16px 60px 16px;}
+    nav.sidebar{padding:16px;}
+    .cover{padding:40px 0 28px 0;}
+    .cover h1{font-size:34px;}
+    .chapter{padding:36px 0 28px 0;}
+    .chapter h1{font-size:26px;}
+    .sec{margin-top:26px;}
+    p.intro{font-size:16px;}
+
+    figure.fig{overflow-x:auto; -webkit-overflow-scrolling:touch;}
+    figure.fig svg.figsvg{min-width:520px;}
+    figure.fig figcaption{position:sticky; left:0;}
+
+    .data{font-size:12px;}
+    table.toc td.tdesc{display:none;}
+    .meta{flex-wrap:wrap; gap:4px;}
+    h1, h2, h3, .code-pill{overflow-wrap:anywhere;}
+  }
+
+  @media (max-width: 420px){
+    main{padding:0 12px 48px 12px;}
+    .cover h1{font-size:28px;}
+    .chapter h1{font-size:23px;}
+  }
 </style>
 </head>
 <body>
@@ -502,7 +535,7 @@
 <nav class="sidebar">
   <div class="side-eyebrow">Synthstrom Deluge · Rudement Firmware</div>
   <div class="side-title">Rudement Features</div>
-  <div class="side-edition">Edition of August 2026</div>
+  <div class="side-edition">Edition of 2026-09-01</div>
 
   <div class="side-search" id="sideSearch">
     <input type="text" id="searchInput" placeholder="Search the manual&hellip;" autocomplete="off" spellcheck="false" aria-label="Search the manual">
@@ -540,7 +573,7 @@
     <p class="intro">This compiles a manual for every feature in the Rudement fork that is not part of official or upstream community firmware: the four-band EQ, Bouls, Wisps, the Gristleator, Sear, Kit Split, Aux Sends, and Chroma &mdash; plus a MIDI Implementation Chart consolidating every default CC assignment and MIDI-learn behaviour across all of them in one place. Each chapter documents behaviour as built &mdash; menu paths, on-screen readouts, defaults, and the handful of known limitations worth reading before judging a feature by an unlucky first setting. Every one of them can be switched off; the first chapter covers how, and what switching one off does and does not change.</p>
     <div class="meta">
       <span>EQ4 &middot; BOUL &middot; DUST &middot; GRIS &middot; SEAR &middot; SPLT &middot; BRSH &middot; PREV &middot; RCAP</span>
-      <span>Edition of August 2026</span>
+      <span>Edition of 2026-09-01</span>
     </div>
   </section>
 
@@ -568,7 +601,7 @@
     <h1>Community Features</h1>
     <div class="subtitle">Operating manual for the nine toggles</div>
     <p class="intro">Every addition in this firmware can be switched off. They live together under <span class="code-pill">SETTINGS &rarr; COMMUNITY FEATURES</span>, alongside the toggles the official community firmware already ships, and all but one are on when you first boot &mdash; the toggle is there to take a feature away, not to opt in to it.</p>
-    <div class="meta"><span>EQ4 &middot; BOUL &middot; DUST &middot; GRIS &middot; SEAR &middot; SPLT &middot; BRSH &middot; PREV &middot; RCAP</span><span>Edition of August 2026</span></div>
+    <div class="meta"><span>EQ4 &middot; BOUL &middot; DUST &middot; GRIS &middot; SEAR &middot; SPLT &middot; BRSH &middot; PREV &middot; RCAP</span><span>Edition of 2026-09-01</span></div>
 
     <div class="sec" id="ch01-s01">
       
@@ -637,7 +670,7 @@
     <h1>Four-Band EQ</h1>
     <div class="subtitle">Operating manual for the two added mid bells</div>
     <p class="intro">The stock Deluge EQ has two bands: a bass shelf and a treble shelf. This fork adds two bell bands between them &mdash; Low mid and High mid &mdash; and, at the same time, changes what every EQ control reports. All four amount knobs now read out in dB and all four frequency knobs in Hz, rather than a bare <span class="code-pill">0&ndash;50</span>.</p>
-    <div class="meta"><span>Bass &middot; Low mid &middot; High mid &middot; Treble</span><span>Edition of August 2026</span></div>
+    <div class="meta"><span>Bass &middot; Low mid &middot; High mid &middot; Treble</span><span>Edition of 2026-09-01</span></div>
 
     <div class="sec" id="ch02-s01">
       <div class="sec-head"><span class="sec-num">01</span><span class="sec-title">What it is</span></div>
@@ -770,7 +803,7 @@
     <h1>Bouls</h1>
     <div class="subtitle">Operating manual for the 24-model oscillator engine</div>
     <p class="intro">Mutable Instruments Plaits, as a Deluge oscillator type. Twenty-four synthesis models behind one front panel &mdash; Harmonics, Timbre and Morph &mdash; plus a low-pass gate and a choice of which of the engine's two outputs to take. The three controls keep their names in every model and change their meaning in every model; <a href="#ch03-s03">sections 03</a> to <a href="#ch03-s07">07</a> are about what they actually do, model by model.</p>
-    <div class="meta"><span>Model &middot; Harmonics &middot; Timbre &middot; Morph &middot; LPG</span><span>Edition of August 2026</span></div>
+    <div class="meta"><span>Model &middot; Harmonics &middot; Timbre &middot; Morph &middot; LPG</span><span>Edition of 2026-09-01</span></div>
 
     <div class="sec" id="ch03-s01">
       <div class="sec-head"><span class="sec-num">01</span><span class="sec-title">What it is</span></div>
@@ -1188,7 +1221,7 @@
     <h1>Wisps</h1>
     <div class="subtitle">Operating manual for the six-mode texture engine</div>
     <p class="intro">&Eacute;milie Gillet's Clouds, as a Deluge insert effect at the head of the FX chain. A granular processor with six playback modes and eleven shared controls, taken from the community-maintained Parasites continuation rather than the stock firmware, which is where the Oliverb and Resonestor modes come from. The DSP is byte-identical to upstream; everything Deluge-specific lives in a thin adapter that resamples 44.1 kHz down to the engine's native 32 kHz and back.</p>
-    <div class="meta"><span>Mode &middot; Blend &middot; Position &middot; Size &middot; Pitch &middot; Density &middot; Texture &middot; Spread &middot; Feedback &middot; Reverb &middot; Freeze</span><span>Edition of August 2026</span></div>
+    <div class="meta"><span>Mode &middot; Blend &middot; Position &middot; Size &middot; Pitch &middot; Density &middot; Texture &middot; Spread &middot; Feedback &middot; Reverb &middot; Freeze</span><span>Edition of 2026-09-01</span></div>
 
     <div class="sec" id="ch04-s01">
       <div class="sec-head"><span class="sec-num">01</span><span class="sec-title">What it is</span></div>
@@ -1421,7 +1454,7 @@
     <h1>Gristleator</h1>
     <div class="subtitle">Operating manual for the ten-knob chop/throb effect</div>
     <p class="intro">A modulation and distortion effect with a master switch, so it can be bypassed without unwinding its settings. After the Roy Gwinn design published in <em>Practical Electronics</em> in 1975 and sold in kit form by Phonosonics in 1977, which Chris Carter modified for Throbbing Gristle &mdash; the modification being that he brought the Bias trimpot out to the front panel, which is why Bias is a first-class knob here. The Eurorack redesign (FSS TG3/TG4, Gwinn + Carter, 2017) added Register and Resonance to the filter and Dirt to the VCA. This implements all nine, plus a master switch the hardware never had and never needed &mdash; a rack unit is bypassed by not patching it.</p>
-    <div class="meta"><span>On &middot; Rate &middot; Depth &middot; Shape &middot; Bias &middot; Mode &middot; Freq &middot; Reso &middot; Dirt &middot; Level</span><span>Edition of August 2026</span></div>
+    <div class="meta"><span>On &middot; Rate &middot; Depth &middot; Shape &middot; Bias &middot; Mode &middot; Freq &middot; Reso &middot; Dirt &middot; Level</span><span>Edition of 2026-09-01</span></div>
 
     <div class="sec" id="ch05-s01">
       <div class="sec-head"><span class="sec-num">01</span><span class="sec-title">What it is</span></div>
@@ -1563,7 +1596,7 @@
     <h1>Sear</h1>
     <div class="subtitle">Operating manual for the auto-levelling drive stage</div>
     <p class="intro">A cubic soft-clipper with automatic level matching, followed by a one-pole tilt tone control. Per-voice and patched, so it behaves like any other modulation destination. Was called Heat until 2026-08-08.</p>
-    <div class="meta"><span>Sear &middot; STon</span><span>Edition of August 2026</span></div>
+    <div class="meta"><span>Sear &middot; STon</span><span>Edition of 2026-09-01</span></div>
 
     <div class="sec" id="ch06-s01">
       <div class="sec-head"><span class="sec-num">01</span><span class="sec-title">What it is</span></div>
@@ -1680,7 +1713,7 @@
     <h1>Kit Split</h1>
     <div class="subtitle">Operating manual for exploding a kit into single-sound kits</div>
     <p class="intro">Explodes a kit into one single-sound kit per drum that has notes, carrying every clip on that kit across with it. Unlike every other feature in this manual, Kit Split ships <strong>off</strong> by default, because it is destructive.</p>
-    <div class="meta"><span>Kit Global FX &middot; Actions &middot; Split Kit</span><span>Edition of August 2026</span></div>
+    <div class="meta"><span>Kit Global FX &middot; Actions &middot; Split Kit</span><span>Edition of 2026-09-01</span></div>
 
     <div class="sec" id="ch07-s01">
       <div class="sec-head"><span class="sec-num">01</span><span class="sec-title">What it is</span></div>
@@ -1816,7 +1849,7 @@
     <h1>Aux Sends</h1>
     <div class="subtitle">Operating manual for the CV output send bus</div>
     <p class="intro">The two CV sockets, used as an audio send bus. Turn a send up on a track and that track's audio appears at the socket &mdash; on its own, independent of the main mix &mdash; so it can feed a pedal, a mixer channel or a modular case while everything else carries on out of the mains.</p>
-    <div class="meta"><span>MAIN &middot; CV1 Send &middot; CV2 Send &middot; CV1/2 Level &middot; Stereo Split</span><span>Edition of August 2026</span></div>
+    <div class="meta"><span>MAIN &middot; CV1 Send &middot; CV2 Send &middot; CV1/2 Level &middot; Stereo Split</span><span>Edition of 2026-09-01</span></div>
 
     <div class="sec" id="ch08-s01">
       <div class="sec-head"><span class="sec-num">01</span><span class="sec-title">What it is</span></div>
@@ -1948,7 +1981,7 @@ SETTINGS &rarr; AUX  CV1 Level, CV2 Level, Stereo Split &mdash; global</div>
     <h1>Chroma</h1>
     <div class="subtitle">Operating manual for the Harmonic layout and the Brush</div>
     <p class="intro">A chord explorer beside an isomorphic visualiser, on one 16-wide surface, plus a brush that stamps a held chord into the piano roll like a note. Pick a chord on the left and it sounds, names itself and lights its shape on the right, where colour and brightness carry the harmony rather than decorating it. This chapter covers the whole surface, the voicing engine behind it, the progression walker, and the four smaller tools that came with it.</p>
-    <div class="meta"><span>Harmonic &middot; Palette &middot; Iso &middot; Brush &middot; BRSH &middot; RCAP</span><span>Edition of August 2026</span></div>
+    <div class="meta"><span>Harmonic &middot; Palette &middot; Iso &middot; Brush &middot; BRSH &middot; RCAP</span><span>Edition of 2026-09-01</span></div>
 
     <div class="sec" id="ch09-s01">
       <div class="sec-head"><span class="sec-num">01</span><span class="sec-title">What it is</span></div>
@@ -2290,7 +2323,7 @@ SETTINGS &rarr; AUX  CV1 Level, CV2 Level, Stereo Split &mdash; global</div>
 
     <div class="sec">
       <div class="sec-head"><span class="sec-num">04</span><span class="sec-title">Limits worth knowing</span></div>
-      <p><strong>Twelve rows is the ceiling.</strong> The grid has twelve sections; captures land in free ones, and when there are none left you get <span class="tag">FULL</span>.</p>
+      <p><strong>The row count is the ceiling, and it differs by line.</strong> <span class="code-pill">kMaxNumSections</span> is <strong>12</strong> on the 1.2.1 line and <strong>24</strong> on 1.3, so that is how many rows the grid has to give. Captures land in free ones, and when there are none left you get <span class="tag">FULL</span>.</p>
       <p><strong>It is a snapshot, not a link.</strong> Ableton calls the equivalent "Capture and Insert Scene", and this is that, minus the live link.</p>
       <p><strong>RAM per capture.</strong> Every captured clip is a real clip. On a large song, many captures add up.</p>
     </div>
@@ -2370,7 +2403,7 @@ SETTINGS &rarr; AUX  CV1 Level, CV2 Level, Stereo Split &mdash; global</div>
     <h1>MIDI Implementation Chart</h1>
     <div class="subtitle">Reference for every CC assignment across this fork</div>
     <p class="intro">Every default MIDI CC baked into this firmware, and every added control that has none, in one place. The nine earlier chapters describe each feature's controls; this one answers a single cross-cutting question for each of them &mdash; what happens when a CC arrives, or when you reach for LEARN. Figures are read from source, not measured on a controller, and are called out by firmware line where the two differ.</p>
-    <div class="meta"><span>CC &middot; FOLLOW &middot; LEARN</span><span>Edition of August 2026</span></div>
+    <div class="meta"><span>CC &middot; FOLLOW &middot; LEARN</span><span>Edition of 2026-09-01</span></div>
 
     <div class="sec" id="ch10-s01">
       <div class="sec-head"><span class="sec-num">01</span><span class="sec-title">How to read this chart</span></div>
@@ -2537,7 +2570,7 @@ SETTINGS &rarr; AUX  CV1 Level, CV2 Level, Stereo Split &mdash; global</div>
 </main>
 </div>
 
-<footer class="page-foot">The Rudement Features &middot; Synthstrom Deluge, Rudement Firmware &middot; Edition of August 2026 &middot; companion to Rudement&#8209;Features&#8209;Manual.pdf</footer>
+<footer class="page-foot">The Rudement Features &middot; Synthstrom Deluge, Rudement Firmware &middot; Edition of 2026-09-01 &middot; companion to Rudement&#8209;Features&#8209;Manual.pdf</footer>
 
 <script>
 (function(){
