@@ -258,12 +258,16 @@ shows two lit clips in that column. If it does, that is a pre-existing bug in
 
 ## 6. The two ceilings — decide these before you build
 
-**Twelve rows, total.** `kMaxNumSections = 12`
-(`definitions_cxx.hpp:490`). That is the hard ceiling on captures, shared with
-whatever rows your song already uses. A song with six populated rows gets six
-captures and then the popup. Twelve is a firmware-wide constant with save-file
-and MIDI-learn implications; raising it is a much bigger job than this feature
-and should not ride along with it.
+**The row count, total - and it is not the same on both lines.**
+`kMaxNumSections` is **12** on 1.2.1 (`definitions_cxx.hpp:490`) and **24** on
+1.3 (`definitions_cxx.hpp:483`); upstream raised it. That is the hard ceiling on
+captures, shared with whatever rows your song already uses. A song with six
+populated rows gets six captures on 1.2.1 and eighteen on 1.3, then the popup.
+It is a firmware-wide constant with save-file and MIDI-learn implications;
+raising it on the 1.2.1 line is a much bigger job than this feature and should
+not ride along with it.
+
+*(Corrected 2026-09-01: this section originally said twelve for both lines.)*
 
 **RAM.** Every capture clones every sounding clip. A six-track song captured
 four times is twenty-four extra clips carrying full note data. `gridCreateClip`
@@ -336,7 +340,7 @@ against the 7-seg font the same way `WISP` got caught and became `DUST`.
 Naming it honestly so the manual entry does not overpromise: this is **Ableton's
 "Capture and Insert Scene"**, minus the live link. It captures what you are
 hearing. It does not follow later edits to the source clips, it cannot capture
-more than twelve times, and it costs RAM per capture. Within those bounds it
+more times than your line has rows (twelve on 1.2.1, twenty-four on 1.3), and it costs RAM per capture. Within those bounds it
 does the thing you described, and it does it with about forty lines of new code
 sitting on top of machinery that is already load-bearing elsewhere in the
 firmware.
