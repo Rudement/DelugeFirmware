@@ -81,6 +81,7 @@ SettingToggle menuEnableGristleizer(RuntimeFeatureSettingType::EnableGristleizer
 SettingToggle menuEnableSear(RuntimeFeatureSettingType::EnableSear);
 SettingToggle menuKeyboardNotePreview(RuntimeFeatureSettingType::KeyboardNotePreview);
 SettingToggle menuSceneCapture(RuntimeFeatureSettingType::SceneCapture);
+SettingToggle menuGridColumnReorder(RuntimeFeatureSettingType::GridColumnReorder);
 
 std::array<MenuItem*, RuntimeFeatureSettingType::MaxElement - kNonTopLevelSettings> subMenuEntries{
     &menuDrumRandomizer,
@@ -114,7 +115,8 @@ std::array<MenuItem*, RuntimeFeatureSettingType::MaxElement - kNonTopLevelSettin
     &menuEnableGristleizer,
     &menuEnableSear,
     &menuKeyboardNotePreview,
-    &menuSceneCapture};
+    &menuSceneCapture,
+    &menuGridColumnReorder};
 
 Settings::Settings(l10n::String name, l10n::String title) : menu_item::Submenu(name, title, subMenuEntries) {
 }

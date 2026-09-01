@@ -75,6 +75,7 @@ enum RuntimeFeatureSettingType : uint32_t {
 	EnableSear,
 	KeyboardNotePreview,
 	SceneCapture,
+	GridColumnReorder,
 	MaxElement // Keep as boundary
 };
 
