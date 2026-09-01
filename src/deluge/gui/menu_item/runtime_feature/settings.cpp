@@ -59,6 +59,7 @@ SettingToggle menuEnableSear(RuntimeFeatureSettingType::EnableSear);
 SettingToggle menuChordBrush(RuntimeFeatureSettingType::ChordBrush);
 SettingToggle menuKeyboardNotePreview(RuntimeFeatureSettingType::KeyboardNotePreview);
 SettingToggle menuRetrospectiveCapture(RuntimeFeatureSettingType::RetrospectiveCapture);
+SettingToggle menuSceneCapture(RuntimeFeatureSettingType::SceneCapture);
 
 std::array<MenuItem*, RuntimeFeatureSettingType::MaxElement - kNonTopLevelSettings> subMenuEntries{
     &menuDrumRandomizer,
@@ -92,7 +93,8 @@ std::array<MenuItem*, RuntimeFeatureSettingType::MaxElement - kNonTopLevelSettin
     &menuEnableSear,
     &menuChordBrush,
     &menuKeyboardNotePreview,
-    &menuRetrospectiveCapture};
+    &menuRetrospectiveCapture,
+    &menuSceneCapture};
 
 Settings::Settings(l10n::String name, l10n::String title) : menu_item::Submenu(name, title, subMenuEntries) {
 }

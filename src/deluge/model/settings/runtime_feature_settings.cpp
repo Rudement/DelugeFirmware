@@ -231,6 +231,11 @@ void RuntimeFeatureSettings::init() {
 	// Same name and same key as the 1.3 branch, now that the rename is on this line too.
 	SetupOnOffSetting(settings[RuntimeFeatureSettingType::EnableSear], STRING_FOR_COMMUNITY_FEATURE_SEAR,
 	                  "enableSear", RuntimeFeatureStateToggle::On);
+	// SceneCapture -- SAVE + a grid section pad copies the currently sounding clips into a new,
+	// muted row below the populated ones, recalled later by that row's section pad.
+	SetupOnOffSetting(settings[RuntimeFeatureSettingType::SceneCapture],
+	                  STRING_FOR_COMMUNITY_FEATURE_SCENE_CAPTURE, "sceneCapture",
+	                  RuntimeFeatureStateToggle::Off);
 }
 
 void RuntimeFeatureSettings::readSettingsFromFile(StorageManager& bdsm) {

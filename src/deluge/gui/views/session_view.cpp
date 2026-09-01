@@ -3512,7 +3512,8 @@ void SessionView::setupNewClip(Clip* newClip) {
 	}
 }
 
-Clip* SessionView::gridCreateClip(uint32_t targetSection, Output* targetOutput, Clip* sourceClip) {
+Clip* SessionView::gridCreateClip(uint32_t targetSection, Output* targetOutput, Clip* sourceClip,
+                                  bool startMuted) {
 	actionLogger.deleteAllLogs();
 
 	Clip* newClip = nullptr;
@@ -3533,6 +3534,15 @@ Clip* SessionView::gridCreateClip(uint32_t targetSection, Output* targetOutput, 
 		newClip = gridCloneClip(sourceClip);
 		if (newClip == nullptr) {
 			return nullptr;
+		}
+
+		// Clip::cloneFrom() copies the source's playback state, so a clone of a playing clip arrives
+		// marked as playing -- two active clips on one Output, which the engine does not expect.
+		// This has to happen before resyncNewClip() further down, which only resyncs active clips.
+		if (startMuted) {
+			newClip->activeIfNoSolo = false;
+			newClip->soloingInSessionMode = false;
+			newClip->armState = ArmState::OFF;
 		}
 	}
 
@@ -3676,6 +3686,69 @@ void SessionView::gridClonePad(uint32_t sourceX, uint32_t sourceY, uint32_t targ
 	display->popupTextTemporary("COPIED");
 }
 
+// Scene Capture: stamp the combination of clips that is sounding right now into the first unused
+// section below the lowest populated row. The captured clips land muted, so capture is inaudible --
+// the originals keep playing and nothing changes until the new row's section pad is pressed.
+bool SessionView::gridCaptureScene() {
+	// Section 0 renders at the top of the grid and the numbers increase downward, so "below the
+	// lowest populated row" is simply the highest section in use, plus one.
+	bool sectionUsed[kMaxNumSections];
+	memset(sectionUsed, 0, sizeof(sectionUsed));
+
+	for (int32_t idxClip = 0; idxClip < currentSong->sessionClips.getNumElements(); ++idxClip) {
+		Clip* clip = currentSong->sessionClips.getClipAtIndex(idxClip);
+		if (clip->section < kMaxNumSections) {
+			sectionUsed[clip->section] = true;
+		}
+	}
+
+	int32_t targetSection = 0;
+	for (int32_t section = kMaxNumSections - 1; section >= 0; --section) {
+		if (sectionUsed[section]) {
+			targetSection = section + 1;
+			break;
+		}
+	}
+
+	if (targetSection >= kMaxNumSections) {
+		display->displayPopup(l10n::get(l10n::String::STRING_FOR_NO_FREE_ROW));
+		return false;
+	}
+
+	// Walk the outputs rather than the session clips: gridCreateClip() inserts into sessionClips at
+	// index 0, which would shift every index under an iteration of that array. Capture never adds an
+	// Output, so that list is stable. One Output holds one active clip, which also gives exactly one
+	// captured clip per column by construction.
+	Clip* previousCurrentClip = currentSong->getCurrentClip();
+	int32_t captured = 0;
+
+	for (Output* output = currentSong->firstOutput; output != nullptr; output = output->next) {
+		// An Output keeps its activeClip pointer while stopped or muted, so getActiveClip() on its own
+		// is not "is this sounding". isClipActive() is the soloing-aware answer, and it is what leaves
+		// a silent column blank in the captured row.
+		Clip* sounding = output->getActiveClip();
+		if (sounding == nullptr || !currentSong->isClipActive(sounding)) {
+			continue;
+		}
+
+		if (gridCreateClip(targetSection, output, sounding, true) == nullptr) {
+			break; // gridCreateClip() has already shown a popup
+		}
+
+		++captured;
+	}
+
+	currentSong->setCurrentClip(previousCurrentClip);
+
+	if (captured == 0) {
+		display->displayPopup(l10n::get(l10n::String::STRING_FOR_NOTHING_PLAYING));
+		return false;
+	}
+
+	requestRendering(this, 0xFFFFFFFF, 0xFFFFFFFF);
+	return true;
+}
+
 void SessionView::gridStartSection(uint32_t section, bool instant) {
 	if (instant) {
 		currentSong->turnSoloingIntoJustPlaying(currentSong->sections[section].numRepetitions != -1);
@@ -3798,6 +3871,17 @@ ActionResult SessionView::gridHandlePadsEdit(int32_t x, int32_t y, int32_t on, C
 		auto section = gridSectionFromY(y);
 		if (section < 0) {
 			return ActionResult::DEALT_WITH;
+		}
+
+		// SAVE + section pad captures whatever is sounding into a new row below the populated ones.
+		// Consume the SAVE hold so releasing it does not also fire the save-song shortcut.
+		if (on && isUIModeActive(UI_MODE_HOLDING_SAVE_BUTTON)
+		    && runtimeFeatureSettings.get(RuntimeFeatureSettingType::SceneCapture)
+		           == RuntimeFeatureStateToggle::On) {
+			exitUIMode(UI_MODE_HOLDING_SAVE_BUTTON);
+			indicator_leds::setLedState(IndicatorLED::SAVE, false);
+			gridCaptureScene();
+			return ActionResult::ACTIONED_AND_CAUSED_CHANGE;
 		}
 
 		// Immediate release of the pad arms the section, holding allows changing repeats
@@ -3988,6 +4072,17 @@ ActionResult SessionView::gridHandlePadsLaunch(int32_t x, int32_t y, int32_t on,
 		if (currentUIMode == UI_MODE_MIDI_LEARN) {
 			view.sectionMidiLearnPadPressed(on, section);
 			return ActionResult::DEALT_WITH;
+		}
+
+		// SAVE + section pad captures whatever is sounding into a new row below the populated ones.
+		// Consume the SAVE hold so releasing it does not also fire the save-song shortcut.
+		if (on && isUIModeActive(UI_MODE_HOLDING_SAVE_BUTTON)
+		    && runtimeFeatureSettings.get(RuntimeFeatureSettingType::SceneCapture)
+		           == RuntimeFeatureStateToggle::On) {
+			exitUIMode(UI_MODE_HOLDING_SAVE_BUTTON);
+			indicator_leds::setLedState(IndicatorLED::SAVE, false);
+			gridCaptureScene();
+			return ActionResult::ACTIONED_AND_CAUSED_CHANGE;
 		}
 
 		if (on) {
