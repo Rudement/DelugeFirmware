@@ -138,6 +138,16 @@ bool ChordService::placePendingAt(int32_t pos, int32_t length) {
 		    clip->getOrCreateNoteRowForYNote(pendingChord_.notes[i], modelStack, action, &scaleAltered);
 		NoteRow* noteRow = modelStackWithNoteRow->getNoteRowAllowNull();
 		if (noteRow != nullptr) {
+			if (action != nullptr) {
+				// Snapshot the row's notes BEFORE touching them, the way the other bulk note edits do.
+				// The per-note existence consequence that attemptNoteAdd records is not enough on its
+				// own here - it is skipped outright if the row was already snapshotted, and it has
+				// nothing coherent to revert to when the row was created as part of this same
+				// placement. That is why undo reported success and left the chord sitting there.
+				action->recordNoteArrayChangeIfNotAlreadySnapshotted(clip, modelStackWithNoteRow->noteRowId,
+				                                                     &noteRow->notes,
+				                                                     false); // don't steal data
+			}
 			// Explicit-position write at the tapped step, with an explicit length — the chord lands
 			// vertically aligned (all notes share pos + length).
 			int32_t probability = noteRow->getDefaultProbability();

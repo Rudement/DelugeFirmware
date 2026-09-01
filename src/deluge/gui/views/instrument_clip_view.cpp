@@ -262,9 +262,12 @@ ActionResult InstrumentClipView::commandExitScaleMode() {
 ActionResult InstrumentClipView::buttonAction(deluge::hid::Button b, bool on, bool inCardRoutine) {
 	using namespace deluge::hid::button;
 
-	// Click the select encoder while a harmonic-chord brush is armed to clear it, returning to
-	// normal single-note editing.
-	if (b == SELECT_ENC && on && ui::keyboard::ChordService::hasPending()) {
+	// LEARN + click the select encoder while a harmonic-chord brush is armed to clear it, returning
+	// to normal single-note editing. It takes the held button for the same reason stamping does: a
+	// bare click has its own job in this view, and an armed chord must not take it away for as long
+	// as it happens to be armed. Leaving the clip view still clears the brush too.
+	if (b == SELECT_ENC && on && ui::keyboard::ChordService::hasPending()
+	    && Buttons::isButtonPressed(deluge::hid::button::LEARN)) {
 		ui::keyboard::ChordService::clearPending();
 		return ActionResult::DEALT_WITH;
 	}
@@ -1910,10 +1913,18 @@ ActionResult InstrumentClipView::padAction(int32_t x, int32_t y, int32_t velocit
 			return ActionResult::REMIND_ME_OUTSIDE_CARD_ROUTINE;
 		}
 
-		// Harmonic brush: while a chord is armed, the main grid stamps it (mirrors the note
-		// length-edit gesture). Tap a column = one-step chord; hold the start column and press an end
-		// column = chord stretched to span both. The chord keeps its own pitches; only the column(s)
-		// matter. We place once per gesture with the resolved length, so all notes stay aligned.
+		// Harmonic brush: with a chord armed, LEARN + a main-grid pad stamps it. LEARN + tap a column
+		// = one-step chord; keep holding and press an end column = chord stretched to span both. The
+		// chord keeps its own pitches; only the column(s) matter. We place once per gesture with the
+		// resolved length, so all notes stay aligned.
+		//
+		// Holding LEARN is what lets the brush and ordinary editing share the grid. The chord stays
+		// armed after a stamp so it can go down on several steps, and with no held button that meant
+		// every press belonged to the brush - including the press you make to delete a note you just
+		// stamped. LEARN is the Deluge's copy button (LEARN + horizontal encoder copies notes, plus
+		// SHIFT pastes), so "hold LEARN and tap" reads as pasting the chord you captured. Only
+		// STARTING a gesture needs it; once anchored, further presses extend the span and the release
+		// commits, so LEARN can be let go mid-gesture.
 		if (runtimeFeatureSettings.get(RuntimeFeatureSettingType::ChordBrush) == RuntimeFeatureStateToggle::On
 		    && ui::keyboard::ChordService::hasPending() && getCurrentInstrumentClip() != nullptr
 		    && getCurrentInstrumentClip()->output != nullptr
@@ -1923,7 +1934,9 @@ ActionResult InstrumentClipView::padAction(int32_t x, int32_t y, int32_t velocit
 			// chord happens to be armed makes the whole piano roll stop responding, which reads as a
 			// hang - and a chord is easy to arm by accident (select-encoder click while holding notes).
 			if (velocity) { // press
-				if (isUIModeWithinRange(editPadActionUIModes)) {
+				bool startingGesture = (chordBrushStartX < 0) && Buttons::isButtonPressed(deluge::hid::button::LEARN);
+				bool continuingGesture = (chordBrushStartX >= 0);
+				if (isUIModeWithinRange(editPadActionUIModes) && (startingGesture || continuingGesture)) {
 					if (chordBrushStartX < 0) {
 						// Anchor the gesture; the chord is placed on release of this pad.
 						chordBrushStartX = x;
@@ -1938,7 +1951,7 @@ ActionResult InstrumentClipView::padAction(int32_t x, int32_t y, int32_t velocit
 					}
 					return ActionResult::DEALT_WITH;
 				}
-				// Outside the edit-pad modes the press belongs to whatever else was happening.
+				// No LEARN and no gesture under way: this press is ordinary note editing. Fall through.
 			}
 			else if (chordBrushStartX >= 0) {
 				// Releases only matter while a gesture is actually in progress. A stray release with
