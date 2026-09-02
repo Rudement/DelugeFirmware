@@ -34,7 +34,26 @@ rem The 1.3 line wants toolchain v22. REQUIRED_VERSION is tracked per branch, so
 rem checkout above sets it -- this only catches a checkout that did not do what it said.
 for /f %%V in (toolchain\REQUIRED_VERSION) do set TCV=%%V
 echo toolchain REQUIRED_VERSION=%TCV% >> %LOG%
-if not "%TCV%"=="22" goto :wrongtoolchain
+if not "%TCV%"=="22" goto :strayfiles
+echo STRAY UNTRACKED FILES UNDER src\ - NOT BUILDING. Nothing was wiped. >> %LOG%
+echo These are left over from a branch switch and would be compiled into the build: >> %LOG%
+findstr /b /c:"??" "%TEMP%\beta13-stray.txt" >> %LOG%
+echo. >> %LOG%
+echo Check each one is recoverable from the branch it came from, then delete it: >> %LOG%
+echo   git rev-parse ^<that-branch^>:^<path^>  and  git hash-object ^<path^>  should match. >> %LOG%
+goto :done
+
+:wrongtoolchain
+
+rem A branch switch made over the Cowork mount cannot delete files, so files that exist
+rem only on the branch you left survive as untracked strays -- and CMake globs src\, so it
+rem compiles them. That is what broke the first run of this script: cv_audio_stream.cpp from
+rem the AUX Sends branch, referencing a RuntimeFeatureSettingType this branch does not have.
+rem git status hides them unless you ask for untracked files, so ask.
+echo --- checking for stray untracked files under src\ --- >> %LOG%
+git status --porcelain --untracked-files=all -- src > "%TEMP%\beta13-stray.txt" 2>>%LOG%
+findstr /b /c:"??" "%TEMP%\beta13-stray.txt" >nul
+if not errorlevel 1 goto :strayfiles
 
 rem Wiping on purpose, not out of caution about the line. The point of this build is to
 rem find out whether commit b37e6db3 is sound, so nothing in build\ from an earlier

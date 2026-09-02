@@ -143,6 +143,25 @@ a confusing error until the lock is deleted **from Windows**, where deletion wor
 **This is the real cause of "stale `.git/index.lock`", not GitHub Desktop.** Do git work from
 Windows. From a sandbox, clone to sandbox-local storage first and deliver results as a bundle.
 
+**A branch switch over the mount leaves the other branch's files behind.** Deleting is how git
+removes a file that exists only on the branch you are leaving, so when deletion is denied the
+file simply stays -- untracked, invisible to a plain `git status`, and *globbed into the build
+by CMake*. On 2026-09-02 that put `cv_audio_stream.cpp` from `feat/aux-sends-13-gated` into a
+build of `integration/beta-13-2026-09-01`, which then failed on a `RuntimeFeatureSettingType`
+the branch does not have -- a compile error that reads like a code bug and is nothing of the
+kind. The same switch had also left the working tree's *tracked* files stale while `git status`
+called them clean.
+
+After any branch switch made from a sandbox, before building:
+
+```
+git status --porcelain --untracked-files=all -- src
+```
+
+Anything with `??` is a stray. Confirm it is recoverable (`git hash-object <path>` equals
+`git rev-parse <branch>:<path>`) and delete it. `run-build-beta13-sync.cmd` does this check and
+refuses to build if it finds one.
+
 Recovery:
 
 ```
