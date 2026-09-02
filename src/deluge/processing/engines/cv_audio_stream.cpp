@@ -152,6 +152,10 @@ volatile uint32_t cvStatEmitTotal = 0;
 volatile uint32_t cvStatSpiStatus = 0;
 /// The lead as last measured, in frames.
 volatile uint32_t cvStatLeadNow = 0;
+/// The two DMA channel status registers and the live SPI status, sampled rather than accumulated.
+volatile uint32_t cvStatChanStatus = 0;
+volatile uint32_t cvStatOledChanStatus = 0;
+volatile uint32_t cvStatSpiLive = 0;
 
 /// The SPI block as boot configured it for the DAC, captured before the display's own setup
 /// could overwrite it. Restored every time the bus is handed over.
@@ -567,6 +571,12 @@ void cvStreamPump(uint32_t numSamples) {
 	// the stream is supposed to be live. MODF is the bit that matters: the block gives up
 	// transmitting when it sees one, which stalls the transfer engine feeding it.
 	cvStatSpiStatus = cvStatSpiStatus | (uint32_t)RSPI(SPI_CHANNEL_CV).SPSR.BYTE;
+	// Live, unaccumulated, and sampled here because the pump only reaches this line while the
+	// stream owns the bus -- so these describe the stream's own ownership rather than whatever
+	// the display was doing at some point since boot.
+	cvStatSpiLive = (uint32_t)RSPI(SPI_CHANNEL_CV).SPSR.BYTE;
+	cvStatChanStatus = DMACn(CV_STREAM_DMA_CHANNEL).CHSTAT_n;
+	cvStatOledChanStatus = DMACn(OLED_SPI_DMA_CHANNEL).CHSTAT_n;
 
 	const uint32_t readFrame = ((readAddress - (uint32_t)cvStreamBuffer) >> 3) & (kCvFramesPerChannel - 1);
 	const uint32_t lead = (cvStreamWriteFrame - readFrame) & (kCvFramesPerChannel - 1);
@@ -1039,6 +1049,12 @@ uint32_t cvStreamStat(CvStat which) {
 		return cvStatSpiStatus;
 	case CvStat::LeadNow:
 		return cvStatLeadNow;
+	case CvStat::DmaChannelStatus:
+		return cvStatChanStatus;
+	case CvStat::OledChannelStatus:
+		return cvStatOledChanStatus;
+	case CvStat::SpiStatusLive:
+		return cvStatSpiLive;
 	}
 	return 0;
 }

@@ -208,6 +208,32 @@ enum class CvStat : uint8_t {
 	/// The lead, in frames, as the pump last measured it. Target is 768 and the resync threshold
 	/// is 640 either side; a value parked at an extreme says the loop never converges.
 	LeadNow,
+	/// CHSTAT_n for the stream's own DMA channel, raw. Five theories about why this channel never
+	/// advances have now been tested against its effects; this asks the channel directly.
+	///
+	///   bit 0 EN    enabled
+	///   bit 1 RQST  a request is pending
+	///   bit 2 TACT  actively transferring
+	///   bit 3 SUS   suspended
+	///   bit 4 ER    error
+	///   bit 5 END   transfer ended
+	///   bit 6 TC    transfer count met
+	///   bit 8 DL    descriptor loaded
+	///   bit 9 DW    descriptor write-back
+	///   bit 10 DER  descriptor error
+	///
+	/// EN clear means it was never armed and dmaChannelStart is not doing its job. EN set with
+	/// RQST and TACT clear means it is armed and waiting for a request that never comes, which
+	/// is a routing problem. ER or DER set means it was asked and refused, which is the
+	/// descriptor. Those are three different faults and nothing measured so far separates them.
+	DmaChannelStatus,
+	/// CHSTAT_n for the display's DMA channel, as a control. The display works, so whatever this
+	/// reads is what a healthy channel on this bus looks like.
+	OledChannelStatus,
+	/// The RSPI status register as it reads right now, not OR-ed since boot. The sticky version
+	/// answered 128 in both builds, but sticky means a bit set once during the display's own
+	/// traffic minutes ago is indistinguishable from one set during the stream's ownership.
+	SpiStatusLive,
 };
 
 /// Reads one counter. Not synchronised: these are incremented from interrupt context and read

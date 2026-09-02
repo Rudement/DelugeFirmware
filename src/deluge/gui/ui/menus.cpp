@@ -2151,6 +2151,12 @@ PLACE_SDRAM_BSS cv_output::Stat cvStatSpiMenu{STRING_FOR_AUX_STAT_SPI, STRING_FO
                                               deluge::processing::engines::CvStat::SpiStatusBits};
 PLACE_SDRAM_BSS cv_output::Stat cvStatLeadMenu{STRING_FOR_AUX_STAT_LEAD, STRING_FOR_AUX_STAT_LEAD,
                                                deluge::processing::engines::CvStat::LeadNow};
+PLACE_SDRAM_BSS cv_output::Stat cvStatChanMenu{STRING_FOR_AUX_STAT_CHAN, STRING_FOR_AUX_STAT_CHAN,
+                                               deluge::processing::engines::CvStat::DmaChannelStatus};
+PLACE_SDRAM_BSS cv_output::Stat cvStatOledChanMenu{STRING_FOR_AUX_STAT_OLEDCHAN, STRING_FOR_AUX_STAT_OLEDCHAN,
+                                                   deluge::processing::engines::CvStat::OledChannelStatus};
+PLACE_SDRAM_BSS cv_output::Stat cvStatSpiLiveMenu{STRING_FOR_AUX_STAT_SPILIVE, STRING_FOR_AUX_STAT_SPILIVE,
+                                                  deluge::processing::engines::CvStat::SpiStatusLive};
 
 PLACE_SDRAM_BSS cv_output::StatsSubmenu auxStatsMenu{
     STRING_FOR_AUX_STATS,
@@ -2169,6 +2175,9 @@ PLACE_SDRAM_BSS cv_output::StatsSubmenu auxStatsMenu{
         &cvStatEmitMenu,
         &cvStatSpiMenu,
         &cvStatLeadMenu,
+        &cvStatChanMenu,
+        &cvStatOledChanMenu,
+        &cvStatSpiLiveMenu,
     },
 };
 
