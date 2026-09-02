@@ -93,22 +93,47 @@ static_assert(kCvFramesPerChannel * kCvFrameBytes == sizeof(cvStreamBuffer),
 PLACE_SDRAM_DATA int32_t cvSourceMono[2][kCvMaxWindow] __attribute__((aligned(CACHE_LINE_SIZE)));
 PLACE_SDRAM_DATA int32_t cvCaptureScratch[kCvMaxWindow * 2] __attribute__((aligned(CACHE_LINE_SIZE)));
 
-const uint32_t cvStreamDmaLinkDescriptor[] __attribute__((aligned(CACHE_LINE_SIZE))) = {
-    0b1101,                                                                             // Header
-    (uint32_t)cvStreamBuffer,                                                           // Source
-    (uint32_t)&RSPI(SPI_CHANNEL_CV).SPDR.LONG,                                          // Destination
-    sizeof(cvStreamBuffer),                                                             // Transaction size
-    0b10000001001000100010001000101000 | DMA_LVL_FOR_SSI | (CV_STREAM_DMA_CHANNEL & 7), // Config
-    0,                                                                                  // Interval
-    0,                                                                                  // Extension
-    (uint32_t)cvStreamDmaLinkDescriptor                                                 // Next link: itself
-};
+/// The permanent descriptor, in writable SDRAM and built at run time rather than sitting in
+/// .rodata as a const initialiser.
+///
+/// It was a const array, which put it in read-only memory, and the channel answered DER --
+/// descriptor error -- with DW set beside it. DW is a descriptor write-back: the transfer engine
+/// updates the descriptor in place as it works through it, and a write into read-only memory
+/// cannot land. That is the descriptor error, and it is why this channel never moved a single
+/// frame on any build.
+///
+/// The SSI's descriptor is the same shape and does work, which is what made this hard to see
+/// from reading. Its buffer is an ordinary array in internal RAM reached through the uncached
+/// mirror; this one's ring is PLACE_SDRAM_DATA in external SDRAM. Different memory, and only one
+/// of the two takes a descriptor write-back it cannot complete.
+///
+/// Filled by cvStreamBuildDescriptor() because word 7 has to hold its own address, which no
+/// static initialiser in this position can express once the array is not const.
+PLACE_SDRAM_DATA uint32_t cvStreamDmaLinkDescriptor[8] __attribute__((aligned(CACHE_LINE_SIZE)));
+
+/// Fills the permanent descriptor and flushes it, so the transfer engine reads what the CPU
+/// wrote. Idempotent, and cheap enough to call on every engage rather than tracking whether it
+/// has been done.
+void cvStreamBuildDescriptor() {
+	cvStreamDmaLinkDescriptor[0] = 0b1101;                    // Header
+	cvStreamDmaLinkDescriptor[1] = (uint32_t)cvStreamBuffer;  // Source
+	cvStreamDmaLinkDescriptor[2] = (uint32_t)&RSPI(SPI_CHANNEL_CV).SPDR.LONG; // Destination
+	cvStreamDmaLinkDescriptor[3] = sizeof(cvStreamBuffer);    // Transaction size
+	cvStreamDmaLinkDescriptor[4] =
+	    0b10000001001000100010001000101000 | DMA_LVL_FOR_SSI | (CV_STREAM_DMA_CHANNEL & 7); // Config
+	cvStreamDmaLinkDescriptor[5] = 0;                                                       // Interval
+	cvStreamDmaLinkDescriptor[6] = 0;                                                       // Extension
+	cvStreamDmaLinkDescriptor[7] = (uint32_t)cvStreamDmaLinkDescriptor; // Next link: itself
+	invalidate_range_all_caches((uintptr_t)cvStreamDmaLinkDescriptor,
+	                            (uintptr_t)cvStreamDmaLinkDescriptor + sizeof(cvStreamDmaLinkDescriptor));
+}
 
 /// Rebuilt on every resume: one partial pass from wherever the transfer engine stopped to
 /// the end of the ring, then a link into the permanent descriptor above, which links to
-/// itself and carries on forever. Only the source and the size differ from it -- the header
-/// is copied, so the descriptor is still write-back-disabled and the hardware still never
-/// modifies either of them.
+/// itself and carries on forever. Only the source and the size differ from it -- the header is
+/// copied, so both descriptors say the same thing about write-back. That was believed to mean
+/// the hardware never modifies either; the channel's DW bit says otherwise, which is why both
+/// now live in writable memory.
 ///
 /// This exists so a resume can pick up mid-ring. Restarting at the top instead would replay
 /// whatever of the previous pass had not been reached yet -- up to a whole ring, 46 ms of
@@ -740,6 +765,9 @@ namespace {
 /// Puts the SPI block and the DAC's chip-select into the shape the stream needs, then sets
 /// the transfer engine running from cvStreamResumeSource.
 void cvStreamEngageBus() {
+	// Before anything else: the descriptor has to exist and be visible to the transfer engine.
+	cvStreamBuildDescriptor();
+
 	if (deluge::hid::display::have_oled_screen) {
 		// Take the RSPI transmit request off the display's DMA channel before claiming it for
 		// ours. This is the resource the handover never arbitrated, and it is why the stream
