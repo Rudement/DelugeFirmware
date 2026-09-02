@@ -270,6 +270,19 @@ void cvSPITransferComplete(uint32_t sense)
 
     RSPI(SPI_CHANNEL_OLED_MAIN).SPCR &= ~(1 << 7); // Receive interrupt disable
 
+    // Not ours. Everything below finishes one hand-driven CV word -- deselect the converter,
+    // reset the receive buffer, drop spiBusCurrentlySending, hand the bus back -- and all of it
+    // is wrong when the word that completed belonged to the AUX send stream. Clearing the
+    // display's ownership flag from under it stops the screen being redrawn, which is a machine
+    // frozen on whatever frame was last sent.
+    //
+    // Harmless until the stream's transmit sequences began ending: before per-word chip-select
+    // framing they never did, so this interrupt never fired while the stream ran.
+    if (cvStreamHoldsBus())
+    {
+        return;
+    }
+
     setOutputState(6, 1,
         true); // Deselect CV DAC. We do it here, nice and early, since we might be re-selecting it very soon in
                // sendPriorityCVIfPending(),

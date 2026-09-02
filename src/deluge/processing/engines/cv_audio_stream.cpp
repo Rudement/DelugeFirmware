@@ -852,6 +852,10 @@ void cvStreamEngageBus() {
 	RSPI(SPI_CHANNEL_CV).SPBFCR.BYTE = 0b00100010;
 
 	RSPI(SPI_CHANNEL_CV).SPBR = 9;         // ~3.3 MHz -> ~47 kHz per socket
+	// Receive interrupt off before the block is re-enabled. cvSPITransferComplete() is
+	// registered on it at priority 5 -- above everything the song loader needs -- and has no
+	// business running for the stream's own words. sendCVWord() sets it again when it wants it.
+	RSPI(SPI_CHANNEL_CV).SPCR &= ~(1 << 7);
 	RSPI(SPI_CHANNEL_CV).SPCR |= (1 << 1); // transmit only
 	RSPI(SPI_CHANNEL_CV).SPCR |= (1 << 6);
 
@@ -1089,6 +1093,10 @@ void cvStreamStop() {
 	}
 }
 
+bool cvStreamHoldsBusInternal() {
+	return cvStreamRunning && !cvStreamYielded;
+}
+
 uint32_t cvStreamStat(CvStat which) {
 	switch (which) {
 	case CvStat::Starts:
@@ -1136,6 +1144,10 @@ uint32_t cvStreamStat(CvStat which) {
 // idle, and the mechanism belongs here.
 extern "C" void cvStreamYieldBegin(void) {
 	deluge::processing::engines::cvStreamYieldBusToDisplay();
+}
+
+extern "C" bool cvStreamHoldsBus(void) {
+	return deluge::processing::engines::cvStreamHoldsBusInternal();
 }
 
 extern "C" void cvStreamYieldEnd(void) {

@@ -17,6 +17,10 @@
 #ifndef DELUGE_CV_AUDIO_STREAM_C_INTERFACE_H
 #define DELUGE_CV_AUDIO_STREAM_C_INTERFACE_H
 
+#ifndef __cplusplus
+#include <stdbool.h>
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -32,6 +36,21 @@ extern "C" {
 /// at all while the stream is not running. See cv_audio_stream.h for what they cost.
 void cvStreamYieldBegin(void);
 void cvStreamYieldEnd(void);
+
+/// True while the send stream owns the shared bus -- running, and not handed over to the
+/// display.
+///
+/// cvSPITransferComplete() needs this. That handler is registered on the RSPI receive
+/// interrupt and exists to finish one hand-driven CV word: it deselects the converter, resets
+/// the receive buffer, clears spiBusCurrentlySending and hands the bus back. Every one of
+/// those is wrong when the word that completed was the stream's own, and clearing the
+/// display's ownership flag out from under it is enough to stop the screen being redrawn and
+/// leave the machine sitting on a frozen frame.
+///
+/// It never mattered while the stream's transmit sequence never ended, because then the
+/// interrupt never fired during streaming. Per-word chip-select framing makes sequences end
+/// tens of thousands of times a second, so it matters now.
+bool cvStreamHoldsBus(void);
 
 #ifdef __cplusplus
 }

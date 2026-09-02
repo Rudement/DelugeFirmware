@@ -93,6 +93,10 @@ void cvStreamTakeBusBack();
 /// thing disappeared on OLED rather than merely falling silent.
 bool cvSendMenusVisible();
 
+/// True while the stream owns the shared bus: running, and not handed to the display. The
+/// C-callable cvStreamHoldsBus() is a thin wrapper on this.
+bool cvStreamHoldsBusInternal();
+
 /// True while the CV sockets are being streamed to.
 bool cvStreamIsRunning();
 
