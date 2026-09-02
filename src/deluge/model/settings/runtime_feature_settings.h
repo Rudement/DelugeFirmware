@@ -79,6 +79,7 @@ enum RuntimeFeatureSettingType : uint32_t {
 	ChordBrush,
 	RetrospectiveCapture,
 	EnableAuxSends,
+	AuxSelectPulse,
 	MaxElement // Keep as boundary
 };
 

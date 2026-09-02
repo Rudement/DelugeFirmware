@@ -595,6 +595,7 @@ PLACE_SDRAM_DATA Language english{
         {STRING_FOR_NOTHING_PLAYING, "Nothing is playing"},
         {STRING_FOR_COMMUNITY_FEATURE_GRID_COLUMN_REORDER, "Grid Column Reorder"},
         {STRING_FOR_COMMUNITY_FEATURE_AUX_SENDS, "AUX Sends"},
+        {STRING_FOR_COMMUNITY_FEATURE_AUX_PULSE, "AUX Select Pulse"},
         {STRING_FOR_AUX_STATS, "Stats"},
         {STRING_FOR_AUX_STAT_STARTS, "Stream starts"},
         {STRING_FOR_AUX_STAT_STOPS, "Stream stops"},

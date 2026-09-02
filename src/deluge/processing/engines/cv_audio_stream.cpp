@@ -784,6 +784,9 @@ namespace {
 /// Puts the SPI block and the DAC's chip-select into the shape the stream needs, then sets
 /// the transfer engine running from cvStreamResumeSource.
 void cvStreamEngageBus() {
+	// Read once, so the whole engage agrees with itself even if the toggle moves underneath it.
+	const bool selectPulse = runtimeFeatureSettings.isOn(RuntimeFeatureSettingType::AuxSelectPulse);
+
 	// Before anything else: the descriptor has to exist and be visible to the transfer engine.
 	cvStreamBuildDescriptor();
 
@@ -845,17 +848,20 @@ void cvStreamEngageBus() {
 	// sendCVWord() -- the note-voltage path that has always worked on this hardware -- writes
 	// this same SPDCR and SPCMD0 and differs only in driving the select by hand, one pulse per
 	// word. This makes the stream do what that path already proved the converter wants.
-	RSPI(SPI_CHANNEL_CV).SPCMD0 = 0b0110001100000010;
+	RSPI(SPI_CHANNEL_CV).SPCMD0 = selectPulse ? 0b0110001100000010 : 0b0000001100000010;
 	// Both FIFOs flushed before the trigger levels are set. Anything left in them belongs to
 	// whoever had the bus last and is the wrong width for what follows.
 	RSPI(SPI_CHANNEL_CV).SPBFCR.BYTE = 0b00100010 | (1 << 7) | (1 << 6);
 	RSPI(SPI_CHANNEL_CV).SPBFCR.BYTE = 0b00100010;
 
 	RSPI(SPI_CHANNEL_CV).SPBR = 9;         // ~3.3 MHz -> ~47 kHz per socket
-	// Receive interrupt off before the block is re-enabled. cvSPITransferComplete() is
-	// registered on it at priority 5 -- above everything the song loader needs -- and has no
-	// business running for the stream's own words. sendCVWord() sets it again when it wants it.
-	RSPI(SPI_CHANNEL_CV).SPCR &= ~(1 << 7);
+	if (selectPulse) {
+		// Receive interrupt off before the block is re-enabled. cvSPITransferComplete() is
+		// registered on it at priority 5 -- above everything the song loader needs -- and has no
+		// business running for the stream's own words. sendCVWord() sets it again when it wants
+		// it. Only with the framing on, so that with it off this path is what it always was.
+		RSPI(SPI_CHANNEL_CV).SPCR &= ~(1 << 7);
+	}
 	RSPI(SPI_CHANNEL_CV).SPCR |= (1 << 1); // transmit only
 	RSPI(SPI_CHANNEL_CV).SPCR |= (1 << 6);
 

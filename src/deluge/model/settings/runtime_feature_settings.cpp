@@ -250,6 +250,15 @@ void RuntimeFeatureSettings::init() {
 	                  "enableSear", RuntimeFeatureStateToggle::On);
 	SetupOnOffSetting(settings[RuntimeFeatureSettingType::EnableAuxSends], STRING_FOR_COMMUNITY_FEATURE_AUX_SENDS,
 	                  "enableAuxSends", RuntimeFeatureStateToggle::On);
+
+	// AuxSelectPulse -- makes the converter's chip-select pulse once per word instead of staying
+	// asserted while the stream runs. Off by default, and deliberately: the converter needs that
+	// edge to latch a sample, so with this off the sends are silent, but turning it on has so far
+	// destabilised the machine on the load page. Off is a working instrument that makes no sound;
+	// on is the thing being tested. Kept as a toggle so testing it costs a menu entry rather than
+	// a reflash.
+	SetupOnOffSetting(settings[RuntimeFeatureSettingType::AuxSelectPulse], STRING_FOR_COMMUNITY_FEATURE_AUX_PULSE,
+	                  "auxSelectPulse", RuntimeFeatureStateToggle::Off);
 }
 
 void RuntimeFeatureSettings::factoryReset(bool showPopup) {
