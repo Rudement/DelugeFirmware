@@ -76,7 +76,7 @@ echo ======================================
 echo.
 echo Full log is in beta13-sync-build.log
 echo.
-echo The binary to flash is BETA13-deluge-v1_3_0-rudement+*-b37e6db3.bin
+echo The binary to flash is the BETA13-deluge-v1_3_0-rudement+*.bin named above.
 echo NOTE: going back to a 1.2.1 branch afterwards needs the build dir wiped again.
 echo   git checkout feat/grid-gestures-12   then   rmdir /s /q build
 pause
