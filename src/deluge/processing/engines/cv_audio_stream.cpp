@@ -731,6 +731,29 @@ namespace {
 /// the transfer engine running from cvStreamResumeSource.
 void cvStreamEngageBus() {
 	if (deluge::hid::display::have_oled_screen) {
+		// Take the RSPI transmit request off the display's DMA channel before claiming it for
+		// ours. This is the resource the handover never arbitrated, and it is why the stream
+		// has never made a sound on an OLED machine.
+		//
+		// oledDMAInit() assigns DMARS_FOR_RSPI_TX to OLED_SPI_DMA_CHANNEL (4) once at boot and
+		// leaves it there; initDMAWithLinkDescriptor below assigns the same MID/RID to
+		// CV_STREAM_DMA_CHANNEL (5). setDMARS writes only its own half of the shared DMARS2
+		// register, so both assignments survive -- and the hardware manual says not to do that:
+		// a request resource belongs to one channel. With two claiming it the request goes to
+		// one of them, and measurement says it is not ours. Frames consumed per window came back
+		// as exactly zero while the pump was emitting normally and the lead ran away to 1278
+		// against a target of 768.
+		//
+		// On a 7-segment machine oledDMAInit() never runs, channel 4 never claims the resource,
+		// channel 5 has it uncontested and the stream works. That is the whole of the
+		// 7SEG-works / OLED-does-not split, and no amount of correct SPI and chip-select
+		// handling was ever going to bridge it.
+		//
+		// Released before ours is claimed, so the two are never both assigned. The display and
+		// the stream already never transfer at the same time -- that is what the yield exists
+		// for -- so exclusive ownership is exactly the right shape.
+		setDMARS(OLED_SPI_DMA_CHANNEL, 0);
+
 		// Hardware chip-select. Boot leaves this pin a GPIO on OLED models so the display and
 		// the DAC can take turns on the bus, but the stream needs a select pulse per 32-bit
 		// word -- roughly 94,000 a second -- and only the SPI block itself can do that. It goes
@@ -818,6 +841,13 @@ void cvStreamReleaseBus() {
 		// glitch low on the way.
 		setOutputState(SPI_SSL.port, SPI_SSL.pin, true);
 		setPinAsOutput(SPI_SSL.port, SPI_SSL.pin);
+
+		// And hand the RSPI transmit request back to the display's channel, ours released
+		// first so the resource is never claimed by both. See cvStreamEngageBus(). Without the
+		// return leg the display's own frames would stop the moment the stream first ran,
+		// which is a worse failure than the one this fixes.
+		setDMARS(CV_STREAM_DMA_CHANNEL, 0);
+		setDMARS(OLED_SPI_DMA_CHANNEL, DMARS_FOR_RSPI_TX + (SPI_CHANNEL_OLED_MAIN << 2));
 	}
 	// On 7SEG the pin stays the hardware select it has been since boot: nothing else is on
 	// this bus there, and turning it into a GPIO would break the note-voltage path, which
