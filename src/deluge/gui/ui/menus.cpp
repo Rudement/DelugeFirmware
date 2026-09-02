@@ -2143,6 +2143,14 @@ PLACE_SDRAM_BSS cv_output::Stat cvStatDmaStallsMenu{STRING_FOR_AUX_STAT_STALLS, 
                                                     deluge::processing::engines::CvStat::DmaStalls};
 PLACE_SDRAM_BSS cv_output::Stat cvStatYieldedNowMenu{STRING_FOR_AUX_STAT_YIELDED_NOW, STRING_FOR_AUX_STAT_YIELDED_NOW,
                                                      deluge::processing::engines::CvStat::YieldedNow};
+PLACE_SDRAM_BSS cv_output::Stat cvStatAdvanceMenu{STRING_FOR_AUX_STAT_ADVANCE, STRING_FOR_AUX_STAT_ADVANCE,
+                                                  deluge::processing::engines::CvStat::AdvancePerWindowX10};
+PLACE_SDRAM_BSS cv_output::Stat cvStatEmitMenu{STRING_FOR_AUX_STAT_EMIT, STRING_FOR_AUX_STAT_EMIT,
+                                               deluge::processing::engines::CvStat::EmitPerWindowX10};
+PLACE_SDRAM_BSS cv_output::Stat cvStatSpiMenu{STRING_FOR_AUX_STAT_SPI, STRING_FOR_AUX_STAT_SPI,
+                                              deluge::processing::engines::CvStat::SpiStatusBits};
+PLACE_SDRAM_BSS cv_output::Stat cvStatLeadMenu{STRING_FOR_AUX_STAT_LEAD, STRING_FOR_AUX_STAT_LEAD,
+                                               deluge::processing::engines::CvStat::LeadNow};
 
 PLACE_SDRAM_BSS cv_output::StatsSubmenu auxStatsMenu{
     STRING_FOR_AUX_STATS,
@@ -2157,6 +2165,10 @@ PLACE_SDRAM_BSS cv_output::StatsSubmenu auxStatsMenu{
         &cvStatResyncsMenu,
         &cvStatDmaStallsMenu,
         &cvStatYieldedNowMenu,
+        &cvStatAdvanceMenu,
+        &cvStatEmitMenu,
+        &cvStatSpiMenu,
+        &cvStatLeadMenu,
     },
 };
 

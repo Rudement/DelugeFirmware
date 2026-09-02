@@ -143,6 +143,15 @@ volatile uint32_t cvStatResyncs = 0;
 volatile uint32_t cvStatDmaStalls = 0;
 /// Last read pointer the pump saw, so a stalled transfer engine can be told from a moving one.
 uint32_t cvStatLastReadAddress = 0;
+/// Frames consumed and frames emitted, summed over the windows counted in cvStatPumpWritten.
+/// Kept as totals and divided only when read, so the hot path does no arithmetic it can avoid.
+volatile uint32_t cvStatAdvanceTotal = 0;
+volatile uint32_t cvStatEmitTotal = 0;
+/// Every RSPI status bit seen set, OR-ed. Sticky on purpose: a mode fault that happened once,
+/// minutes ago, is exactly the kind of thing a sampled reading would miss.
+volatile uint32_t cvStatSpiStatus = 0;
+/// The lead as last measured, in frames.
+volatile uint32_t cvStatLeadNow = 0;
 
 /// The SPI block as boot configured it for the DAC, captured before the display's own setup
 /// could overwrite it. Restored every time the bus is handed over.
@@ -530,22 +539,34 @@ void cvStreamPump(uint32_t numSamples) {
 	// emerge late by however long the display took, and every window after it would inherit
 	// that same delay. Dropping costs the gap and nothing beyond it.
 	if (cvStreamYielded) {
-		cvStatPumpDropped++;
+		cvStatPumpDropped = cvStatPumpDropped + 1;
 		cvStreamResyncPending = true;
 		cvSourceValid[0] = cvSourceValid[1] = false;
 		return;
 	}
 
 	const uint32_t readAddress = DMACn(CV_STREAM_DMA_CHANNEL).CRSA_n;
-	// A read pointer that has not moved since the previous window means the transfer engine is
-	// not consuming the ring: the converter is being fed nothing at all, whatever every other
-	// counter says. Sampled here rather than on a timer because the pump is the one place that
-	// runs at a known rate while the stream is supposed to be live.
-	if (readAddress == cvStatLastReadAddress) {
-		cvStatDmaStalls++;
+	// How far the transfer engine got since the previous window, in frames, wrap included. The
+	// boolean version of this could only say "it moved" or "it did not"; what actually settles
+	// the question is the distance, because that is the converter's real rate and it can be
+	// compared directly against what the pump emitted.
+	if (cvStatLastReadAddress != 0) {
+		uint32_t advanceBytes = readAddress - cvStatLastReadAddress;
+		if (readAddress < cvStatLastReadAddress) {
+			advanceBytes += sizeof(cvStreamBuffer); // wrapped the ring
+		}
+		cvStatAdvanceTotal = cvStatAdvanceTotal + (advanceBytes >> 3);
+		if (advanceBytes == 0) {
+			cvStatDmaStalls = cvStatDmaStalls + 1;
+		}
 	}
 	cvStatLastReadAddress = readAddress;
-	cvStatPumpWritten++;
+	cvStatPumpWritten = cvStatPumpWritten + 1;
+
+	// Sticky, and read here because the pump is the one place that runs at a known rate while
+	// the stream is supposed to be live. MODF is the bit that matters: the block gives up
+	// transmitting when it sees one, which stalls the transfer engine feeding it.
+	cvStatSpiStatus = cvStatSpiStatus | (uint32_t)RSPI(SPI_CHANNEL_CV).SPSR.BYTE;
 
 	const uint32_t readFrame = ((readAddress - (uint32_t)cvStreamBuffer) >> 3) & (kCvFramesPerChannel - 1);
 	const uint32_t lead = (cvStreamWriteFrame - readFrame) & (kCvFramesPerChannel - 1);
@@ -554,6 +575,7 @@ void cvStreamPump(uint32_t numSamples) {
 	// buffer enlargement cost delay for no reason.
 	constexpr int32_t targetLead = kCvTargetLead;
 	int32_t leadError = targetLead - (int32_t)lead;
+	cvStatLeadNow = lead;
 
 	// Phase resync, for a genuine stall only. A rate trim cannot fix a phase error in any
 	// useful time, so past the threshold the write pointer is simply put where it belongs.
@@ -566,7 +588,7 @@ void cvStreamPump(uint32_t numSamples) {
 	// lead is wrong by exactly the time the display held it and there is nothing to converge
 	// on -- the phase simply moved.
 	if (cvStreamResyncPending || leadError > kCvResyncThreshold || leadError < -kCvResyncThreshold) {
-		cvStatResyncs++;
+		cvStatResyncs = cvStatResyncs + 1;
 		cvStreamResyncPending = false;
 		cvStreamWriteFrame = ((uint32_t)readFrame + (uint32_t)targetLead) & (kCvFramesPerChannel - 1);
 		cvResamplePos = 0.0f;
@@ -630,6 +652,8 @@ void cvStreamPump(uint32_t numSamples) {
 			cvResamplePos = p - (float)numSamples;
 		}
 	}
+
+	cvStatEmitTotal = cvStatEmitTotal + (uint32_t)toEmit;
 
 	for (uint32_t socket = 0; socket < 2; socket++) {
 		// Folded into the scale rather than shifted off the integer first. Shifting
@@ -851,7 +875,7 @@ void cvStreamYieldBusToDisplay() {
 		return;
 	}
 	cvStreamYielded = true;
-	cvStatYields++;
+	cvStatYields = cvStatYields + 1;
 	cvStreamReleaseBus();
 }
 
@@ -872,7 +896,7 @@ void cvStreamTakeBusBack() {
 	// is about to resume from -- so the two agree.
 	cvStreamResyncPending = true;
 	cvStreamYielded = false;
-	cvStatTakeBacks++;
+	cvStatTakeBacks = cvStatTakeBacks + 1;
 	cvStreamEngageBus();
 }
 
@@ -918,9 +942,9 @@ void cvStreamStart() {
 	CriticalSectionGuard guard;
 	cvStreamResyncPending = false;
 	cvStreamRunning = true;
-	cvStatStarts++;
+	cvStatStarts = cvStatStarts + 1;
 	// Cleared so the first pump after a start cannot compare against an address from the last
-	// time the stream ran and report a phantom stall.
+	// time the stream ran and report a phantom stall or a phantom advance.
 	cvStatLastReadAddress = 0;
 
 	// On an OLED model the display may be part-way through a frame on this same bus right
@@ -947,7 +971,7 @@ void cvStreamStop() {
 	// window, so nothing can claim the block between the decision and the act.
 	CriticalSectionGuard guard;
 	const bool releaseNow = cvStreamRunning && !cvStreamYielded;
-	cvStatStops++;
+	cvStatStops = cvStatStops + 1;
 	cvStreamRunning = false;
 	cvStreamYielded = false;
 	cvStreamResyncPending = false;
@@ -977,6 +1001,14 @@ uint32_t cvStreamStat(CvStat which) {
 		return cvStatDmaStalls;
 	case CvStat::YieldedNow:
 		return cvStreamYielded ? 1u : 0u;
+	case CvStat::AdvancePerWindowX10:
+		return (cvStatPumpWritten == 0) ? 0u : (cvStatAdvanceTotal * 10u) / cvStatPumpWritten;
+	case CvStat::EmitPerWindowX10:
+		return (cvStatPumpWritten == 0) ? 0u : (cvStatEmitTotal * 10u) / cvStatPumpWritten;
+	case CvStat::SpiStatusBits:
+		return cvStatSpiStatus;
+	case CvStat::LeadNow:
+		return cvStatLeadNow;
 	}
 	return 0;
 }

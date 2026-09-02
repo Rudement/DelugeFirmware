@@ -191,6 +191,23 @@ enum class CvStat : uint8_t {
 	Resyncs,
 	DmaStalls,
 	YieldedNow,
+	/// Frames the transfer engine actually consumed per pump window, x10 -- so 1360 means 136.0
+	/// frames a window, which is what a correct 47 kHz stream against a 128-sample window looks
+	/// like. This is the measurement the boolean DmaStalls could only hint at.
+	AdvancePerWindowX10,
+	/// Frames the pump emitted per window, x10, over the same windows. Read against
+	/// AdvancePerWindowX10: writer and reader must agree, and the ratio between them is the rate
+	/// error in one number.
+	EmitPerWindowX10,
+	/// Every RSPI status bit seen set since boot, OR-ed together. Bit 0 OVRF (overrun), bit 2
+	/// MODF (mode fault), bit 5 SPTEF, bit 6 TEND, bit 7 SPRF. MODF is the one worth crossing the
+	/// room for: a mode fault means something else drove the chip-select line while the block was
+	/// master, and the block stops transmitting -- which is what a contested SSL pin looks like,
+	/// and would stall the transfer engine exactly like this.
+	SpiStatusBits,
+	/// The lead, in frames, as the pump last measured it. Target is 768 and the resync threshold
+	/// is 640 either side; a value parked at an extreme says the loop never converges.
+	LeadNow,
 };
 
 /// Reads one counter. Not synchronised: these are incremented from interrupt context and read
