@@ -1882,6 +1882,13 @@ const uint32_t editPadActionUIModes[] = {UI_MODE_NOTES_PRESSED, UI_MODE_HOLDING_
 
 const uint32_t mutePadActionUIModes[] = {UI_MODE_AUDITIONING, UI_MODE_STUTTERING, 0};
 
+// The harmonic brush is driven with LEARN held, and holding LEARN puts the Deluge into MIDI-learn
+// mode. So the brush must be allowed in UI_MODE_MIDI_LEARN as well as the ordinary edit-pad modes -
+// gating it on editPadActionUIModes alone meant the stamp could never fire, because by the time the
+// pad went down the mode had already changed under it.
+const uint32_t chordBrushActionUIModes[] = {UI_MODE_MIDI_LEARN, UI_MODE_NOTES_PRESSED,
+                                            UI_MODE_HOLDING_HORIZONTAL_ENCODER_BUTTON, 0};
+
 const uint32_t auditionPadActionUIModes[] = {UI_MODE_AUDITIONING,
                                              UI_MODE_ADDING_DRUM_NOTEROW,
                                              UI_MODE_HORIZONTAL_SCROLL,
@@ -1936,7 +1943,7 @@ ActionResult InstrumentClipView::padAction(int32_t x, int32_t y, int32_t velocit
 			if (velocity) { // press
 				bool startingGesture = (chordBrushStartX < 0) && Buttons::isButtonPressed(deluge::hid::button::LEARN);
 				bool continuingGesture = (chordBrushStartX >= 0);
-				if (isUIModeWithinRange(editPadActionUIModes) && (startingGesture || continuingGesture)) {
+				if (isUIModeWithinRange(chordBrushActionUIModes) && (startingGesture || continuingGesture)) {
 					if (chordBrushStartX < 0) {
 						// Anchor the gesture; the chord is placed on release of this pad.
 						chordBrushStartX = x;
