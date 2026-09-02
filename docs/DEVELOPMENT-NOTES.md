@@ -186,3 +186,66 @@ tracking refs still read the old values and their reflogs still said `update by 
 
 Work pushed under names upstream does not use (`midi-fx`, `chopin-rudement`, `feat/*`,
 `beta-1.3`) survived. Prefer those names.
+
+---
+
+## Reading the fault display
+
+When the firmware takes a CPU exception it does not print a code. It paints the pad grid.
+All of this is `printPointers()` in `src/OSLikeStuff/fault_handler/fault_handler.c`, and it
+is readable off a photo of the front panel.
+
+**Bit order.** One byte per column, **bottom pad is the MSB**, top pad the LSB. Pads leave
+in column pairs (`PIC::setColourForTwoColumns`, `idx = x >> 1`, x counted from the left);
+within a pair the left column's eight pads are sent before the right column's.
+
+**Layout.** Each pointer occupies four columns -- two column pairs -- filled left to right
+as bits 31-24, 23-16, 15-8, 7-0. Groups are laid down left to right in the order the
+handler finds them:
+
+| Colour | Pointer |
+|---|---|
+| magenta `255,0,255` | USR-mode LR. Never appears: the abort vector passes 0 for it. |
+| blue `0,0,255` | SYS-mode LR -- where it died. |
+| green `0,255,0`, cyan `0,255,255`, alternating | up to four return addresses found by scanning the stack for values inside the code range |
+
+Column pairs with nothing to show are cleared to black.
+
+**The sidebar says which firmware.** The two sidebar columns carry the first four hex
+digits of `kCommitShort`: mute/launch column is the first byte, audition column the second.
+Its colour is the fault class -- **red** means it came through `handle_cpu_fault`, a real
+data/prefetch abort or undefined instruction; **yellow** means `FREEZE_WITH_ERROR`, i.e.
+one of the `E###` codes. Check this first. It tells you whether the unit is running the
+binary you think it is.
+
+**A pointer group always starts `0x20`.** `isCodePointer()` tests against
+`program_code_start` / `program_code_end` from the linker script -- 0x2005f640 and
+0x201a9220 for the 1.3 line as built on 2026-09-02, so the first column of any group reads
+`0x20` and the second is between `0x05` and `0x1a`. If the first column of a group is dark,
+that pair's bytes did not survive the trip to the PIC and the top half of that address is
+gone; the PIC resyncs on the next `SET_COLOUR_FOR_TWO_COLUMNS` byte, so later pairs -- and
+the commit ID, which is sent last -- are still good.
+
+**Address to symbol.** `build/Release/deluge.nmdump` is decimal address, size, type, name:
+
+```python
+syms = sorted((int(p[0]), int(p[1]), p[3].rstrip())
+              for p in (l.split(None, 3) for l in open('deluge.nmdump', errors='ignore'))
+              if len(p) == 4 and p[2].lower() in 'tw' and p[0].isdigit())
+def lookup(a):
+    return next((s for s in syms if s[0] <= a < s[0] + max(s[1], 1)), None)
+```
+
+Subtract 8 from the LR for a data abort, 4 for a prefetch abort, before reading it as the
+faulting instruction. For finding the function it rarely matters.
+
+**Worked example, 2026-09-02.** Sidebar red, `b3 7e` -- a hard fault in commit `b37e6db3`,
+the 1.3.0-beta sync built in a Linux container with Ubuntu's gcc 13.2 rather than the
+vendor v22 toolchain. One blue group, in the OSC1/OSC2 columns, low half `0x7358`; the
+SAMPL1/SAMPL2 pair to its left was dark, so the top half was lost per the note above. Of
+the 21 addresses `0x20xx7358` inside the code range, three sit on the startup path:
+`__static_initialization_and_destruction_0 +10052`, `deluge_main +1560` and
+`LoadSongUI::performLoad +1284`. The stock 1.3.0 beta of the same upstream commit boots
+clean on the same unit, as does the 1.2.1 build from the vendor toolchain, so the container
+toolchain is the suspect rather than the merge -- rebuilding `b37e6db3` under v22 is what
+settles it. **Container builds are for checking that a port compiles. Do not flash them.**
