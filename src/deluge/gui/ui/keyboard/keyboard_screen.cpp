@@ -219,18 +219,61 @@ constexpr int32_t kCaptureMax = 128;
 CapturedNote g_capture[kCaptureMax];
 int32_t g_captureCount = 0;
 uint32_t g_captureFirst = 0;
+uint32_t g_captureLast = 0; // when the buffer last saw any activity, for the take split below
+
+/// How long a silence means "you stopped playing", in audio samples.
+///
+/// The buffer times notes in wall-clock samples, so without this a pause is faithfully recorded as
+/// bars of nothing and the dump grows the clip to cover it - three minutes of thinking became a
+/// fourteen-bar clip. Two loop lengths is a musical threshold rather than a fixed number of seconds,
+/// so it scales with the tempo and with how long the clip already is: pause for a couple of times
+/// round and you have moved on. Bounded at both ends so a very short or very long clip still gives a
+/// sane answer.
+uint32_t captureGapThresholdSamples() {
+	uint32_t samplesPerTick = playbackHandler.getTimePerInternalTick();
+	if (samplesPerTick == 0) {
+		samplesPerTick = 1;
+	}
+	InstrumentClip* clip = getCurrentInstrumentClip();
+	int32_t loopLength = (clip != nullptr) ? clip->loopLength : 0;
+	if (loopLength <= 0) {
+		loopLength = kDefaultClipLength;
+	}
+	uint64_t threshold = (uint64_t)(uint32_t)loopLength * samplesPerTick * 2;
+	constexpr uint64_t kMinGap = (uint64_t)kSampleRate * 3;  // never split on a 1-second hesitation
+	constexpr uint64_t kMaxGap = (uint64_t)kSampleRate * 20; // and never wait longer than this
+	if (threshold < kMinGap) {
+		threshold = kMinGap;
+	}
+	if (threshold > kMaxGap) {
+		threshold = kMaxGap;
+	}
+	return (uint32_t)threshold;
+}
+
+void captureClear() {
+	g_captureCount = 0;
+}
 
 void captureNoteOn(int32_t note, uint8_t velocity) {
 	if (runtimeFeatureSettings.get(RuntimeFeatureSettingType::RetrospectiveCapture) != RuntimeFeatureStateToggle::On) {
 		return; // feature off — don't buffer
 	}
+	uint32_t now = AudioEngine::audioSampleTimer;
+
+	// A long silence means this note starts a fresh take, so drop what came before it. The point of
+	// the buffer is the phrase you just played, not everything since you walked up to the keyboard.
+	if (g_captureCount > 0 && (uint32_t)(now - g_captureLast) > captureGapThresholdSamples()) {
+		captureClear();
+	}
+
 	if (g_captureCount >= kCaptureMax) {
 		return; // buffer full; keep the earliest take rather than overwrite
 	}
-	uint32_t now = AudioEngine::audioSampleTimer;
 	if (g_captureCount == 0) {
 		g_captureFirst = now;
 	}
+	g_captureLast = now;
 	g_capture[g_captureCount++] = {note, velocity, now, now, true};
 }
 void captureNoteOff(int32_t note) {
@@ -239,12 +282,10 @@ void captureNoteOff(int32_t note) {
 		if (g_capture[i].sounding && g_capture[i].note == note) {
 			g_capture[i].offSamples = now;
 			g_capture[i].sounding = false;
+			g_captureLast = now;
 			break;
 		}
 	}
-}
-void captureClear() {
-	g_captureCount = 0;
 }
 } // namespace
 
