@@ -758,9 +758,10 @@ ActionResult KeyboardScreen::buttonAction(deluge::hid::Button b, bool on, bool i
 		ChordService::capturePending(pending);
 	}
 
-	// Click the select encoder while a chord is armed (but not holding new notes) to clear the
-	// harmonic brush.
-	else if (b == SELECT_ENC && on && ChordService::hasPending()) {
+	// LEARN + click the select encoder clears the armed harmonic brush. Same held button as stamping
+	// it in the piano roll, and it leaves a bare select-encoder click doing its normal job here.
+	else if (b == SELECT_ENC && on && ChordService::hasPending()
+	         && Buttons::isButtonPressed(deluge::hid::button::LEARN)) {
 		ChordService::clearPending();
 	}
 

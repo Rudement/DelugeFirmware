@@ -72,16 +72,20 @@ const int32_t defaultParamToCCMapping[kDisplayWidth][kDisplayHeight] = {
     {5, MIDI_CC_NONE, MIDI_CC_NONE, MIDI_CC_NONE, MIDI_CC_NONE, MIDI_CC_NONE, 22, 19},
     {72, 76, 75, 73, 70, MIDI_CC_NONE, 71, 74},
     {80, 79, 78, 77, 83, MIDI_CC_NONE, 82, 81},
-    {89, MIDI_CC_NONE, 61, 111, 60, 88, 86, 84},
-    {51, MIDI_CC_NONE, 50, 112, MIDI_CC_NONE, 90, 87, 85},
+    {89, MIDI_CC_NONE, 61, 34, 60, 88, 86, 84},
+    {51, MIDI_CC_NONE, 50, 35, MIDI_CC_NONE, 33, 87, 85},
     {58, MIDI_CC_NONE, MIDI_CC_NONE, MIDI_CC_NONE, 18, 17, 93, 16},
     {59, MIDI_CC_NONE, MIDI_CC_NONE, 91, MIDI_CC_NONE, MIDI_CC_NONE, MIDI_CC_NONE, MIDI_CC_NONE},
-    {53, MIDI_CC_NONE, MIDI_CC_NONE, 52, MIDI_CC_NONE, MIDI_CC_NONE, MIDI_CC_NONE, 110},
-    // The Gristleizer. CCs 102-110 are undefined in the MIDI spec and unused elsewhere in this
-    // table. Remember that on 1.2.1 a CC is inseparable from a grid position — this map is
+    {53, MIDI_CC_NONE, MIDI_CC_NONE, 52, MIDI_CC_NONE, MIDI_CC_NONE, MIDI_CC_NONE, 95},
+    // The Gristleizer. These match the 1.3 line exactly, so one controller template drives both
+    // builds: Rate..Freq on 114-119, then Reso 92, Level 94, Dirt 95 (the legacy tremolo, detune
+    // and phaser-depth controllers, which nothing transmits any more). This line previously used
+    // 102-110; that block could not be carried to 1.3, where Env3/Env4/LFO3/LFO4 claimed it after
+    // 1.2.1 shipped, so 1.2.1 moved to meet 1.3 rather than the other way round.
+    // Remember that on 1.2.1 a CC is inseparable from a grid position — this map is
     // indexed [column][row] and MidiFollow resolves a CC back to a param by scanning it for a
     // position, so removing these pads from the shortcut tables would also remove the CCs.
-    {102, 103, 104, 105, 106, 107, 108, 109}};
+    {114, 115, 116, 117, 118, 119, 92, 94}};
 
 MidiFollow midiFollow{};
 
