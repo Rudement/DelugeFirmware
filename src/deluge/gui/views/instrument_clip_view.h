@@ -289,6 +289,9 @@ public:
 	SquareInfo gridSquareInfo[kDisplayHeight][kDisplayWidth]{};
 	int32_t lastSelectedNoteXDisplay;
 	int32_t lastSelectedNoteYDisplay;
+	// True while the currently-selected Note Editor note has had its audition explicitly silenced by
+	// pressing its pad a second time.
+	bool noteEditorAuditionMuted = false;
 
 	// Harmonic-brush placement gesture (when a chord is armed via ChordService). Mirrors the note
 	// length-edit gesture: tap a column = one-step chord; hold the start column and press an end
