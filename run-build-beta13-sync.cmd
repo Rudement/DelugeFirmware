@@ -23,10 +23,10 @@ git checkout -- src/deluge/gui/menu_item/generate/g_menus.inc >> %LOG% 2>&1
 
 echo --- switching to %WANT% --- >> %LOG%
 git checkout %WANT% >> %LOG% 2>&1
-if errorlevel 1 goto :checkoutfailed
+if errorlevel 1 goto checkoutfailed
 
 for /f %%B in ('git rev-parse --abbrev-ref HEAD') do set ON=%%B
-if not "%ON%"=="%WANT%" goto :checkoutfailed
+if not "%ON%"=="%WANT%" goto checkoutfailed
 echo on branch %ON% >> %LOG% 2>&1
 git log -1 --oneline >> %LOG% 2>&1
 
@@ -34,16 +34,7 @@ rem The 1.3 line wants toolchain v22. REQUIRED_VERSION is tracked per branch, so
 rem checkout above sets it -- this only catches a checkout that did not do what it said.
 for /f %%V in (toolchain\REQUIRED_VERSION) do set TCV=%%V
 echo toolchain REQUIRED_VERSION=%TCV% >> %LOG%
-if not "%TCV%"=="22" goto :strayfiles
-echo STRAY UNTRACKED FILES UNDER src\ - NOT BUILDING. Nothing was wiped. >> %LOG%
-echo These are left over from a branch switch and would be compiled into the build: >> %LOG%
-findstr /b /c:"??" "%TEMP%\beta13-stray.txt" >> %LOG%
-echo. >> %LOG%
-echo Check each one is recoverable from the branch it came from, then delete it: >> %LOG%
-echo   git rev-parse ^<that-branch^>:^<path^>  and  git hash-object ^<path^>  should match. >> %LOG%
-goto :done
-
-:wrongtoolchain
+if not "%TCV%"=="22" goto wrongtoolchain
 
 rem A branch switch made over the Cowork mount cannot delete files, so files that exist
 rem only on the branch you left survive as untracked strays -- and CMake globs src\, so it
@@ -51,14 +42,15 @@ rem compiles them. That is what broke the first run of this script: cv_audio_str
 rem the AUX Sends branch, referencing a RuntimeFeatureSettingType this branch does not have.
 rem git status hides them unless you ask for untracked files, so ask.
 echo --- checking for stray untracked files under src\ --- >> %LOG%
-git status --porcelain --untracked-files=all -- src > "%TEMP%\beta13-stray.txt" 2>>%LOG%
-findstr /b /c:"??" "%TEMP%\beta13-stray.txt" >nul
-if not errorlevel 1 goto :strayfiles
+set STRAY=
+for /f "delims=" %%S in ('git status --porcelain --untracked-files=all -- src ^| findstr /b /c:"??"') do set STRAY=1
+if defined STRAY goto strayfiles
+echo none found >> %LOG%
 
 rem Wiping on purpose, not out of caution about the line. The point of this build is to
-rem find out whether commit b37e6db3 is sound, so nothing in build\ from an earlier
-rem configure is allowed to survive into it. CMake caches the absolute compiler path,
-rem and a stale cache is exactly the kind of thing that would muddy the answer.
+rem find out whether the merge is sound, so nothing in build\ from an earlier configure is
+rem allowed to survive into it. CMake caches the absolute compiler path, and a stale cache
+rem is exactly the kind of thing that would muddy the answer.
 echo --- wiping build\ so this is a clean configure --- >> %LOG%
 if exist build rmdir /s /q build >> %LOG% 2>&1
 
@@ -71,15 +63,24 @@ dir /b /o-d build\Release\*.bin >> %LOG% 2>&1
 rem Newest only, so an older .bin left in build\Release cannot wear this build's prefix.
 for /f "delims=" %%F in ('dir /b /o-d build\Release\*.bin') do (
   copy /Y "build\Release\%%F" "BETA13-%%F" >> %LOG% 2>&1
-  goto :copied
+  goto copied
 )
 :copied
 dir /b BETA13-*.bin >> %LOG% 2>&1
-goto :done
+goto done
+
+:strayfiles
+echo STRAY UNTRACKED FILES UNDER src\ - NOT BUILDING. Nothing was wiped. >> %LOG%
+echo These are left over from a branch switch and would be compiled into the build: >> %LOG%
+git status --porcelain --untracked-files=all -- src >> %LOG% 2>&1
+echo. >> %LOG%
+echo Check each one is recoverable from the branch it came from, then delete it: >> %LOG%
+echo   git rev-parse ^<that-branch^>:^<path^>  and  git hash-object ^<path^>  should match. >> %LOG%
+goto done
 
 :wrongtoolchain
 echo WRONG TOOLCHAIN (%TCV%, wanted 22) - NOT BUILDING. Nothing was wiped. >> %LOG%
-goto :done
+goto done
 
 :checkoutfailed
 echo CHECKOUT FAILED - NOT BUILDING. Nothing was wiped, nothing was built. >> %LOG%
