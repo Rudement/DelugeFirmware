@@ -234,6 +234,9 @@ enum class CvStat : uint8_t {
 	/// answered 128 in both builds, but sticky means a bit set once during the display's own
 	/// traffic minutes ago is indistinguishable from one set during the stream's ownership.
 	SpiStatusLive,
+	/// Pump samples that caught a transmit sequence completed, which is the chip-select having
+	/// been negated. Zero means it is still held and the converter still never latches.
+	TendSeen,
 };
 
 /// Reads one counter. Not synchronised: these are incremented from interrupt context and read

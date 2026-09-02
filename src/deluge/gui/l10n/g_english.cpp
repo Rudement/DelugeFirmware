@@ -612,6 +612,7 @@ PLACE_SDRAM_DATA Language english{
         {STRING_FOR_AUX_STAT_CHAN, "DMA chan status"},
         {STRING_FOR_AUX_STAT_OLEDCHAN, "OLED chan status"},
         {STRING_FOR_AUX_STAT_SPILIVE, "SPI status live"},
+        {STRING_FOR_AUX_STAT_TEND, "Seq completions"},
         {STRING_FOR_TRACK_STILL_HAS_CLIPS_IN_SESSION, "Track still has clips in session"},
         {STRING_FOR_DELETE_ALL_TRACKS_CLIPS_FIRST, "Delete all track's clips first"},
         {STRING_FOR_CANT_DELETE_FINAL_CLIP, "Can't delete final Clip"},

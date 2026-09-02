@@ -181,6 +181,10 @@ volatile uint32_t cvStatLeadNow = 0;
 volatile uint32_t cvStatChanStatus = 0;
 volatile uint32_t cvStatOledChanStatus = 0;
 volatile uint32_t cvStatSpiLive = 0;
+/// Pump samples that caught TEND set -- a transmit sequence having completed, which is the
+/// chip-select having been negated. Zero means the select is still held and the converter is
+/// still never latching; this is the counter that says whether the select framing took.
+volatile uint32_t cvStatTendSeen = 0;
 
 /// The SPI block as boot configured it for the DAC, captured before the display's own setup
 /// could overwrite it. Restored every time the bus is handed over.
@@ -267,7 +271,12 @@ int32_t cvPrevSample[2] = {0, 0};
 /// Output samples per input sample. SPBR=9 gives a 3.333 MHz bit clock; at ~35.5 bit-times
 /// per frame that puts the stream at ~46.95 kHz per socket against the engine's 44.1 kHz.
 /// Only a starting estimate -- the loop below trims it to whatever the hardware actually does.
-constexpr float kCvNominalRate = 46948.0f / 44100.0f;
+///
+/// Re-estimated for the per-word select framing above: the negation and next-access delays add
+/// roughly two bit-times to each word, which drops the stream from about 46.9 kHz to about
+/// 44.4 kHz per socket. Softer than the old figure, because the delays are in RSPCK and PCLK
+/// units rather than bit-times, so the band below carries the uncertainty.
+constexpr float kCvNominalRate = 44444.0f / 44100.0f;
 
 /// How far the ratio may stray from nominal. Both clocks come off the same crystal, so the
 /// true ratio is fixed and the only slack needed is for the estimate above being slightly
@@ -278,7 +287,14 @@ constexpr float kCvNominalRate = 46948.0f / 44100.0f;
 /// edge of audible on a sustained tone. If the resync counter climbs steadily on a quiet
 /// song, this band is too narrow rather than too wide -- the true rate is outside it and
 /// the loop cannot reach it.
-constexpr float kCvRateSpan = 0.003f;
+///
+/// Widened from 0.003 with the select framing. The old band assumed the estimate above was
+/// good to a fraction of a percent, which was fair when a word was 32 bits and a little
+/// overhead. It is not fair now: the added delays are specified in clock periods whose exact
+/// count is not something to guess at, so the band has to be wide enough to contain the truth
+/// and let the loop find it. It converges on the real ratio either way -- the band only has to
+/// not exclude it. If the resync counter sits near zero once running, this is wide enough.
+constexpr float kCvRateSpan = 0.10f;
 constexpr float kCvRateMin = kCvNominalRate * (1.0f - kCvRateSpan);
 constexpr float kCvRateMax = kCvNominalRate * (1.0f + kCvRateSpan);
 
@@ -600,6 +616,9 @@ void cvStreamPump(uint32_t numSamples) {
 	// stream owns the bus -- so these describe the stream's own ownership rather than whatever
 	// the display was doing at some point since boot.
 	cvStatSpiLive = (uint32_t)RSPI(SPI_CHANNEL_CV).SPSR.BYTE;
+	if ((cvStatSpiLive & 0x40u) != 0u) {
+		cvStatTendSeen = cvStatTendSeen + 1;
+	}
 	cvStatChanStatus = DMACn(CV_STREAM_DMA_CHANNEL).CHSTAT_n;
 	cvStatOledChanStatus = DMACn(OLED_SPI_DMA_CHANNEL).CHSTAT_n;
 
@@ -805,7 +824,28 @@ void cvStreamEngageBus() {
 	// already there; on OLED the display path leaves the block set up for 8-bit writes, so
 	// this is what puts it back to talking to a converter.
 	RSPI(SPI_CHANNEL_CV).SPDCR = 0x60u;
-	RSPI(SPI_CHANNEL_CV).SPCMD0 = 0b0000001100000010;
+	// SLNDEN and SPNDEN, bits 14 and 13, on top of the word format. They are what make the
+	// converter's chip-select pulse once per word instead of staying asserted.
+	//
+	// Without them the block negates SSL only when it reaches the end of a transmit sequence,
+	// and a sequence ends when the transmit buffer runs dry. The stream's whole design is to
+	// never let that happen -- a self-linking DMA descriptor keeps the FIFO fed forever -- so
+	// the sequence never ended, SSL never rose, and the converter, which latches on that edge,
+	// never took a single sample. Measured: TEND never set once, live or accumulated across a
+	// whole session, with SPTEF never set beside it.
+	//
+	// It is also where the pops came from. A handover stops the DMA, the FIFO drains, the
+	// sequence finally ends, SSL rises and the converter latches whatever it happens to hold --
+	// one step, one pop, which is why they tracked the screen redraws that cause handovers.
+	//
+	// The delay registers are left at their defaults: one RSPCK for the negation, one RSPCK
+	// plus two PCLK before the next access. Minimum in both cases, because the only thing
+	// needed here is the edge itself.
+	//
+	// sendCVWord() -- the note-voltage path that has always worked on this hardware -- writes
+	// this same SPDCR and SPCMD0 and differs only in driving the select by hand, one pulse per
+	// word. This makes the stream do what that path already proved the converter wants.
+	RSPI(SPI_CHANNEL_CV).SPCMD0 = 0b0110001100000010;
 	// Both FIFOs flushed before the trigger levels are set. Anything left in them belongs to
 	// whoever had the bus last and is the wrong width for what follows.
 	RSPI(SPI_CHANNEL_CV).SPBFCR.BYTE = 0b00100010 | (1 << 7) | (1 << 6);
@@ -1083,6 +1123,8 @@ uint32_t cvStreamStat(CvStat which) {
 		return cvStatOledChanStatus;
 	case CvStat::SpiStatusLive:
 		return cvStatSpiLive;
+	case CvStat::TendSeen:
+		return cvStatTendSeen;
 	}
 	return 0;
 }
