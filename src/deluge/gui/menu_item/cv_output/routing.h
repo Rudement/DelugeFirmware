@@ -234,4 +234,44 @@ private:
 	const uint32_t socket;
 };
 
+/// One handover counter, read-only.
+///
+/// Deliberately NOT gated on the Community Features toggle, unlike everything else in this
+/// file. Switching AUX Sends off is the first thing anyone does when the sockets misbehave,
+/// and the numbers explaining why have to survive that -- otherwise turning the feature off
+/// destroys the evidence for what it was doing.
+///
+/// Shown modulo a million so the value fits the menu's own range; these run free from boot
+/// and are meant to be read as "large / small / zero" against each other, not as absolutes.
+class Stat final : public Integer {
+public:
+	Stat(l10n::String newName, l10n::String title, CvStat which) : Integer(newName, title), which_(which) {}
+
+	[[nodiscard]] int32_t getMinValue() const override { return 0; }
+	[[nodiscard]] int32_t getMaxValue() const override { return 999999; }
+
+	void readCurrentValue() override { this->setValue((int32_t)(cvStreamStat(which_) % 1000000u)); }
+
+	/// Read-only. The encoder will still move the number on screen -- Integer owns that
+	/// behaviour -- but nothing is stored, and leaving the item and coming back re-reads the
+	/// counter.
+	void writeCurrentValue() override {}
+
+	bool isRelevant(ModControllableAudio* modControllable, int32_t whichThing) override {
+		return cvSendMenusVisible();
+	}
+
+private:
+	const CvStat which_;
+};
+
+/// SETTINGS > AUX > STATS. Present whenever the sends are in the build at all.
+class StatsSubmenu final : public Submenu {
+public:
+	using Submenu::Submenu;
+	bool isRelevant(ModControllableAudio* modControllable, int32_t whichThing) override {
+		return cvSendMenusVisible();
+	}
+};
+
 } // namespace deluge::gui::menu_item::cv_output

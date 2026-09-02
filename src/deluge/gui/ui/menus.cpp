@@ -2123,6 +2123,43 @@ PLACE_SDRAM_BSS cv_output::Level cvOutputLevel2Menu{STRING_FOR_OUTPUT_LEVEL_CV2,
 PLACE_SDRAM_BSS cv_output::SplitToggle cvStereoSplitMenu{STRING_FOR_CLIP_OUTPUT_STEREO_SPLIT,
                                                          STRING_FOR_CLIP_OUTPUT_STEREO_SPLIT};
 
+// SETTINGS > AUX > STATS. Diagnostics for the shared-bus handover, read-only. Kept out of the
+// Community Features gate on purpose -- see cv_output::Stat.
+PLACE_SDRAM_BSS cv_output::Stat cvStatStartsMenu{STRING_FOR_AUX_STAT_STARTS, STRING_FOR_AUX_STAT_STARTS,
+                                                 deluge::processing::engines::CvStat::Starts};
+PLACE_SDRAM_BSS cv_output::Stat cvStatStopsMenu{STRING_FOR_AUX_STAT_STOPS, STRING_FOR_AUX_STAT_STOPS,
+                                                deluge::processing::engines::CvStat::Stops};
+PLACE_SDRAM_BSS cv_output::Stat cvStatYieldsMenu{STRING_FOR_AUX_STAT_YIELDS, STRING_FOR_AUX_STAT_YIELDS,
+                                                 deluge::processing::engines::CvStat::Yields};
+PLACE_SDRAM_BSS cv_output::Stat cvStatTakeBacksMenu{STRING_FOR_AUX_STAT_TAKEBACKS, STRING_FOR_AUX_STAT_TAKEBACKS,
+                                                    deluge::processing::engines::CvStat::TakeBacks};
+PLACE_SDRAM_BSS cv_output::Stat cvStatPumpWrittenMenu{STRING_FOR_AUX_STAT_WRITTEN, STRING_FOR_AUX_STAT_WRITTEN,
+                                                      deluge::processing::engines::CvStat::PumpWritten};
+PLACE_SDRAM_BSS cv_output::Stat cvStatPumpDroppedMenu{STRING_FOR_AUX_STAT_DROPPED, STRING_FOR_AUX_STAT_DROPPED,
+                                                      deluge::processing::engines::CvStat::PumpDropped};
+PLACE_SDRAM_BSS cv_output::Stat cvStatResyncsMenu{STRING_FOR_AUX_STAT_RESYNCS, STRING_FOR_AUX_STAT_RESYNCS,
+                                                  deluge::processing::engines::CvStat::Resyncs};
+PLACE_SDRAM_BSS cv_output::Stat cvStatDmaStallsMenu{STRING_FOR_AUX_STAT_STALLS, STRING_FOR_AUX_STAT_STALLS,
+                                                    deluge::processing::engines::CvStat::DmaStalls};
+PLACE_SDRAM_BSS cv_output::Stat cvStatYieldedNowMenu{STRING_FOR_AUX_STAT_YIELDED_NOW, STRING_FOR_AUX_STAT_YIELDED_NOW,
+                                                     deluge::processing::engines::CvStat::YieldedNow};
+
+PLACE_SDRAM_BSS cv_output::StatsSubmenu auxStatsMenu{
+    STRING_FOR_AUX_STATS,
+    STRING_FOR_AUX_STATS,
+    {
+        &cvStatStartsMenu,
+        &cvStatStopsMenu,
+        &cvStatYieldsMenu,
+        &cvStatTakeBacksMenu,
+        &cvStatPumpWrittenMenu,
+        &cvStatPumpDroppedMenu,
+        &cvStatResyncsMenu,
+        &cvStatDmaStallsMenu,
+        &cvStatYieldedNowMenu,
+    },
+};
+
 PLACE_SDRAM_BSS cv_output::LevelSubmenu outputLevelMenu{
     STRING_FOR_AUX,
     STRING_FOR_AUX,
@@ -2130,6 +2167,7 @@ PLACE_SDRAM_BSS cv_output::LevelSubmenu outputLevelMenu{
         &cvOutputLevel1Menu,
         &cvOutputLevel2Menu,
         &cvStereoSplitMenu,
+        &auxStatsMenu,
     },
 };
 

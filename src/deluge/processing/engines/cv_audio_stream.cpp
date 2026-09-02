@@ -20,6 +20,7 @@
 #include "definitions_cxx.hpp"
 #include "hid/display/display.h"
 #include "processing/engines/audio_engine.h"
+#include "model/settings/runtime_feature_settings.h"
 #include "processing/engines/cv_audio_stream_c_interface.h"
 #include "util/functions.h"
 #include <cmath>
@@ -127,6 +128,21 @@ bool cvStreamYielded = false;
 /// Set whenever the stream has been off the bus, so the next pump puts the write pointer
 /// back where it belongs instead of letting the missed time turn into delay.
 bool cvStreamResyncPending = false;
+
+// Diagnostic counters. volatile because every one of them is written from interrupt context
+// and read from the menu thread; not atomic, because a diagnostic that perturbs the path it
+// measures is worse than one that is occasionally a count behind. See CvStat in the header
+// for what each answers.
+volatile uint32_t cvStatStarts = 0;
+volatile uint32_t cvStatStops = 0;
+volatile uint32_t cvStatYields = 0;
+volatile uint32_t cvStatTakeBacks = 0;
+volatile uint32_t cvStatPumpWritten = 0;
+volatile uint32_t cvStatPumpDropped = 0;
+volatile uint32_t cvStatResyncs = 0;
+volatile uint32_t cvStatDmaStalls = 0;
+/// Last read pointer the pump saw, so a stalled transfer engine can be told from a moving one.
+uint32_t cvStatLastReadAddress = 0;
 
 /// The SPI block as boot configured it for the DAC, captured before the display's own setup
 /// could overwrite it. Restored every time the bus is handed over.
@@ -291,7 +307,19 @@ bool cvOutputsAvailable() {
 	// Was !have_oled_screen. The display and the DAC share RSPI channel 0, so a stream that
 	// could not give the bus back had to be kept off OLED models entirely; it gives the bus
 	// back now, so both models can stream. See cvStreamYieldBusToDisplay().
-	return true;
+	//
+	// Now also the Community Features toggle, and this is the only place it has to be checked:
+	// the render path asks this before capturing anything, so with the feature off no Clip is
+	// ever routed, cvStreamRenderComplete() stops the stream on the next window, and the
+	// sockets go back to note voltages. It used to gate the menus alone, which meant switching
+	// AUX Sends off hid the controls while the capture and the stream carried on -- the exact
+	// opposite of what an off switch is for, and it took away the menu you would have used to
+	// turn the sends down.
+	//
+	// Menu visibility deliberately stays separate (cvSendMenusVisible): the sends are ordinary
+	// params that live in song files, so hiding their editors is a display choice, while this
+	// is the feature actually running or not.
+	return runtimeFeatureSettings.isOn(RuntimeFeatureSettingType::EnableAuxSends);
 }
 
 bool cvSendMenusVisible() {
@@ -502,13 +530,24 @@ void cvStreamPump(uint32_t numSamples) {
 	// emerge late by however long the display took, and every window after it would inherit
 	// that same delay. Dropping costs the gap and nothing beyond it.
 	if (cvStreamYielded) {
+		cvStatPumpDropped++;
 		cvStreamResyncPending = true;
 		cvSourceValid[0] = cvSourceValid[1] = false;
 		return;
 	}
 
-	const uint32_t readFrame =
-	    ((DMACn(CV_STREAM_DMA_CHANNEL).CRSA_n - (uint32_t)cvStreamBuffer) >> 3) & (kCvFramesPerChannel - 1);
+	const uint32_t readAddress = DMACn(CV_STREAM_DMA_CHANNEL).CRSA_n;
+	// A read pointer that has not moved since the previous window means the transfer engine is
+	// not consuming the ring: the converter is being fed nothing at all, whatever every other
+	// counter says. Sampled here rather than on a timer because the pump is the one place that
+	// runs at a known rate while the stream is supposed to be live.
+	if (readAddress == cvStatLastReadAddress) {
+		cvStatDmaStalls++;
+	}
+	cvStatLastReadAddress = readAddress;
+	cvStatPumpWritten++;
+
+	const uint32_t readFrame = ((readAddress - (uint32_t)cvStreamBuffer) >> 3) & (kCvFramesPerChannel - 1);
 	const uint32_t lead = (cvStreamWriteFrame - readFrame) & (kCvFramesPerChannel - 1);
 	// Deliberately NOT half the ring: the lead sets latency, while the ring only has to be
 	// big enough that a burst cannot lap the reader. Tying the two together would make every
@@ -527,6 +566,7 @@ void cvStreamPump(uint32_t numSamples) {
 	// lead is wrong by exactly the time the display held it and there is nothing to converge
 	// on -- the phase simply moved.
 	if (cvStreamResyncPending || leadError > kCvResyncThreshold || leadError < -kCvResyncThreshold) {
+		cvStatResyncs++;
 		cvStreamResyncPending = false;
 		cvStreamWriteFrame = ((uint32_t)readFrame + (uint32_t)targetLead) & (kCvFramesPerChannel - 1);
 		cvResamplePos = 0.0f;
@@ -811,6 +851,7 @@ void cvStreamYieldBusToDisplay() {
 		return;
 	}
 	cvStreamYielded = true;
+	cvStatYields++;
 	cvStreamReleaseBus();
 }
 
@@ -831,6 +872,7 @@ void cvStreamTakeBusBack() {
 	// is about to resume from -- so the two agree.
 	cvStreamResyncPending = true;
 	cvStreamYielded = false;
+	cvStatTakeBacks++;
 	cvStreamEngageBus();
 }
 
@@ -876,6 +918,10 @@ void cvStreamStart() {
 	CriticalSectionGuard guard;
 	cvStreamResyncPending = false;
 	cvStreamRunning = true;
+	cvStatStarts++;
+	// Cleared so the first pump after a start cannot compare against an address from the last
+	// time the stream ran and report a phantom stall.
+	cvStatLastReadAddress = 0;
 
 	// On an OLED model the display may be part-way through a frame on this same bus right
 	// now. Come up already yielded and let whoever holds it hand it over when they are
@@ -901,6 +947,7 @@ void cvStreamStop() {
 	// window, so nothing can claim the block between the decision and the act.
 	CriticalSectionGuard guard;
 	const bool releaseNow = cvStreamRunning && !cvStreamYielded;
+	cvStatStops++;
 	cvStreamRunning = false;
 	cvStreamYielded = false;
 	cvStreamResyncPending = false;
@@ -908,6 +955,30 @@ void cvStreamStop() {
 	if (releaseNow) {
 		cvStreamReleaseBus();
 	}
+}
+
+uint32_t cvStreamStat(CvStat which) {
+	switch (which) {
+	case CvStat::Starts:
+		return cvStatStarts;
+	case CvStat::Stops:
+		return cvStatStops;
+	case CvStat::Yields:
+		return cvStatYields;
+	case CvStat::TakeBacks:
+		return cvStatTakeBacks;
+	case CvStat::PumpWritten:
+		return cvStatPumpWritten;
+	case CvStat::PumpDropped:
+		return cvStatPumpDropped;
+	case CvStat::Resyncs:
+		return cvStatResyncs;
+	case CvStat::DmaStalls:
+		return cvStatDmaStalls;
+	case CvStat::YieldedNow:
+		return cvStreamYielded ? 1u : 0u;
+	}
+	return 0;
 }
 
 } // namespace deluge::processing::engines

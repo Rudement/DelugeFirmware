@@ -155,6 +155,49 @@ int32_t cvMasterParamToDisplay(int32_t paramValue);
 int32_t cvMasterDisplayToParam(int32_t display);
 constexpr int32_t kCvMasterDisplayMax = 50;
 
+/// Diagnostic counters for the shared-bus handover, all free-running since boot.
+///
+/// Here because the failure they exist for cannot be caught any other way: the display and
+/// the converter share one SPI channel, the handover between them happens in interrupt
+/// context, and when it goes wrong the screen is the first thing to stop -- so there is
+/// nothing left to print to. These are read back through SETTINGS > AUX > STATS, which is
+/// reachable whether or not the feature itself is switched on.
+///
+/// What each one answers:
+///
+///   Starts / Stops   -- is the stream being started and stopped once, or thrashing? A pair
+///                       of large and near-equal numbers means the render path is changing
+///                       its mind every window, which is a fault in its own right.
+///   Yields/TakeBacks -- how often the display takes the bus. These should be close to each
+///                       other; a Yields count that runs away from TakeBacks means the bus
+///                       is being handed over and not handed back, which is the deadlock.
+///   PumpWritten      -- windows of audio actually written into the ring.
+///   PumpDropped      -- windows thrown away because the display had the bus. If this is
+///                       comparable to or larger than PumpWritten, the sockets are starving:
+///                       the audio is being discarded faster than it is delivered, and no
+///                       amount of correct bus handling downstream will make a sound.
+///   Resyncs          -- phase resyncs, one per resumed handover plus any the pump forces.
+///   DmaStalls        -- pump calls where the transfer engine's read pointer had not moved
+///                       since the previous one. A large number here means the converter is
+///                       not being fed at all, whatever the rest of the counters say.
+///   YieldedNow       -- 1 if the display holds the bus at this instant, 0 if the stream does.
+enum class CvStat : uint8_t {
+	Starts,
+	Stops,
+	Yields,
+	TakeBacks,
+	PumpWritten,
+	PumpDropped,
+	Resyncs,
+	DmaStalls,
+	YieldedNow,
+};
+
+/// Reads one counter. Not synchronised: these are incremented from interrupt context and read
+/// from the menu, so a value can be one behind. That is the right trade for a diagnostic --
+/// locking the audio path to read a number would change the thing being measured.
+uint32_t cvStreamStat(CvStat which);
+
 /// Per-Clip send amount, Q16. Attenuation only, so this is the ceiling.
 constexpr int32_t kCvSendGainUnity = 65536;
 
