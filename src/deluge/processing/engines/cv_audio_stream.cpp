@@ -136,11 +136,15 @@ uint8_t cvStreamBootSpbfcr = 0b00100010;
 uint16_t cvStreamBootSpcmd0 = 0b0000001100000010;
 bool cvStreamBootSpiCaptured = false;
 
-/// Bound on every wait for the hardware below, because they run in interrupt context. A
-/// 32-bit word at the streaming rate takes about 10 us and these spins are far longer than
-/// that; reaching one means the hardware is not going to answer, and pressing on -- at
-/// worst one lost or truncated DAC word, which is a tick -- beats hanging an interrupt.
-constexpr uint32_t kCvBusWaitSpins = 20000;
+/// Bound on every wait for the hardware below. A handover runs with interrupts off, so this
+/// is what puts a ceiling on how long they stay off: each wait is one 32-bit word at the
+/// streaming rate, about 10 us, and this is several times that. Reaching the bound means the
+/// hardware is not going to answer, and pressing on -- at worst one lost or truncated DAC
+/// word, which is a tick -- beats hanging with interrupts disabled.
+///
+/// It was 20000, chosen when these waits ran with interrupts on and only had to avoid hanging
+/// an interrupt handler forever. That is 20 times longer than the wait can legitimately take.
+constexpr uint32_t kCvBusWaitSpins = 2000;
 
 bool cvStereoSplitGlobal = false;
 bool cvStreamRunning = false;
@@ -779,25 +783,34 @@ void cvStreamYieldBusToDisplay() {
 	if (!cvStreamRunning) {
 		return;
 	}
-	{
-		// Interrupts off for the flag, not for the hardware work below it. The waits in
-		// cvStreamReleaseBus() are bounded in iterations rather than in time, and holding
-		// interrupts off for their worst case would cost far more than the handover saves.
-		//
-		// The flag alone is enough. Claiming it here means a second caller -- an interrupt
-		// landing mid-handover -- turns back rather than reprogramming the block underneath
-		// this one. And a release cannot overlap a take: oled_low_level.c claims the bus
-		// before a transfer and gives it back after, so the two are already ordered by the
-		// transfer between them.
-		//
-		// Set before releasing, not after, for the same reason: a pump running concurrently
-		// must see that the ring is no longer being read.
-		CriticalSectionGuard guard;
-		if (!cvStreamRunning || cvStreamYielded) {
-			return;
-		}
-		cvStreamYielded = true;
+	// Interrupts off across the flag AND the hardware it describes, because they are one
+	// step. The flag on its own does not make a release and a take mutually exclusive: they
+	// reach the SPI block from different places and only the flag was ever guarded.
+	//
+	// oledDeselectionComplete() clears spiBusCurrentlySending before it hands the bus back,
+	// so from that instant the bus reads as free while cvStreamEngageBus() is still setting
+	// it up -- and anything landing in that window (an interrupt reaching enqueueCVMessage(),
+	// the main thread reaching enqueueOLEDFrame()) starts the opposite sequence on the same
+	// registers and the same chip-select pin. What comes out is a free-running DMA feeding a
+	// block the display believes it owns, which no later handover undoes.
+	//
+	// A song load is where that window gets hit, which is why the freeze looked like a file
+	// problem: FileReader::readDone() runs the audio engine, the UI timer manager and
+	// oledRoutine() back to back every 64 reads, so the render path's starts and stops and
+	// the display's frames interleave for as long as the load takes.
+	//
+	// What it costs is the two waits in cvStreamReleaseBus() -- one 32-bit word each at the
+	// streaming rate, about 20 us together, and kCvBusWaitSpins as the hard ceiling. An audio
+	// window is a hundred times that, and the one path that already held interrupts across
+	// this (enqueueCVMessage) has been doing so all along.
+	//
+	// The flag still moves before the hardware does, so a pump arriving after this sees that
+	// the ring is no longer being read.
+	CriticalSectionGuard guard;
+	if (!cvStreamRunning || cvStreamYielded) {
+		return;
 	}
+	cvStreamYielded = true;
 	cvStreamReleaseBus();
 }
 
@@ -805,18 +818,19 @@ void cvStreamTakeBusBack() {
 	if (!cvStreamRunning) {
 		return;
 	}
-	{
-		CriticalSectionGuard guard;
-		if (!cvStreamRunning || !cvStreamYielded) {
-			return;
-		}
-		// Marked before the flag clears, so a pump landing between the two still resyncs
-		// rather than trusting a lead measured against a channel that is not running. Such a
-		// pump reads the address the transfer engine stopped at, which is exactly where
-		// cvStreamEngageBus() is about to resume from -- so the two agree.
-		cvStreamResyncPending = true;
-		cvStreamYielded = false;
+	// Interrupts off across the whole take, for the reason set out in
+	// cvStreamYieldBusToDisplay(): the bus reads as free the moment the flag clears, and the
+	// engage below is not instantaneous.
+	CriticalSectionGuard guard;
+	if (!cvStreamRunning || !cvStreamYielded) {
+		return;
 	}
+	// Marked before the flag clears, so a pump landing between the two still resyncs rather
+	// than trusting a lead measured against a channel that is not running. Such a pump reads
+	// the address the transfer engine stopped at, which is exactly where cvStreamEngageBus()
+	// is about to resume from -- so the two agree.
+	cvStreamResyncPending = true;
+	cvStreamYielded = false;
 	cvStreamEngageBus();
 }
 
@@ -850,25 +864,25 @@ void cvStreamStart() {
 	// above was set against.
 	cvStreamResumeSource = (uint32_t)cvStreamBuffer;
 
-	bool engageNow;
-	{
-		// With interrupts off, because the handover happens in one. Reading
-		// spiBusCurrentlySending and settling what to do about it have to be one step: a
-		// transfer completing in between would call cvStreamTakeBusBack() while this function
-		// still had cvStreamYielded false, find nothing to do, and leave the stream parked
-		// until whatever redrew the screen next happened to release the bus again.
-		CriticalSectionGuard guard;
-		cvStreamResyncPending = false;
-		cvStreamRunning = true;
+	// With interrupts off, and the engage inside the same window. Reading
+	// spiBusCurrentlySending, settling what to do about it, and doing it have to be one step:
+	// a transfer completing in between would call cvStreamTakeBusBack() while this function
+	// still had cvStreamYielded false, find nothing to do, and leave the stream parked until
+	// whatever redrew the screen next happened to release the bus again -- and a transfer
+	// *starting* in between would program the block on top of the engage.
+	//
+	// This is called from the render path, where the bus is free as far as the display is
+	// concerned, so nothing is holding a claim on our behalf.
+	CriticalSectionGuard guard;
+	cvStreamResyncPending = false;
+	cvStreamRunning = true;
 
-		// On an OLED model the display may be part-way through a frame on this same bus right
-		// now. Come up already yielded and let whoever holds it hand it over when they are
-		// finished, rather than reprogramming the SPI block underneath a transfer in flight.
-		cvStreamYielded = deluge::hid::display::have_oled_screen && spiBusCurrentlySending;
-		engageNow = !cvStreamYielded;
-	}
+	// On an OLED model the display may be part-way through a frame on this same bus right
+	// now. Come up already yielded and let whoever holds it hand it over when they are
+	// finished, rather than reprogramming the SPI block underneath a transfer in flight.
+	cvStreamYielded = deluge::hid::display::have_oled_screen && spiBusCurrentlySending;
 
-	if (engageNow) {
+	if (!cvStreamYielded) {
 		cvStreamEngageBus();
 	}
 }
@@ -882,16 +896,14 @@ void cvStreamStop() {
 	// This used to write SPBR = 1 directly, "boot's rate for the 30 MHz request" -- true on
 	// 7SEG and wrong on OLED, where boot asks for 10 MHz and gets 3. It restores what was
 	// actually captured now.
-	bool releaseNow;
-	{
-		// Cleared first, so a handover landing in an interrupt from here on finds no stream to
-		// move and leaves the bus alone.
-		CriticalSectionGuard guard;
-		releaseNow = cvStreamRunning && !cvStreamYielded;
-		cvStreamRunning = false;
-		cvStreamYielded = false;
-		cvStreamResyncPending = false;
-	}
+	// Cleared first, so a handover landing in an interrupt from here on finds no stream to
+	// move and leaves the bus alone -- and the release stays inside the same interrupts-off
+	// window, so nothing can claim the block between the decision and the act.
+	CriticalSectionGuard guard;
+	const bool releaseNow = cvStreamRunning && !cvStreamYielded;
+	cvStreamRunning = false;
+	cvStreamYielded = false;
+	cvStreamResyncPending = false;
 
 	if (releaseNow) {
 		cvStreamReleaseBus();
