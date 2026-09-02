@@ -32,10 +32,15 @@ namespace deluge::gui::menu_item::cv_output {
 
 /// Whether the AUX menus should be shown at all.
 ///
-/// Two separate reasons to hide: the build does not offer the sends at all, or the user
-/// switched AUX Sends off in SETTINGS > COMMUNITY FEATURES. Every menu in this file asks this
-/// rather than cvSendMenusVisible() directly, so the toggle takes the whole feature out of the
-/// menus in one place -- the per-Clip sends on the three roots, and SETTINGS > AUX.
+/// One reason to hide, now that both display models can stream: the user switched AUX Sends off
+/// in SETTINGS > COMMUNITY FEATURES. Every menu in this file asks this rather than a socket
+/// predicate directly, so the toggle takes the whole feature out of the menus in one place --
+/// the per-Clip sends on the three roots, and SETTINGS > AUX.
+///
+/// The socket half is cvSendMenusVisible(), which is true on both models and is deliberately not
+/// cvOutputsAvailable(): menu visibility is not socket capability. The sends are ordinary params,
+/// stored in the song file by name and automatable, so they stay editable on a machine whose
+/// sockets cannot carry them -- and any automation lane on one keeps a visible source.
 ///
 /// Like the other Rudement toggles, this hides the door and not the room. The sends are real
 /// params and the capture keeps running, so a song saved with audio going to the sockets still
@@ -46,7 +51,7 @@ inline bool auxMenusVisible() {
 	return cvSendMenusVisible() && runtimeFeatureSettings.isOn(RuntimeFeatureSettingType::EnableAuxSends);
 }
 
-/// SETTINGS > OUTPUT LEVEL. Absent on models where the CV sockets cannot carry audio.
+/// SETTINGS > OUTPUT LEVEL.
 class LevelSubmenu final : public Submenu {
 public:
 	using Submenu::Submenu;
