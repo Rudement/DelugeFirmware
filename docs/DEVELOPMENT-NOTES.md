@@ -291,6 +291,17 @@ def lookup(a):
 Subtract 8 from the LR for a data abort, 4 for a prefetch abort, before reading it as the
 faulting instruction. For finding the function it rarely matters.
 
+**Expect one pointer from a hard fault, and read nothing into the missing ones.** The abort
+vector runs in abort mode, where `SP` is banked, so `handle_cpu_fault` is handed `SP_abt` and
+not the program stack. `isStackPointer()` rejects it, the stack scan finds no return addresses,
+and only the SYS-mode LR is ever drawn. A `FREEZE_WITH_ERROR` freeze, which runs on the normal
+stack, is the case that can show more.
+
+**Keep the `.nmdump`.** `build\` is wiped between lines and the build scripts copy out only the
+`.bin`, so a build's symbol table dies with the next wipe and its fault addresses become
+unreadable. It is 800 KB. Copy it out beside any binary worth flashing; `symbols/` in the repo
+root is where they go.
+
 **Worked example, 2026-09-02.** Sidebar red, `b3 7e` -- a hard fault in commit `b37e6db3`,
 the 1.3.0-beta sync built in a Linux container with Ubuntu's gcc 13.2 rather than the
 vendor v22 toolchain. One blue group, in the OSC1/OSC2 columns, low half `0x7358`; the
