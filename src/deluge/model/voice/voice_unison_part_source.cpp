@@ -26,6 +26,7 @@
 #include "model/voice/voice_sample.h"
 #include "playback/playback_handler.h"
 #include "processing/engines/audio_engine.h"
+#include "processing/live/live_pitch_shifter.h"
 #include "processing/source.h"
 #include "storage/multi_range/multisample_range.h"
 
@@ -126,6 +127,7 @@ void VoiceUnisonPartSource::unassign(bool deletingSong) {
 	}
 
 	if (livePitchShifter != nullptr) {
+		livePitchShifter->~LivePitchShifter();
 		delugeDealloc(livePitchShifter);
 		livePitchShifter = nullptr;
 	}
