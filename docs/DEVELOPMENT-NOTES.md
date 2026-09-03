@@ -152,6 +152,39 @@ the branch does not have -- a compile error that reads like a code bug and is no
 kind. The same switch had also left the working tree's *tracked* files stale while `git status`
 called them clean.
 
+**Two Cowork tasks cannot share this working tree.** This is the same refusal-to-delete, one
+step worse. A second task pointed at this folder switches branches; git moves `HEAD` and writes
+the index, the mount refuses the deletes, and the working tree stays on the *other* task's
+branch. You end up with a repo whose `HEAD` and files disagree by an entire branch, and neither
+task can see it -- both just see a working tree that has apparently been modified wholesale.
+
+On 2026-09-03 a task working on WiFi firmware update created and checked out `feat/selfflash-13`
+(at `base-13`, no commits) while this one was mid-build on `feat/aux-sends-13-gated`. What it
+looked like from inside the build script: a checkout failing with `Your local changes to the
+following files would be overwritten by checkout` listing two hundred files, and a `git status`
+showing every file that differs between the two branches as modified, plus every file unique to
+the other branch as untracked. It reads like a catastrophic accidental edit. It is not one.
+
+Before throwing anything away, hash the files against the branch you thought you were on:
+
+```
+for f in $(git diff --name-only); do
+  [ "$(git hash-object "$f")" = "$(git rev-parse <branch>:"$f")" ] || echo "REALLY MODIFIED: $f"
+done
+```
+
+Silence means the tree is merely stale and `git reset --hard <branch>` loses nothing. All 202
+files were silent that day.
+
+Recover **from Windows, not from the sandbox**: 448 files over the mount takes minutes, and a
+checkout killed part-way through leaves a half-updated index -- staged deletions of files that
+are still sitting there. `git checkout -f <branch>` followed by `git reset --hard` fixes it.
+Untracked files survive all of this, so uncommitted work in a file git does not track is never
+at risk; on the day, the other task's `docs/dev/wifi-firmware-update.md` came through untouched.
+
+Avoid it by running one task against this folder at a time. If two lines of work genuinely need
+to run at once, the second one gets its own clone.
+
 After any branch switch made from a sandbox, before building:
 
 ```
