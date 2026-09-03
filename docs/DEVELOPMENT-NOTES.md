@@ -264,7 +264,42 @@ vendor v22 toolchain. One blue group, in the OSC1/OSC2 columns, low half `0x7358
 SAMPL1/SAMPL2 pair to its left was dark, so the top half was lost per the note above. Of
 the 21 addresses `0x20xx7358` inside the code range, three sit on the startup path:
 `__static_initialization_and_destruction_0 +10052`, `deluge_main +1560` and
-`LoadSongUI::performLoad +1284`. The stock 1.3.0 beta of the same upstream commit boots
-clean on the same unit, as does the 1.2.1 build from the vendor toolchain, so the container
-toolchain is the suspect rather than the merge -- rebuilding `b37e6db3` under v22 is what
-settles it. **Container builds are for checking that a port compiles. Do not flash them.**
+`LoadSongUI::performLoad +1284`. The same tree rebuilt under the vendor v22 toolchain boots
+clean, as do the stock 1.3.0 beta of the same upstream commit and the 1.2.1 build -- so the
+merge was never at fault and the container toolchain was.
+**Container builds are for checking that a port compiles. Do not flash them.**
+
+---
+
+## Flashing: what the card must not contain
+
+The bootloader scans the root of the card for `*.BIN` and does not filter out directories.
+`$RECYCLE.BIN` is a directory whose name ends in `.BIN`, and a directory entry reports a size
+of zero, so the bootloader matches it, decides that is the firmware, and stops with
+
+```
+FIRMWARE FILE FOUND IS TOO SMALL TO POSSIBLY CONTAIN VALID FIRMWARE.
+```
+
+The real firmware file sitting next to it is never looked at.
+
+Windows creates `$RECYCLE.BIN` on a removable drive the first time you delete something there
+through Explorer. Which means clearing the old build off the card to leave "only one .bin" is
+itself what creates the thing that stops the new one loading. Anything else tiny whose name
+ends in `.bin` does the same -- a Mac `._something.bin` resource fork is the other one this
+card has produced.
+
+**Delete on the card with `del` or Shift+Delete, never a plain Explorer delete.** Before
+flashing (the card is usually D:, but check):
+
+```
+dir /a D:\*.bin
+rd /s /q "D:\$RECYCLE.BIN"
+```
+
+`/a` matters -- `$RECYCLE.BIN` is hidden, so a plain `dir` does not show it, and the card looks
+perfectly clean while refusing every flash.
+
+Confirmed 2026-09-02: exactly one `.bin` at the root, correct size, and the unit still refused
+it. Removing the folder was the entire fix and the same file then flashed first try. Every
+flash that had worked earlier that day predated the folder's creation timestamp by minutes.
