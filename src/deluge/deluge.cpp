@@ -1056,6 +1056,14 @@ void deleteOldSongBeforeLoadingNew() {
 	AudioEngine::killAllVoices(true); // Need to do this now that we're not bothering getting the old Song's
 	                                  // Instruments detached and everything on delete
 
+	// The other place a Song gets swapped out (playbackHandler's preLoadedSong path, used while
+	// playback is active) clears MidiFollow's stored clip pointers before the old Song goes away.
+	// This is the ordinary "Load Song" path -- taken whenever playback isn't active, which is most
+	// of the time -- and it was missing the same call: every Clip below is about to be destructed,
+	// so any pointer MidiFollow is still holding onto (gridSelectedClip, clipForLastNoteReceived)
+	// would dangle from here until something happens to overwrite it.
+	midiFollow.clearStoredClips();
+
 	view.activeModControllableModelStack.modControllable = nullptr;
 	view.activeModControllableModelStack.setTimelineCounter(nullptr);
 	view.activeModControllableModelStack.paramManager = nullptr;

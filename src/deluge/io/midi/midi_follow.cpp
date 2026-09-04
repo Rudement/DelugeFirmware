@@ -17,6 +17,7 @@
 
 #include "io/midi/midi_follow.h"
 #include "definitions_cxx.hpp"
+#include "extern.h"
 #include "gui/l10n/l10n.h"
 #include "gui/views/arranger_view.h"
 #include "gui/views/automation_view.h"
@@ -515,6 +516,9 @@ Clip* MidiFollow::getSelectedOrActiveClip() {
 /// if you're in a clip, this will return that clip
 Clip* MidiFollow::getSelectedClip() {
 	Clip* clip = nullptr;
+	// True when the clip below came from something the player is physically holding right now,
+	// which outranks a standing grid-hold lock for as long as it is held.
+	bool heldGesture = false;
 
 	RootUI* rootUI = getRootUI();
 	UIType uiType = UIType::NONE;
@@ -524,22 +528,31 @@ Clip* MidiFollow::getSelectedClip() {
 
 	switch (uiType) {
 	case UIType::SESSION:
-		// if you're in session view, check if you're pressing a clip to control that clip
-		clip = sessionView.getClipForLayout();
+		// Grid Launch mode: gated by hold time, see getGridSelectedClip(). Rows layout has no
+		// such gesture defined, so it keeps the original instant-on-touch behaviour.
+		if (currentSong->sessionLayout == SessionLayoutType::SessionLayoutTypeGrid) {
+			clip = getGridSelectedClip();
+		}
+		else {
+			clip = sessionView.getClipForLayout();
+		}
 		break;
 	case UIType::ARRANGER:
 		clip = arrangerView.getClipForSelection();
+		heldGesture = (clip != nullptr);
 		break;
 	case UIType::PERFORMANCE:
 		// if you're in the arranger performance view, check if you're holding audition pad
 		if (currentSong->lastClipInstanceEnteredStartPos != -1) {
 			clip = arrangerView.getClipForSelection();
+			heldGesture = (clip != nullptr);
 		}
 		break;
 	case UIType::AUTOMATION:
 		// if you're in the arranger automation view, check if you're holding audition pad
 		if (automationView.onArrangerView) {
 			clip = arrangerView.getClipForSelection();
+			heldGesture = (clip != nullptr);
 			break;
 		}
 		[[fallthrough]]; // you're in automation clip view
@@ -547,7 +560,74 @@ Clip* MidiFollow::getSelectedClip() {
 		clip = getCurrentClip();
 	}
 
+	// A grid-hold lock is meant to outlast Session view. Without this, opening any other track's
+	// clip view hands Follow straight back to whatever is on screen -- so the locked clip and the
+	// track being edited both look like they are being controlled, which is the opposite of what
+	// the lock is for. In Session grid view the lock is already the answer above, and holding a
+	// pad there is how you re-target or release it; a pad or audition pad being physically held
+	// somewhere else still wins, since that is a deliberate momentary selection.
+	if (uiType != UIType::SESSION && !heldGesture) {
+		Clip* locked = getValidatedGridSelectedClip();
+		if (locked) {
+			clip = locked;
+		}
+	}
+
 	return clip;
+}
+
+/// gridSelectedClip is a bare pointer kept for as long as the lock lasts, so it has to be checked
+/// against the Song before anything is done with it. clearStoredClips() and removeClip() cover the
+/// routes that announce themselves, but a Clip can stop being usable without either being called --
+/// deleted through a path that doesn't reach removeClip(), or belonging to a Song that went away.
+/// A pointer that no longer appears in the Song is dropped here rather than followed: following it
+/// is how a param lookup ends up on a ParamManager whose collections have been taken away, which is
+/// what E411 catches.
+Clip* MidiFollow::getValidatedGridSelectedClip() {
+	if (!gridSelectedClip) {
+		return nullptr;
+	}
+	if (!currentSong
+	    || (currentSong->sessionClips.getIndexForClip(gridSelectedClip) == -1
+	        && currentSong->arrangementOnlyClips.getIndexForClip(gridSelectedClip) == -1)) {
+		gridSelectedClip = nullptr;
+		return nullptr;
+	}
+	if (!gridSelectedClip->output) {
+		gridSelectedClip = nullptr;
+		return nullptr;
+	}
+	return gridSelectedClip;
+}
+
+/// Session view, Grid layout, Launch mode only -- Edit mode dispatches through a different
+/// handler entirely and is untouched by any of this.
+///
+/// Grid taps launch clips constantly during a live set, and every one of them used to become
+/// Follow's new target for however long the pad stayed down, gold-knob style. A live launch is
+/// usually only down for a moment, but "a moment" is still long enough to catch a CC in transit
+/// -- a control meant for the synth being built would land on the drum kit that was just
+/// launched instead, and there was no way to launch a clip without briefly stealing the target.
+///
+/// A pad has to be held past Settings > Defaults > Hold Time -- the same threshold Shift,
+/// button taps and Performance View's FX pad latch already use -- before it can claim the
+/// selection, and once claimed it is kept in gridSelectedClip rather than re-read from whatever
+/// pad happens to be down. An ordinary tap-to-launch never reaches that duration, so it leaves
+/// gridSelectedClip, and therefore Follow's target, untouched.
+///
+/// The check below only catches a hold that is still in progress when a CC needs an answer. A
+/// hold with no CC arriving during it -- pressed, held, released, only then start turning a
+/// knob -- would never run this code while the pad was actually down, so gridClipHeldForSelection()
+/// below is called separately, from the pad's release handler, to cover exactly that case.
+Clip* MidiFollow::getGridSelectedClip() {
+	if (sessionView.gridFirstPadActive() && !isShortPress(sessionView.selectedClipTimePressed)) {
+		gridSelectedClip = sessionView.getClipForLayout();
+	}
+	return getValidatedGridSelectedClip();
+}
+
+void MidiFollow::gridClipHeldForSelection(Clip* clip) {
+	gridSelectedClip = clip;
 }
 
 /// returns activeClip for the selected output
@@ -814,6 +894,7 @@ void MidiFollow::clearStoredClips() {
 	for (int32_t i = 0; i <= 127; i++) {
 		clipForLastNoteReceived[i] = nullptr;
 	}
+	gridSelectedClip = nullptr;
 }
 
 /// removes a specific clip pointer from the clipForLastNoteReceived array
@@ -824,6 +905,9 @@ void MidiFollow::removeClip(Clip* clip) {
 		if (clipForLastNoteReceived[i] == clip) {
 			clipForLastNoteReceived[i] = nullptr;
 		}
+	}
+	if (gridSelectedClip == clip) {
+		gridSelectedClip = nullptr;
 	}
 }
 

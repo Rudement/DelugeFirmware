@@ -4460,7 +4460,40 @@ ActionResult SessionView::gridHandlePadsLaunchWithSelection(int32_t x, int32_t y
 				gridHandlePadsLaunchToggleArming(clip, false);
 			}
 
+			// A hold past Settings > Defaults > Hold Time claims this clip for MIDI Follow's
+			// A/B/C channels, independently of the kShortPressTime arm/no-arm decision just
+			// above -- an ordinary launch tap never reaches Hold Time and leaves Follow's
+			// target untouched. This covers a hold released without any CC arriving during it;
+			// MidiFollow::getGridSelectedClip() covers the same threshold being crossed while
+			// the pad is still down, for a knob turned mid-hold. Holding the already-locked pad
+			// again releases the lock, symmetric with how it was claimed.
+			if (clip != nullptr && !isShortPress(selectedClipTimePressed)) {
+				bool wasUnlocking = (midiFollow.gridSelectedClip == clip);
+				midiFollow.gridClipHeldForSelection(wasUnlocking ? nullptr : clip);
+				// Confirms the lock/unlock in text, since the pulse alone is easy to miss mid-performance
+				// and doesn't say which clip until you look at the grid.
+				if (wasUnlocking) {
+					display->popupTextTemporary("Follow: unlocked");
+				}
+				else {
+					char followLockText[32];
+					strcpy(followLockText, "Follow: ");
+					strncat(followLockText, clip->output->name.get(),
+					        sizeof(followLockText) - strlen(followLockText) - 1);
+					display->popupTextTemporary(followLockText);
+				}
+			}
+
 			clipPressEnded();
+
+			// The pulse is ordinary tap feedback and jumps to whatever pad was last touched --
+			// useful for launching, but misleading once something is locked for MIDI Follow: an
+			// unrelated launch tap would otherwise make it look like the lock had moved when it
+			// hadn't. Pin it back onto the locked clip so the lit pad always matches what
+			// Follow is actually controlling.
+			if (midiFollow.gridSelectedClip != nullptr) {
+				gridSelectClipForPulsing(*midiFollow.gridSelectedClip);
+			}
 		}
 	}
 
@@ -5094,6 +5127,15 @@ void SessionView::gridPulseSelectedClip() {
 
 	// Try getting the current clip. If there isn't one, exit
 	Clip* clip = getCurrentClip();
+	// While a pad is actively held, keep showing that live touch feedback (useful mid-hold, e.g.
+	// while deciding whether to relock). Once nothing is pressed, though, this function runs on a
+	// repeating timer and would otherwise keep re-showing whatever was last tapped indefinitely --
+	// pin it back onto the MIDI Follow lock instead, so the lit pad always matches what Follow is
+	// actually controlling rather than what a since-finished launch tap last touched.
+	if (!gridFirstPadActive() && currentSong->sessionLayout == SessionLayoutType::SessionLayoutTypeGrid
+	    && midiFollow.gridSelectedClip != nullptr) {
+		clip = midiFollow.gridSelectedClip;
+	}
 	if (clip == nullptr || clip->output == nullptr) {
 		return;
 	}
