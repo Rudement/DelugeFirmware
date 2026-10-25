@@ -33,6 +33,10 @@ This repository builds the same way as the upstream firmware. See
 [Getting Started with Deluge Development](https://delugecommunity.com/development/deluge/getting_started/),
 then run `./dbt build release` (or `dbt build release` on Windows). The `.bin` lands in `build/Release/`.
 
+## Support
+
+If you enjoy this firmware, you can support its development on [Patreon](https://www.patreon.com/Rudement).
+
 ## Credits
 
 - **Synthstrom Audible** and the Deluge community developers, for the open-source firmware this is built on
