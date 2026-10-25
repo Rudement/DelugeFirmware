@@ -21,6 +21,7 @@
 #include "io/midi/learned_midi.h"
 #include "model/voiced.h"
 #include "modulation/arpeggiator.h"
+#include "modulation/midi_fx/midi_fx_chain.h"
 #include <cstdint>
 
 class Clip;
@@ -67,6 +68,16 @@ public:
 	ArpeggiatorForDrum arpeggiator;
 	ArpeggiatorSettings arpSettings;
 
+	/// MIDI FX, per drum, mirroring the two lines above. Per-drum rather than kit-wide because
+	/// the point is to repeat the hat and not the kick.
+	///
+	/// Note this is BOTH the chain and the settings, unlike melodic instruments where the chain
+	/// lives on the Instrument and the settings on the Clip. A Drum is its own note source and
+	/// there is no per-clip drum object to hang settings on, so they sit together here and
+	/// persist through Drum::writeDrumTagsToFile.
+	deluge::modulation::midi_fx::MidiFxChain midiFx;
+	deluge::modulation::midi_fx::MidiFxSettings midiFxSettings;
+
 	virtual void noteOn(ModelStackWithThreeMainThings* modelStack, uint8_t velocity, int16_t const* mpeValues,
 	                    int32_t fromMIDIChannel = MIDI_CHANNEL_NONE, uint32_t sampleSyncLength = 0,
 	                    int32_t ticksLate = 0, uint32_t samplesLate = 0) = 0;
@@ -82,6 +93,20 @@ public:
 	virtual void choke(ModelStackWithSoundFlags* modelStack) {} // modelStack can be NULL if you really insist
 
 	void writeMIDICommandsToFile(Serializer& writer);
+	/// Runs this drum's MIDI FX chain over a freshly-filled instruction, immediately before it is
+	/// dispatched. Returns false if an effect swallowed the event. Cheap no-op when the chain has
+	/// nothing to do.
+	bool runMidiFxOnNoteEvent(ArpReturnInstruction& instruction);
+
+	/// Hard stop for anything this drum's MIDI FX chain has pending. Safe when there is none.
+	/// Transport stop and clip stop reach this through InstrumentClip::expectNoFurtherTicks.
+	void flushMidiFx();
+
+	/// Sends the note-offs a MIDI FX flush produced. Nothing to do for a SoundDrum, whose voices
+	/// the stop path has already cut; NonAudioDrum overrides it, because a MIDI or gate drum sends
+	/// somewhere this firmware cannot reach back into.
+	virtual void dispatchMidiFxFlushNoteOffs(ArpReturnInstruction& instruction) {}
+
 	void writeDrumTagsToFile(Serializer& writer);
 	bool readDrumTagFromFile(Deserializer& reader, char const* tagName);
 	void recordNoteOnEarly(int32_t velocity, bool noteTailsAllowed);

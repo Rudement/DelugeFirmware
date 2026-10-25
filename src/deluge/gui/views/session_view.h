@@ -125,6 +125,7 @@ public:
 
 	// Members for grid layout
 	inline bool gridFirstPadActive() { return (gridFirstPressedX != -1 && gridFirstPressedY != -1); }
+	ActionResult trackLinkPadAction(int32_t x, int32_t y, int32_t on);
 	ActionResult gridHandlePads(int32_t x, int32_t y, int32_t on);
 	ActionResult gridHandleScroll(int32_t offsetX, int32_t offsetY);
 
@@ -232,12 +233,16 @@ private:
 	int32_t gridFirstPressedY = -1;
 	int32_t gridSecondPressedX = -1;
 	int32_t gridSecondPressedY = -1;
+	// Track grabbed for sideways dragging with the horizontal encoder. Held as a pointer because the
+	// column slides out from under the finger, which makes gridFirstPressedX stale after the first move.
+	Output* gridDragTrack = nullptr;
 	inline bool gridSecondPadInactive() { return (gridSecondPressedX == -1 && gridSecondPressedY == -1); }
 
 	inline void gridResetPresses(bool first = true, bool second = true) {
 		if (first) {
 			gridFirstPressedX = -1;
 			gridFirstPressedY = -1;
+			gridDragTrack = nullptr;
 		}
 		if (second) {
 			gridSecondPressedX = -1;
@@ -249,12 +254,15 @@ private:
 	Clip* gridCreateClipInTrack(Output* targetOutput);
 	AudioClip* gridCreateAudioClipWithNewTrack();
 	InstrumentClip* gridCreateInstrumentClipWithNewTrack(OutputType type);
-	Clip* gridCreateClip(uint32_t targetSection, Output* targetOutput = nullptr, Clip* sourceClip = nullptr);
+	Clip* gridCreateClip(uint32_t targetSection, Output* targetOutput = nullptr, Clip* sourceClip = nullptr,
+	                     bool startMuted = false);
 	void gridClonePad(uint32_t sourceX, uint32_t sourceY, uint32_t targetX, uint32_t targetY);
 	void setupNewClip(Clip* newClip);
 
+	bool gridCaptureScene();
 	void gridStartSection(uint32_t section, bool instant);
 	void gridToggleClipPlay(Clip* clip, bool instant);
+	bool gridMoveTrack(Output* track, int32_t offsetX);
 
 	[[nodiscard]] const size_t gridTrackCount() const;
 	uint32_t gridClipCountForTrack(Output* track);

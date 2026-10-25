@@ -44,9 +44,47 @@ Drum::Drum(DrumType newType) : type(newType), arpeggiator(), arpSettings() {
 	memset(lastExpressionInputsReceived, 0, sizeof(lastExpressionInputsReceived));
 }
 
+bool Drum::runMidiFxOnNoteEvent(ArpReturnInstruction& instruction) {
+	if (midiFx.isEmpty()) {
+		return true;
+	}
+	deluge::modulation::midi_fx::MidiFxContext context{.settings = &midiFxSettings,
+	                                                   .arpIsOn = !ArpeggiatorBase::arpIsOff(&arpSettings)};
+	return midiFx.onNoteEvent(context, instruction);
+}
+
+void Drum::flushMidiFx() {
+	if (midiFx.isEmpty()) {
+		return;
+	}
+	// Deliberately not gated on settings->enabled: switching the effect off is itself one of the
+	// paths that must flush.
+	deluge::modulation::midi_fx::MidiFxContext context{.settings = &midiFxSettings,
+	                                                   .arpIsOn = !ArpeggiatorBase::arpIsOff(&arpSettings)};
+
+	// Bounded loop over fresh instructions - four note-offs each. Same reasoning as
+	// MelodicInstrument::flushMidiFx.
+	constexpr int32_t kMaxFlushPasses = 8;
+	for (int32_t pass = 0; pass < kMaxFlushPasses; pass++) {
+		ArpReturnInstruction instruction;
+		const bool moreToDo = midiFx.flush(context, instruction);
+		dispatchMidiFxFlushNoteOffs(instruction);
+		if (!moreToDo) {
+			break;
+		}
+	}
+}
+
 void Drum::writeDrumTagsToFile(Serializer& writer) {
 	// Called by subclasses to handle all the shared tags (except for MIDI commands).
 	writer.writeAttribute("name", drumName.c_str());
+
+	// Its own tag, matching the melodic side. Both drum types reach this, which is why MIDI FX
+	// persistence for kits lives here rather than being threaded through Sound::writeToFile -
+	// that would have meant a signature change on the read path too, for no gain.
+	writer.writeOpeningTagBeginning("midiFx");
+	midiFxSettings.writeCommonParamsToFile(writer);
+	writer.closeTag();
 }
 
 void Drum::writeMIDICommandsToFile(Serializer& writer) {
@@ -66,6 +104,18 @@ bool Drum::readDrumTagFromFile(Deserializer& reader, char const* tagName) {
 	else if (!strcmp(tagName, "midiInput")) {
 		midiInput.readNoteFromFile(reader);
 		reader.exitTag();
+	}
+	// A drum saved before MIDI FX existed has no such tag, so the settings keep their defaults,
+	// and every effect is neutral at its default.
+	else if (!strcmp(tagName, "midiFx")) {
+		reader.match('{');
+		while (*(tagName = reader.readNextTagOrAttributeName())) {
+			if (!midiFxSettings.readCommonTagsFromFile(reader, tagName)) {
+				reader.exitTag(tagName);
+			}
+		}
+		reader.match('}'); // End midiFx value object.
+		midiFxSettings.finishReading();
 	}
 	else {
 		return false;

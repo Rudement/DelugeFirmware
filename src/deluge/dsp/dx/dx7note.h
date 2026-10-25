@@ -29,6 +29,12 @@
 #include "pitchenv.h"
 #include <memory>
 
+
+// Fixed-width integer types used below. Added defensively: deluge_dsp is a
+// unity build, so a header that relies on a neighbour in its chunk having
+// included this first compiles only by luck, and stops compiling as soon as
+// anything changes the chunk.
+#include <stdint.h>
 struct VoiceStatus {
 	uint32_t amp[6];
 	char ampStep[6];

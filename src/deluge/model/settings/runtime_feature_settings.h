@@ -23,6 +23,7 @@
 #include "util/d_string.h"
 #include <array>
 #include <cstdint>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -40,6 +41,22 @@ enum RuntimeFeatureStateToggle : uint32_t { Off = 0, On = 1 };
 enum RuntimeFeatureStateSyncScalingAction : uint32_t { SyncScaling = 0, Fill = 1 };
 
 enum RuntimeFeatureStateEmulatedDisplay : uint32_t { Hardware = 0, Toggle = 1, OnBoot = 2 };
+
+/// Which Visualizer is drawn. Off means the feature is inert: no capture, no menu item.
+enum RuntimeFeatureStateVisualizer : uint32_t {
+	VisualizerOff = 0,
+	VisualizerWaveform = 1,
+	VisualizerLineSpectrum = 2,
+	VisualizerBarSpectrum = 3, // the Graphic EQ
+	VisualizerCube = 4,
+	VisualizerStereoLineSpectrum = 5,
+	VisualizerStereoBarSpectrum = 6,
+	VisualizerTunnel = 7,
+	VisualizerStarfield = 8,
+	VisualizerSkyline = 9,
+	VisualizerPulseGrid = 10,
+	VisualizerMidiPianoRoll = 11,
+};
 
 /// Every setting needs to be declared in here
 enum RuntimeFeatureSettingType : uint32_t {
@@ -68,6 +85,32 @@ enum RuntimeFeatureSettingType : uint32_t {
 	ShowBatteryLevel,
 	RoundedCorners,
 	ShortcutOverlay,
+	KitSplit,
+	FourBandEq,
+	EnablePlaitsEngine,
+	EnableCloudsFX,
+	EnableGristleizer,
+	EnableSear,
+	KeyboardNotePreview,
+	SceneCapture,
+	GridColumnReorder,
+	ChordBrush,
+	RetrospectiveCapture,
+	EnableAuxSends,
+	AuxSelectPulse,
+	TempHold,
+	TempHoldTails,
+	MidiFx,
+	Harmonize,
+	Strum,
+	DelayFilters,
+	Visualizer,
+	VisualizerPriority,
+	HoldLoopPad,
+	LoopRemix,
+	MidiFollowGridLock,
+	ReverbFilterHz,
+	Groove,
 	MaxElement // Keep as boundary
 };
 
@@ -84,6 +127,13 @@ struct RuntimeFeatureSetting {
 	uint32_t value;
 	// Limited to safe memory
 	deluge::vector<RuntimeFeatureSettingOption> options;
+};
+
+/// A setting read from the file that this firmware does not know - most likely one written by a newer or a
+/// different firmware. It is kept so writeSettingsToFile() can write it back, and the other firmware does not lose it.
+struct UnknownSetting {
+	std::string name;
+	uint32_t value;
 };
 
 class Serializer;
@@ -116,7 +166,11 @@ protected:
 	String startupSong;
 
 private:
-	ResizeableArray unknownSettings;
+	// Rudement: this was a ResizeableArray, which moves its elements with memmove when it grows and never runs their
+	// constructors or destructors. A short std::string keeps its text inside itself and points at it, so after a move
+	// that pointer aimed at the old copy and the name came back as garbage (seen on a card as raw bytes
+	// AC A8 17 20 02); the strings were never freed either. A vector moves them properly.
+	deluge::vector<UnknownSetting> unknownSettings;
 
 public:
 	friend class deluge::gui::menu_item::runtime_feature::Setting;

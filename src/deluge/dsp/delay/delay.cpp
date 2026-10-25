@@ -21,12 +21,62 @@
 #include "dsp/stereo_sample.h"
 #include "io/debug/log.h"
 #include "memory/general_memory_allocator.h"
+#include "model/settings/runtime_feature_settings.h"
 #include "model/sync.h"
 #include "processing/engines/audio_engine.h"
+#include <algorithm>
+#include <cmath>
 #include <cstdlib>
 #include <ranges>
 
 extern int32_t spareRenderingBuffer[][SSI_TX_BUFFER_NUM_SAMPLES];
+
+namespace {
+// Exponential sweep between two frequencies; t in 0..1.
+float sweepHz(float t, float fromHz, float toHz) {
+	return fromHz * std::pow(toHz / fromHz, std::clamp(t, 0.f, 1.f));
+}
+} // namespace
+
+void Delay::Svf::setup(float hz) {
+	hz = std::clamp(hz, 10.f, 0.45f * static_cast<float>(kSampleRate));
+	const float g = std::tan(3.14159265f * hz / static_cast<float>(kSampleRate));
+	const float na1 = 1.f / (1.f + g * (g + kSvfK));
+	const float na2 = g * na1;
+	a3 = g * na2;
+	a2 = na2;
+	a1 = na1;
+}
+
+float Delay::hpfHz(float f) {
+	// 1/50 is 20 Hz, 50/50 is 1 kHz.
+	return sweepHz((std::clamp(f, 0.f, 1.f) - 0.02f) / 0.98f, 20.f, 1000.f);
+}
+
+float Delay::lpfHz(float f) {
+	// 0/50 is 300 Hz, 49/50 is 16 kHz; 50/50 is off.
+	return sweepHz(std::clamp(f, 0.f, 1.f) / 0.98f, 300.f, 16000.f);
+}
+
+void Delay::setHPF(float f) {
+	f = std::clamp(f, 0.f, 1.f);
+	if ((f > 0.f) != (hpf_ > 0.f)) {
+		hpL_.reset();
+		hpR_.reset();
+	}
+	hpCoef_.setup(hpfHz(f));
+	hpf_ = f;
+}
+
+void Delay::setLPF(float f) {
+	f = std::clamp(f, 0.f, 1.f);
+	if ((f < 1.f) != (lpf_ < 1.f)) {
+		lpL_.reset();
+		lpR_.reset();
+	}
+	lpCoef_.setup(lpfHz(f));
+	lpf_ = f;
+}
 
 void Delay::informWhetherActive(bool newActive, int32_t userDelayRate) {
 
@@ -46,6 +96,7 @@ setupSecondaryBuffer:
 		prepareToBeginWriting();
 		postLPFL = 0;
 		postLPFR = 0;
+		resetUserFilters();
 		return;
 	}
 
@@ -90,7 +141,34 @@ void Delay::prepareToBeginWriting() {
 }
 
 // Set the rate and feedback in the workingState before calling this
+void Delay::beginTail() {
+	// Only a delay that is sounding has anything to ring out. prevFeedback is the amount the last
+	// render block used, which during a hold is the held amount.
+	if (!isActive() || prevFeedback < 256) {
+		return;
+	}
+	tailing = true;
+	tailFeedback = prevFeedback;
+	tailTarget = prevFeedback;
+}
+
 void Delay::setupWorkingState(Delay::State& workingState, uint32_t timePerInternalTickInverse, bool anySoundComingIn) {
+
+	// Temp Hold tails: hold the feedback up while it glides down to the setting it was restored to.
+	// The glide itself happens in process(), which knows how many samples went by.
+	workingState.muteInput = false;
+	if (tailing) {
+		tailTarget = workingState.delayFeedbackAmount;
+		if (tailTarget >= tailFeedback - (1 << 20)) {
+			// Caught up, or turned back up past the tail. Normal service.
+			tailing = false;
+		}
+		else {
+			workingState.delayFeedbackAmount = tailFeedback;
+			// Restored to "off" (the same < 256 test as below): only the echoes already in the buffer.
+			workingState.muteInput = tailTarget < 256;
+		}
+	}
 
 	// Set some stuff up that we need before we make some decisions
 	// BUG: we want to be able to reduce the 256 to 1, but for some reason, the
@@ -196,6 +274,7 @@ void Delay::hasWrapped() {
 }
 
 void Delay::discardBuffers() {
+	tailing = false;
 	primaryBuffer.discard();
 	secondaryBuffer.discard();
 	prevFeedback = 0;
@@ -225,6 +304,13 @@ void Delay::initializeSecondaryBuffer(int32_t newNativeRate, bool makeNativeRate
 void Delay::process(std::span<StereoSample> buffer, const State& delayWorkingState) {
 	if (!delayWorkingState.doDelay) {
 		return;
+	}
+
+	// Temp Hold tails: glide the ceiling down for next block, by however many samples this one is.
+	if (tailing && tailFeedback > tailTarget) {
+		const int64_t distance = static_cast<int64_t>(tailFeedback) - tailTarget;
+		const int64_t step = (distance * static_cast<int64_t>(buffer.size())) >> kTailGlideShift;
+		tailFeedback -= static_cast<int32_t>(std::max<int64_t>(step, 1));
 	}
 
 	if (delayWorkingState.userDelayRate != userRateLastTime) {
@@ -368,17 +454,51 @@ void Delay::process(std::span<StereoSample> buffer, const State& delayWorkingSta
 		sample.r -= postLPFR;
 	}
 
+	// Rudement: the user HPF/LPF, in the same place as the fixed filter above, so what they take out is taken out
+	// again on every repeat. Skipped entirely - the stock delay, sample for sample - when Community Features >
+	// Rudement upgrades > Delay Filters is Off, or when both filters sit at off.
+	const bool userFiltersOn = runtimeFeatureSettings.isOn(RuntimeFeatureSettingType::DelayFilters);
+	if (userFiltersOn != userFiltersWereOn_) {
+		resetUserFilters();
+		userFiltersWereOn_ = userFiltersOn;
+	}
+	const bool doHpf = userFiltersOn && hpf_ > 0.f;
+	const bool doLpf = userFiltersOn && lpf_ < 1.f;
+	if (doHpf || doLpf) {
+		constexpr float kToFloat = 1.f / 2147483648.f;
+		constexpr float kToQ31 = 2147483647.f;
+		for (StereoSample& sample : working_buffer) {
+			float l = static_cast<float>(sample.l) * kToFloat;
+			float r = static_cast<float>(sample.r) * kToFloat;
+			if (doHpf) {
+				float hl = 0.f;
+				float hr = 0.f;
+				hpL_.tick(hpCoef_, l, &hl);
+				hpR_.tick(hpCoef_, r, &hr);
+				l = hl;
+				r = hr;
+			}
+			if (doLpf) {
+				l = lpL_.tick(lpCoef_, l, nullptr);
+				r = lpR_.tick(lpCoef_, r, nullptr);
+			}
+			sample.l = static_cast<int32_t>(std::clamp(l, -1.f, 1.f) * kToQ31);
+			sample.r = static_cast<int32_t>(std::clamp(r, -1.f, 1.f) * kToQ31);
+		}
+	}
+
 	// Go through what we grabbed, sending it to the audio output buffer, and also preparing it to be fed back
 	// into the delay
 	for (auto [input, output] : std::views::zip(working_buffer, buffer)) {
 		StereoSample current = input;
 
-		// Feedback calculation, and combination with input
+		// Feedback calculation, and combination with input. During a tail to "off" the dry signal
+		// is left out, so only what was already in the delay keeps going round (see beginTail).
 		if (pingPong && AudioEngine::renderInStereo) {
 			input.l = current.r;
-			input.r = ((output.l + output.r) >> 1) + current.l;
+			input.r = delayWorkingState.muteInput ? current.l : ((output.l + output.r) >> 1) + current.l;
 		}
-		else {
+		else if (!delayWorkingState.muteInput) {
 			input += output;
 		}
 

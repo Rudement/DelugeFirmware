@@ -40,6 +40,11 @@ public:
 	void compensateVolumeForResonance(ParamManagerForTimeline* paramManager);
 	void processFXForGlobalEffectable(std::span<StereoSample> buffer, int32_t* postFXVolume, ParamManager* paramManager,
 	                                  const Delay::State& delayWorkingState, bool anySoundComingIn, q31_t verbAmount);
+	/// Clouds, in place, at the head of the FX chain. GlobalEffectable-only:
+	/// its params are UNPATCHED_GLOBAL. See the comment on
+	/// ModControllableAudio::cloudsMode for why the state lives up there but
+	/// the rendering lives here.
+	void processClouds(std::span<StereoSample> buffer, ParamManager* paramManager);
 
 	void writeAttributesToFile(Serializer& writer, bool writeToFile);
 	void writeTagsToFile(Serializer& writer, ParamManager* paramManager, bool writeToFile);

@@ -36,6 +36,7 @@
 #include "model/note/note_row.h"
 #include "model/song/song.h"
 #include "modulation/arpeggiator.h"
+#include "modulation/midi_fx/midi_fx_chain.h"
 #include "modulation/params/param_set.h"
 #include "modulation/patch/patch_cable_set.h"
 #include "playback/mode/playback_mode.h"
@@ -45,6 +46,7 @@
 #include "processing/stem_export/stem_export.h"
 #include "storage/audio/audio_file_manager.h"
 #include "storage/storage_manager.h"
+#include <algorithm>
 #include <cstring>
 
 namespace params = deluge::modulation::params;
@@ -821,6 +823,18 @@ void Kit::renderNonAudioArpPostOutput(std::span<StereoSample> output) {
 			ArpReturnInstruction instruction;
 			nonAudioDrum->arpeggiator.render(&nonAudioDrum->arpSettings, &instruction, output.size(), gateThreshold,
 			                                 phaseIncrement);
+
+			// MIDI FX on the free-running axis for this drum. SoundDrums get this for free through
+			// Sound::render; non-audio drums are rendered here instead, so the seam has to be
+			// repeated. Time axis, then note-event axis, then dispatch - as everywhere.
+			if (!nonAudioDrum->midiFx.isEmpty()) {
+				deluge::modulation::midi_fx::MidiFxContext drumFxContext{
+				    .settings = &nonAudioDrum->midiFxSettings,
+				    .arpIsOn = !ArpeggiatorBase::arpIsOff(&nonAudioDrum->arpSettings)};
+				nonAudioDrum->midiFx.render(drumFxContext, output.size(), instruction);
+				(void)nonAudioDrum->midiFx.onNoteEvent(drumFxContext, instruction);
+			}
+
 			for (int32_t n = 0; n < ARP_MAX_INSTRUCTION_NOTES; n++) {
 				if (instruction.glideNoteCodeOffPostArp[n] == ARP_NOTE_NONE) {
 					break;
@@ -973,6 +987,14 @@ void Kit::setupWithoutActiveClip(ModelStack* modelStack) {
 				FREEZE_WITH_ERROR("E174");
 			}
 
+			// Rudement E411 fix: non-NULL is not enough - a backed-up ParamManager can still have no patched param
+			// set. offset >= 3 is the containsPatchedParamCollections() test. Skip the drum rather than freeze.
+			// Rudement 2026-09-15: test the three collections performInitialPatching dereferences, not the offset.
+			if (!paramManager->summaries[0].paramCollection || !paramManager->summaries[1].paramCollection
+			    || !paramManager->summaries[2].paramCollection) {
+				continue;
+			}
+
 			soundDrum->patcher.performInitialPatching(*soundDrum, *(ParamManagerForTimeline*)paramManager);
 		}
 	}
@@ -1073,7 +1095,27 @@ bool Kit::setActiveClip(ModelStackWithTimelineCounter* modelStack, PgmChangeSend
 
 						SoundDrum* soundDrum = (SoundDrum*)thisNoteRow->drum;
 
-						soundDrum->patcher.performInitialPatching(*soundDrum, thisNoteRow->paramManager);
+						// Rudement E411 fix: this is where arming a freshly created grid clip froze (2026-09-14).
+						// Rudement 2026-09-15: offset-only test passed and performInitialPatching froze anyway, so test
+						// the three collections it dereferences: [0] unpatched, [1] patched, [2] patch cables.
+						ParamManagerForTimeline& rudementPm = thisNoteRow->paramManager;
+						// Rudement 2026-09-15 (2): skipping was not enough. The same hollow ParamManager is then read
+						// by AudioEngine::renderReverb -> updateReverbParams -> Kit::getThingWithMostReverb ->
+						// Sound::getThingWithMostReverb, which calls getPatchedParamSet() with no guard at all and so
+						// freezes E411 on every audio block. Guarding consumers one at a time is hopeless - repair the
+						// manager here instead, with the same last resort NoteRow::setDrum uses when it can find no
+						// params for a drum. The drum comes back with default values rather than the song's, which is a
+						// far better outcome than a frozen instrument.
+						if (!rudementPm.summaries[0].paramCollection || !rudementPm.summaries[1].paramCollection
+						    || !rudementPm.summaries[2].paramCollection) {
+							if (rudementPm.setupWithPatching() == Error::NONE) {
+								Sound::initParams(&rudementPm);
+							}
+						}
+						if (rudementPm.summaries[0].paramCollection && rudementPm.summaries[1].paramCollection
+						    && rudementPm.summaries[2].paramCollection) {
+							soundDrum->patcher.performInitialPatching(*soundDrum, thisNoteRow->paramManager);
+						}
 					}
 				}
 			}
@@ -1235,6 +1277,19 @@ int32_t Kit::doTickForwardForArp(ModelStack* modelStack, int32_t currentPos) {
 
 			int32_t ticksTilNextArpEventThisDrum =
 			    drum->arpeggiator.doTickForward(&drum->arpSettings, &instruction, currentPosThisRow, reversed);
+
+			// MIDI FX for this drum, on the synced axis. Settings and chain both live on the Drum
+			// (drum.h), because a Drum is its own note source and there is no per-clip drum object
+			// to hang settings on. Same ordering as everywhere else: time axis, then note-event
+			// axis, then dispatch.
+			deluge::modulation::midi_fx::MidiFxContext drumFxContext{
+			    .settings = &drum->midiFxSettings, .arpIsOn = !ArpeggiatorBase::arpIsOff(&drum->arpSettings)};
+			if (!drum->midiFx.isEmpty()) {
+				const int32_t ticksTilNextFxEventThisDrum =
+				    drum->midiFx.tick(drumFxContext, currentPosThisRow, instruction);
+				ticksTilNextArpEventThisDrum = std::min(ticksTilNextArpEventThisDrum, ticksTilNextFxEventThisDrum);
+				(void)drum->midiFx.onNoteEvent(drumFxContext, instruction);
+			}
 
 			if (thisNoteRow->drum->type == DrumType::SOUND) {
 				SoundDrum* soundDrum = (SoundDrum*)thisNoteRow->drum;

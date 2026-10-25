@@ -81,8 +81,14 @@ public:
 	                            int32_t* highestReverbAmountFound) override;
 	uint8_t* getModKnobMode() override { return &modKnobMode; }
 	ArpeggiatorBase* getArp() override;
+	deluge::modulation::midi_fx::MidiFxChain* getMidiFx() override;
+	deluge::modulation::midi_fx::MidiFxSettings* getMidiFxSettings() override;
 	char const* getXMLTag() override { return "sound"; }
 	const char* getName() override { return name.get(); }
 
 	ArpeggiatorSettings defaultArpSettings;
+
+	/// Instrument-level default, copied into a new clip's midiFxSettings. Matches
+	/// defaultArpSettings (see instrument_clip.cpp:2286 for where the arp equivalent is used).
+	deluge::modulation::midi_fx::MidiFxSettings defaultMidiFxSettings;
 };

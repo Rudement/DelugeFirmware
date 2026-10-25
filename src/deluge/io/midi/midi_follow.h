@@ -63,6 +63,26 @@ public:
 	void clearStoredClips();
 	void removeClip(Clip* clip);
 
+	/// Called when a grid pad in Session view Launch mode has been held past the Hold Time
+	/// setting (Settings > Defaults > Hold Time). Follow's channels A/B/C stay pointed at this
+	/// clip from here on -- launching other clips with an ordinary tap does not move them --
+	/// until a different pad is held the same way, or the same pad is held again to release the
+	/// lock (pass nullptr for that case; the caller in session_view.cpp decides which applies).
+	/// See getGridSelectedClip() for why this needs a hook here as well as a check at read time.
+	void gridClipHeldForSelection(Clip* clip);
+
+	/// True while a grid pad has been down long enough to count as the lock gesture, and not so
+	/// long that it has stopped counting again. The floor is Settings > Defaults > Hold Time, so
+	/// an ordinary launch tap never reaches it. The ceiling is kGridFollowLockMaxHold: holding a
+	/// pad is also how you read a track's name off the display, and a look that long should leave
+	/// the lock exactly where it was -- not claim it, not release it, not even borrow it for the
+	/// duration of the hold.
+	static bool isGridLockGesture(uint32_t pressTime);
+
+	/// SETTINGS > COMMUNITY FEATURES > Rudement upgrades > Grid Follow Lock. Off (the default) is stock MIDI Follow:
+	/// no hold gesture, no standing lock, the grid follows whatever pad is down or the clip on screen.
+	static bool isGridLockEnabled();
+
 	// midi CC mappings
 	int32_t getCCFromParam(deluge::modulation::params::Kind paramKind, int32_t paramID);
 	bool isGlobalEffectableContext();
@@ -75,6 +95,15 @@ public:
 	int32_t previousKnobPos[kMaxMIDIValue + 1];
 	uint32_t timeLastCCSent[kMaxMIDIValue + 1];
 	uint32_t timeAutomationFeedbackLastSent;
+
+	/// The clip a held grid pad has selected for Follow's A/B/C channels, independent of
+	/// whichever pad is under a finger right now. Null means nothing is locked -- either nothing
+	/// has been held long enough yet this session, or a lock was released by holding the same
+	/// pad twice -- in which case getGridSelectedClip() falls through to the ordinary
+	/// selected-or-active resolution. Must be forgotten in clearStoredClips() and removeClip(),
+	/// same as clipForLastNoteReceived, so it never outlives the clip it points to. Public so
+	/// session_view.cpp can also pin the grid's selection pulse onto whatever is locked.
+	Clip* gridSelectedClip = nullptr;
 
 	// public so it can be called from View::sendMidiFollowFeedback
 	bool isFeedbackEnabled();
@@ -122,6 +151,8 @@ private:
 
 	Clip* getSelectedOrActiveClip();
 	Clip* getSelectedClip();
+	Clip* getGridSelectedClip();
+	Clip* getValidatedGridSelectedClip();
 	Clip* getActiveClip(ModelStack* modelStack);
 	[[nodiscard]] const size_t getTrackCount() const;
 	Output* getTrackFromIndex(uint32_t trackIndex, uint32_t maxTrack);

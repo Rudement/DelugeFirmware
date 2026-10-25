@@ -217,11 +217,18 @@ public:
 	ActionResult commandStopQuantize(int32_t y);
 
 	void sendAuditionNote(bool on, uint8_t yDisplay, uint8_t velocity, uint32_t sampleSyncLength);
+	/// Audible preview of the armed Harmonic Brush chord while placing it in the piano roll.
+	void auditionChordPreview(bool on);
+	/// Bring the just-placed chord onto the screen. Its pitches come from the keyboard grid, which is
+	/// often octaves away from wherever the piano roll happens to be scrolled, so without this the
+	/// notes are real and audible but invisible - and undoing them looks like it did nothing.
+	void scrollToShowPendingChord();
 
 	// made these public so they can be accessed by the automation clip view
 	void setLedStates();
 	uint32_t getSquareWidth(int32_t square, int32_t effectiveLength);
 	void drawNoteCode(uint8_t yDisplay);
+	bool drawHeldChordName(); // live chord inspector: names a held chord (Roman + absolute)
 	bool createNewInstrument(OutputType instrumentType, bool is_fm = false);
 	bool changeOutputType(OutputType newOutputType);
 	Sound* getSoundForNoteRow(NoteRow* noteRow, ParamManagerForTimeline** getParamManager);
@@ -283,6 +290,22 @@ public:
 
 	SquareInfo gridSquareInfo[kDisplayHeight][kDisplayWidth]{};
 
+	// Harmonic-brush placement gesture (when a chord is armed via ChordService). Mirrors the note
+	// length-edit gesture: tap a column = one-step chord; hold the start column and press an end
+	// column to stretch the chord across the span. The end column updates on each press while the
+	// start is held (last press wins, so you can extend OR shorten), and the chord is placed on
+	// release of the start pad. -1 startX means no gesture in progress; -1 endX means none pressed.
+	int32_t chordBrushStartX = -1;
+	int32_t chordBrushStartY = -1;
+	int32_t chordBrushEndX = -1;
+
+	// Exactly which notes the brush preview is currently sounding. Kept here rather than re-read from
+	// the pending chord at note-off time, because the chord can be cleared or re-voiced mid-preview -
+	// and then asking it again ends the wrong notes, or none, leaving them stuck on. Sized for the
+	// pending-chord maximum; the .cpp static_asserts that.
+	int16_t chordPreviewNotes[16] = {};
+	uint8_t chordPreviewCount = 0;
+
 	// adjust note parameters
 	void adjustVelocity(int32_t velocityChange, bool display_value = true);
 	void updateVelocityValue(int32_t& velocityValue, int32_t newVelocity);
@@ -333,6 +356,11 @@ public:
 	ModelStackWithNoteRow* getOrCreateNoteRowForYDisplay(ModelStackWithTimelineCounter* modelStack, int32_t yDisplay);
 	void commandEuclidean(int32_t offset);
 	void editNumEuclideanEvents(ModelStackWithNoteRow* modelStack, int32_t offset, int32_t yDisplay);
+	/// MIDI FX > Generate. Writes a random rhythm into the last auditioned row, using the Density,
+	/// Seed and Gate settings that row's MidiFxSettings carries. Returns false without touching
+	/// anything when there is no row to write into or Density is 0; the caller shows the popup.
+	bool commandGenerateNotes();
+	void generateNotesIntoRow(ModelStackWithNoteRow* modelStack, int32_t yDisplay);
 	void editNoteRowLength(int32_t offset);
 	void rotateNoteRowHorizontally(int32_t offset);
 	void editNoteRowLength(ModelStackWithNoteRow* modelStack, int32_t offset, int32_t yDisplay);

@@ -18,5 +18,6 @@
 #pragma once
 
 // Let's just keep these two pipes as not the same as the send-pipe for USB MIDI hosting (PIPE1)
-#define USB_CFG_PMIDI_BULK_IN (USB_PIPE2)
+// PIPE4 rather than PIPE2: USB audio needs both isochronous-capable pipes, and bulk may use PIPE1-5.
+#define USB_CFG_PMIDI_BULK_IN (USB_PIPE4)
 #define USB_CFG_PMIDI_BULK_OUT (USB_PIPE3)

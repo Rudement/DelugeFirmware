@@ -46,6 +46,7 @@
 #include "hid/buttons.h"
 #include "hid/display/display.h"
 #include "hid/display/oled.h"
+#include "hid/display/visualizer.h"
 #include "hid/led/indicator_leds.h"
 #include "hid/led/pad_leds.h"
 #include "hid/matrix/matrix_driver.h"
@@ -65,6 +66,7 @@
 #include "model/sample/sample.h"
 #include "model/sample/sample_recorder.h"
 #include "model/settings/runtime_feature_settings.h"
+#include "model/song/track_link.h"
 #include "modulation/params/param_manager.h"
 #include "playback/mode/arrangement.h"
 #include "playback/mode/session.h"
@@ -160,6 +162,12 @@ bool SessionView::opened() {
 }
 
 void SessionView::focusRegained() {
+	// Track edit mode never outlives leaving song view. Coming back from its own menu is not leaving.
+	bool backFromTrackEditMenu =
+	    deluge::model::track_link::modeIsOn() && deluge::model::track_link::menuClip() != nullptr;
+	if (!backFromTrackEditMenu) {
+		deluge::model::track_link::exitMode();
+	}
 	viewingRecordArmingActive = false;
 	horizontalEncoderPressed = false;
 	selectLayout(0); // Make sure we get a valid layout from the loaded file
@@ -179,7 +187,14 @@ void SessionView::focusRegained() {
 	// using the clip settings menu in grid view and it sent you back to song view
 	// and the mod controllable was set to the newly converted audio clip
 	// if you're still holding that clip, don't change the active mod controllable
-	if (currentUIMode != UI_MODE_CLIP_PRESSED_IN_SONG_VIEW) {
+	if (backFromTrackEditMenu) {
+		// Puts the song's current clip back and re-aims the knobs at the track; the mode stays on.
+		if (!deluge::model::track_link::returnFromMenu()) {
+			deluge::model::track_link::exitMode();
+			view.setActiveModControllableTimelineCounter(currentSong);
+		}
+	}
+	else if (currentUIMode != UI_MODE_CLIP_PRESSED_IN_SONG_VIEW) {
 		view.setActiveModControllableTimelineCounter(currentSong);
 	}
 
@@ -401,8 +416,22 @@ moveAfterClipInstance:
 	// Affect-entire button
 	else if (b == AFFECT_ENTIRE) {
 		if (on && currentUIMode == UI_MODE_NONE) {
-			currentSong->affectEntire = !currentSong->affectEntire;
-			view.setActiveModControllableTimelineCounter(currentSong);
+			// Shift + Affect-entire: track edit mode. The LED flashes for as long as it is on.
+			if (Buttons::isShiftButtonPressed()) {
+				deluge::model::track_link::toggleMode();
+				if (deluge::model::track_link::modeIsOn()) {
+					view.blinkOn = true;
+					uiTimerManager.setTimer(TimerName::UI_SPECIFIC, kFastFlashTime);
+				}
+			}
+			// Inside the mode, plain Affect-entire switches a kit between its whole self and its selected drum row.
+			else if (deluge::model::track_link::modeIsOn()) {
+				deluge::model::track_link::toggleKitTarget();
+			}
+			else {
+				currentSong->affectEntire = !currentSong->affectEntire;
+				view.setActiveModControllableTimelineCounter(currentSong);
+			}
 		}
 	}
 
@@ -539,6 +568,8 @@ moveAfterClipInstance:
 					replaceInstrumentClipWithAudioClip(clip);
 				}
 			}
+			// Track edit mode: SELECT opens the picked track's sound menu rather than Song FX.
+			else if (currentUIMode == UI_MODE_NONE && deluge::model::track_link::openMenu()) {}
 			else if (currentUIMode == UI_MODE_NONE) {
 				if (session.hasPlaybackActive()) {
 					if (session.launchEventAtSwungTickCount) {
@@ -698,11 +729,44 @@ void SessionView::beginEditingSectionRepeatsNum() {
 	uiTimerManager.unsetTimer(TimerName::UI_SPECIFIC);
 }
 
+// Track edit mode: a press on a clip pad picks that clip's track. In the grid layout a pad column is a track, so
+// pressing anywhere in the column picks it, even on an empty pad. In the rows layout each row is one clip, so
+// pressing a row picks the track that clip is on.
+ActionResult SessionView::trackLinkPadAction(int32_t xDisplay, int32_t yDisplay, int32_t on) {
+	if (!on || xDisplay >= kDisplayWidth) {
+		return ActionResult::DEALT_WITH;
+	}
+	if (sdRoutineLock) {
+		return ActionResult::REMIND_ME_OUTSIDE_CARD_ROUTINE;
+	}
+
+	Output* output = nullptr;
+	Clip* clip = nullptr;
+	if (currentSong->sessionLayout == SessionLayoutType::SessionLayoutTypeGrid) {
+		output = gridTrackFromX(xDisplay, gridTrackCount());
+		clip = gridClipFromCoords(xDisplay, yDisplay);
+	}
+	else {
+		clip = getClipOnScreen(yDisplay);
+		output = clip ? clip->output : nullptr;
+	}
+
+	if (output) {
+		deluge::model::track_link::selectOutput(output, clip);
+	}
+	return ActionResult::DEALT_WITH;
+}
+
 ActionResult SessionView::padAction(int32_t xDisplay, int32_t yDisplay, int32_t on) {
 	// don't interact with sidebar if VU Meter is displayed
 	// and you're in the volume/pan mod knob mode (0)
 	if (xDisplay >= kDisplayWidth && view.displayVUMeter && (view.getModKnobMode() == 0)) {
 		return ActionResult::DEALT_WITH;
+	}
+
+	// Track edit mode takes every pad press, so nothing is launched, armed or opened while it is on.
+	if (deluge::model::track_link::modeIsOn()) {
+		return trackLinkPadAction(xDisplay, yDisplay, on);
 	}
 
 	if (currentSong->sessionLayout == SessionLayoutType::SessionLayoutTypeGrid) {
@@ -1111,10 +1175,20 @@ void SessionView::clipPressEnded() {
 	if (gridFirstPressedX != -1 && gridFirstPressedY != -1 && gridSecondPressedX != -1 && gridSecondPressedY != -1) {
 		display->popupTextTemporary("COPY CANCELED");
 	}
+	// A column drag runs the grid scroll outside its normal range so the dragged column can stay under
+	// the finger. Put it back in range now the drag is over, which also settles the grid with the moved
+	// column in its new place.
+	if (gridDragTrack != nullptr) {
+		currentSong->songGridScrollX = std::clamp<int32_t>(
+		    currentSong->songGridScrollX, 0, std::max<int32_t>(0, (int32_t)gridTrackCount() - kDisplayWidth + 1));
+	}
+
 	gridResetPresses();
 
 	currentUIMode = UI_MODE_NONE;
-	view.setActiveModControllableTimelineCounter(currentSong);
+	if (!deluge::model::track_link::modeIsOn()) {
+		view.setActiveModControllableTimelineCounter(currentSong);
+	}
 	if (display->haveOLED()) {
 		renderUIsForOled();
 		// check UI in case this code is called from performance view
@@ -1236,6 +1310,12 @@ ActionResult SessionView::timerCallback() {
 
 	if (currentUIMode == UI_MODE_VIEWING_RECORD_ARMING || viewingRecordArmingActive) {
 		requestRendering(this, 0, 0xFFFFFFFF);
+		view.blinkOn = !view.blinkOn;
+		uiTimerManager.setTimer(TimerName::UI_SPECIFIC, kFastFlashTime);
+	}
+	// Track edit mode: flash the picked track's pads.
+	else if (deluge::model::track_link::modeIsOn()) {
+		requestRendering(this, 0xFFFFFFFF, 0);
 		view.blinkOn = !view.blinkOn;
 		uiTimerManager.setTimer(TimerName::UI_SPECIFIC, kFastFlashTime);
 	}
@@ -1913,6 +1993,12 @@ void SessionView::renderOLED(deluge::hid::display::oled_canvas::Canvas& canvas) 
 		return;
 	}
 
+	// The Visualizer takes the whole screen when it is up. ArrangerView and PerformanceView both
+	// come through here, so this is the only render hook it needs.
+	if (deluge::hid::display::Visualizer::potentiallyRenderVisualizer(canvas)) {
+		return;
+	}
+
 	UI* currentUI = getCurrentUI();
 	if (currentUIMode == UI_MODE_CLIP_PRESSED_IN_SONG_VIEW) {
 		view.displayOutputName(getCurrentClip()->output, true, getCurrentClip());
@@ -2061,7 +2147,12 @@ void SessionView::renderViewDisplay() {
 #endif
 
 	char const* name;
-	if (currentSong->name.isEmpty()) {
+	char const* trackEditText = deluge::model::track_link::statusText();
+	if (trackEditText) {
+		// Track edit mode: say what the gold knobs are acting on, in place of the song name.
+		name = trackEditText;
+	}
+	else if (currentSong->name.isEmpty()) {
 		name = "UNSAVED";
 	}
 	else {
@@ -2381,6 +2472,18 @@ void SessionView::displayPotentialTempoChange(UI* ui) {
 		float diff = std::abs(tempo - lastDisplayedTempo);
 		// always catch manual adjustments, limit rate of others
 		if (diff > 0.5) {
+			if (deluge::hid::display::Visualizer::isActive(view)) {
+				lastDisplayedTempo = tempo;
+				// External clock estimates fluctuate continuously; they must not keep restarting a popup.
+				// Explicit tempo commands have their own feedback in PlaybackHandler::displayTempoBPM.
+				if (!deluge::hid::display::Visualizer::hasPriority() && !playbackHandler.isExternalClockActive()) {
+					DEF_STACK_STRING_BUF(tempoBPM, 27);
+					tempoBPM.append("Tempo: ");
+					playbackHandler.getTempoStringForOLED(tempo, tempoBPM);
+					display->popupTextTemporary(tempoBPM.c_str(), PopupType::TEMPO);
+				}
+				return;
+			}
 			DEF_STACK_STRING_BUF(tempoBPM, 10);
 			playbackHandler.getTempoStringForOLED(tempo, tempoBPM);
 			displayTempoBPM(deluge::hid::display::OLED::main, tempoBPM, true);
@@ -2411,7 +2514,12 @@ int32_t SessionView::displayLoopsRemainingPopup(bool ephemeral) {
 				}
 				popupMsg.appendInt(quarterNotesRemaining);
 			}
-			if (display->haveOLED() && !ephemeral) {
+			// With a Visualizer up, go through the popup system instead of painting the panel
+			// directly. The direct paint clears the whole image and sends it from the graphics
+			// routine every 50 ms, outside the UI render path, so it and the Visualizer each
+			// wiped the other and the countdown flashed. A popup composites over whatever is on
+			// screen, and the Visualizer already stands down while one is present.
+			if (display->haveOLED() && !ephemeral && !deluge::hid::display::Visualizer::isEnabled()) {
 				deluge::hid::display::OLED::clearMainImage();
 				deluge::hid::display::OLED::drawPermanentPopupLookingText(popupMsg.c_str());
 				deluge::hid::display::OLED::sendMainImage();
@@ -2693,8 +2801,15 @@ bool SessionView::renderRow(ModelStack* modelStack, uint8_t yDisplay, RGB thisIm
 
 	if (clip) {
 
+		// Track edit mode: the picked track's rows flash white.
+		if (deluge::model::track_link::isSelected(clip->output) && view.blinkOn) {
+			for (int32_t xDisplay = 0; xDisplay < kDisplayWidth; xDisplay++) {
+				thisImage[xDisplay] = colours::white;
+			}
+		}
+
 		// If user assigning MIDI controls and this Clip has a command assigned, flash pink
-		if (view.midiLearnFlashOn && ((Instrument*)clip->output)->midiInput.containsSomething()) {
+		else if (view.midiLearnFlashOn && ((Instrument*)clip->output)->midiInput.containsSomething()) {
 
 			for (int32_t xDisplay = 0; xDisplay < kDisplayWidth; xDisplay++) {
 				// We halve the intensity of the brightness in this case, because a lot of pads will be lit, it
@@ -3356,6 +3471,23 @@ bool SessionView::gridRenderMainPads(uint32_t whichRows, RGB image[][kDisplayWid
 		}
 	}
 
+	// Track edit mode: the picked track's whole column flashes white, empty pads included.
+	if (view.blinkOn) {
+		for (int32_t idxTrack = 0; idxTrack < static_cast<int32_t>(trackCount); ++idxTrack) {
+			Output* track = gridTrackFromIndex(idxTrack, trackCount);
+			if (deluge::model::track_link::isSelected(track)) {
+				auto x = gridXFromTrack(idxTrack);
+				if (x >= 0 && x < kDisplayWidth) {
+					for (int32_t y = 0; y < kDisplayHeight; ++y) {
+						image[y][x] = colours::white;
+						occupancyMask[y][x] = 64;
+					}
+				}
+				break;
+			}
+		}
+	}
+
 	PadLEDs::renderingLock = false;
 
 	return true;
@@ -3702,7 +3834,7 @@ void SessionView::copyClipName(Clip* source, Clip* target, Output* targetOutput)
 }
 #pragma GCC diagnostic pop
 
-Clip* SessionView::gridCreateClip(uint32_t targetSection, Output* targetOutput, Clip* sourceClip) {
+Clip* SessionView::gridCreateClip(uint32_t targetSection, Output* targetOutput, Clip* sourceClip, bool startMuted) {
 	actionLogger.deleteAllLogs();
 
 	Clip* newClip = nullptr;
@@ -3726,6 +3858,15 @@ Clip* SessionView::gridCreateClip(uint32_t targetSection, Output* targetOutput, 
 		}
 		// ...with a derived name
 		copyClipName(sourceClip, newClip, targetOutput);
+
+		// Clip::cloneFrom() copies the source's playback state, so a clone of a playing clip arrives
+		// marked as playing -- two active clips on one Output, which the engine does not expect.
+		// This has to happen before resyncNewClip() further down, which only resyncs active clips.
+		if (startMuted) {
+			newClip->activeIfNoSolo = false;
+			newClip->soloingInSessionMode = false;
+			newClip->armState = ArmState::OFF;
+		}
 	}
 
 	// Create new clip in existing track
@@ -3870,6 +4011,86 @@ void SessionView::gridClonePad(uint32_t sourceX, uint32_t sourceY, uint32_t targ
 	display->popupTextTemporary("COPIED");
 }
 
+// Scene Capture: stamp the combination of clips that is sounding right now into the first unused
+// section below the lowest populated row. The captured clips land muted, so capture is inaudible --
+// the originals keep playing and nothing changes until the new row's section pad is pressed.
+bool SessionView::gridCaptureScene() {
+	// Section 0 renders at the top of the grid and the numbers increase downward, so "below the
+	// lowest populated row" is simply the highest section in use, plus one.
+	bool sectionUsed[kMaxNumSections];
+	memset(sectionUsed, 0, sizeof(sectionUsed));
+
+	for (int32_t idxClip = 0; idxClip < currentSong->sessionClips.getNumElements(); ++idxClip) {
+		Clip* clip = currentSong->sessionClips.getClipAtIndex(idxClip);
+		if (clip->section < kMaxNumSections) {
+			sectionUsed[clip->section] = true;
+		}
+	}
+
+	int32_t targetSection = 0;
+	for (int32_t section = kMaxNumSections - 1; section >= 0; --section) {
+		if (sectionUsed[section]) {
+			targetSection = section + 1;
+			break;
+		}
+	}
+
+	if (targetSection >= kMaxNumSections) {
+		display->displayPopup(l10n::get(l10n::String::STRING_FOR_NO_FREE_ROW));
+		return false;
+	}
+
+	// Walk the outputs rather than the session clips: gridCreateClip() inserts into sessionClips at
+	// index 0, which would shift every index under an iteration of that array. Capture never adds an
+	// Output, so that list is stable. One Output holds one active clip, which also gives exactly one
+	// captured clip per column by construction.
+	Clip* previousCurrentClip = currentSong->getCurrentClip();
+	int32_t captured = 0;
+
+	for (Output* output = currentSong->firstOutput; output != nullptr; output = output->next) {
+		// An Output keeps its activeClip pointer while stopped or muted, so getActiveClip() on its own
+		// is not "is this sounding". isClipActive() is the soloing-aware answer, and it is what leaves
+		// a silent column blank in the captured row.
+		Clip* sounding = output->getActiveClip();
+		if (sounding == nullptr || !currentSong->isClipActive(sounding)) {
+			continue;
+		}
+
+		Clip* capturedClip = gridCreateClip(targetSection, output, sounding, true);
+		if (capturedClip == nullptr) {
+			break; // gridCreateClip() has already shown a popup
+		}
+
+		// Name every captured clip after the row it was taken from, so holding its pad says where it
+		// came from. Without this a captured row is indistinguishable from one built by hand -- the
+		// clone keeps no trace of its source, and the name on the display is the track's, which is
+		// the same for every clip in the column. Rows are displayed one-based
+		// (View::drawOutputNameFromDetails draws clip->section + 1), so this is the row number as it
+		// reads on the grid.
+		//
+		// This deliberately overwrites the derived name gridCreateClip() gives a clone ("KICK2"):
+		// what you want to know on a captured row is which row the clip came from, not what the
+		// source happened to be called. Two captures of the same source row therefore share a name,
+		// which is honest -- they are the same clip, taken twice. It is an ordinary clip name, so it
+		// saves and reloads with the song with no format work.
+		char sourceRow[4]; // kMaxNumSections is 12, so two digits plus the terminator is enough
+		intToString(sounding->section + 1, sourceRow);
+		capturedClip->name.set(sourceRow);
+
+		++captured;
+	}
+
+	currentSong->setCurrentClip(previousCurrentClip);
+
+	if (captured == 0) {
+		display->displayPopup(l10n::get(l10n::String::STRING_FOR_NOTHING_PLAYING));
+		return false;
+	}
+
+	requestRendering(this, 0xFFFFFFFF, 0xFFFFFFFF);
+	return true;
+}
+
 void SessionView::gridStartSection(uint32_t section, bool instant) {
 	if (instant) {
 		currentSong->turnSoloingIntoJustPlaying(currentSong->sections[section].numRepetitions > -1);
@@ -3930,7 +4151,13 @@ ActionResult SessionView::gridHandlePads(int32_t x, int32_t y, int32_t on) {
 			}
 			case GridMode::RED: {
 				if (enableLoopPads) {
-					playbackHandler.tryLoopCommand(GlobalMIDICommand::LOOP);
+					// Hold Loop Pad (Rudement upgrades): hold to record, let go and it plays. The release is below.
+					if (runtimeFeatureSettings.isOn(RuntimeFeatureSettingType::HoldLoopPad)) {
+						playbackHandler.loopHoldPress();
+					}
+					else {
+						playbackHandler.tryLoopCommand(GlobalMIDICommand::LOOP);
+					}
 				}
 				break;
 			}
@@ -3943,6 +4170,14 @@ ActionResult SessionView::gridHandlePads(int32_t x, int32_t y, int32_t on) {
 			}
 		}
 		else {
+			// Hold Loop Pad: letting go of the red pad ends the loop its press started (and never starts one).
+			if (y == GridMode::RED
+			    && runtimeFeatureSettings.get(RuntimeFeatureSettingType::EnableGridViewLoopPads)
+			           == RuntimeFeatureStateToggle::On
+			    && runtimeFeatureSettings.isOn(RuntimeFeatureSettingType::HoldLoopPad)) {
+				playbackHandler.loopHoldRelease();
+			}
+
 			if (FlashStorage::defaultGridActiveMode == GridDefaultActiveModeSelection) {
 				if (!gridActiveModeUsed) {
 					gridModeSelected = gridModeActive;
@@ -3997,6 +4232,16 @@ ActionResult SessionView::gridHandlePadsEdit(int32_t x, int32_t y, int32_t on, C
 		auto section = gridSectionFromY(y);
 		if (section < 0) {
 			return ActionResult::DEALT_WITH;
+		}
+
+		// SAVE + section pad captures whatever is sounding into a new row below the populated ones.
+		// Consume the SAVE hold so releasing it does not also fire the save-song shortcut.
+		if (on && isUIModeActive(UI_MODE_HOLDING_SAVE_BUTTON)
+		    && runtimeFeatureSettings.get(RuntimeFeatureSettingType::SceneCapture) == RuntimeFeatureStateToggle::On) {
+			exitUIMode(UI_MODE_HOLDING_SAVE_BUTTON);
+			indicator_leds::setLedState(IndicatorLED::SAVE, false);
+			gridCaptureScene();
+			return ActionResult::ACTIONED_AND_CAUSED_CHANGE;
 		}
 
 		// Immediate release of the pad arms the section, holding allows changing repeats
@@ -4173,6 +4418,16 @@ ActionResult SessionView::gridHandlePadsLaunch(int32_t x, int32_t y, int32_t on,
 		if (currentUIMode == UI_MODE_MIDI_LEARN) {
 			view.sectionMidiLearnPadPressed(on, section);
 			return ActionResult::DEALT_WITH;
+		}
+
+		// SAVE + section pad captures whatever is sounding into a new row below the populated ones.
+		// Consume the SAVE hold so releasing it does not also fire the save-song shortcut.
+		if (on && isUIModeActive(UI_MODE_HOLDING_SAVE_BUTTON)
+		    && runtimeFeatureSettings.get(RuntimeFeatureSettingType::SceneCapture) == RuntimeFeatureStateToggle::On) {
+			exitUIMode(UI_MODE_HOLDING_SAVE_BUTTON);
+			indicator_leds::setLedState(IndicatorLED::SAVE, false);
+			gridCaptureScene();
+			return ActionResult::ACTIONED_AND_CAUSED_CHANGE;
 		}
 
 		if (on) {
@@ -4366,7 +4621,45 @@ ActionResult SessionView::gridHandlePadsLaunchWithSelection(int32_t x, int32_t y
 				gridHandlePadsLaunchToggleArming(clip, false);
 			}
 
+			// A hold released between Settings > Defaults > Hold Time and two seconds claims
+			// this clip for MIDI Follow's A/B/C channels, independently of the kShortPressTime
+			// arm/no-arm decision just above -- an ordinary launch tap never reaches Hold Time
+			// and leaves Follow's target untouched. Holding the already-locked pad the same way
+			// releases the lock, symmetric with how it was claimed.
+			//
+			// Keeping the pad down past the top of that window is not the gesture at all: a pad
+			// held down is also how you get the track's name onto the display (displayOutputName()
+			// on the press above), and reading a name should cost nothing -- so a hold that long
+			// leaves the lock exactly as it found it, claimed or clear. MidiFollow::isGridLockGesture()
+			// is the single definition of that window. The target changes here, on release, at the
+			// same time the pulse below is pinned to the confirmed lock.
+			if (clip != nullptr && MidiFollow::isGridLockGesture(selectedClipTimePressed)) {
+				bool wasUnlocking = (midiFollow.gridSelectedClip == clip);
+				midiFollow.gridClipHeldForSelection(wasUnlocking ? nullptr : clip);
+				// Confirms the lock/unlock in text, since the pulse alone is easy to miss mid-performance
+				// and doesn't say which clip until you look at the grid.
+				if (wasUnlocking) {
+					display->popupTextTemporary("Follow: unlocked");
+				}
+				else {
+					char followLockText[32];
+					strcpy(followLockText, "Follow: ");
+					strncat(followLockText, clip->output->name.get(),
+					        sizeof(followLockText) - strlen(followLockText) - 1);
+					display->popupTextTemporary(followLockText);
+				}
+			}
+
 			clipPressEnded();
+
+			// The pulse is ordinary tap feedback and jumps to whatever pad was last touched --
+			// useful for launching, but misleading once something is locked for MIDI Follow: an
+			// unrelated launch tap would otherwise make it look like the lock had moved when it
+			// hadn't. Pin it back onto the locked clip so the lit pad always matches what
+			// Follow is actually controlling.
+			if (midiFollow.gridSelectedClip != nullptr) {
+				gridSelectClipForPulsing(*midiFollow.gridSelectedClip);
+			}
 		}
 	}
 
@@ -4490,6 +4783,48 @@ char const* SessionView::getMacroKindString(SessionMacroKind kind) {
 }
 
 ActionResult SessionView::gridHandleScroll(int32_t offsetX, int32_t offsetY) {
+
+	// Holding a clip pad and turning the horizontal encoder drags that whole column sideways,
+	// reordering the tracks. The vertical twin of this gesture (colour) is directly below.
+	if (currentUIMode == UI_MODE_CLIP_PRESSED_IN_SONG_VIEW && offsetX != 0 && gridSecondPadInactive()
+	    && runtimeFeatureSettings.get(RuntimeFeatureSettingType::GridColumnReorder) == RuntimeFeatureStateToggle::On) {
+
+		if (sdRoutineLock) {
+			return ActionResult::REMIND_ME_OUTSIDE_CARD_ROUTINE;
+		}
+
+		// Not allowed if recording arrangement - the arranger's row order is this same list
+		if (playbackHandler.recording == RecordingMode::ARRANGEMENT) {
+			display->displayPopup(deluge::l10n::get(deluge::l10n::String::STRING_FOR_RECORDING_TO_ARRANGEMENT));
+			return ActionResult::DEALT_WITH;
+		}
+
+		if (gridDragTrack == nullptr) {
+			gridDragTrack = gridTrackFromX(gridFirstPressedX, gridTrackCount());
+		}
+
+		if (gridDragTrack != nullptr) {
+			// Releasing must not open whichever clip has taken this pad's place
+			performActionOnPadRelease = false;
+
+			if (gridMoveTrack(gridDragTrack, offsetX)) {
+				// Output order is not modelled in the action log
+				actionLogger.deleteAllLogs();
+
+				// Drag the column against the scroll so it stays under the finger and the rest of the
+				// grid moves around it, which is how rows mode and the arranger both behave. This is
+				// deliberately not clamped the way a normal scroll is: with kDisplayWidth tracks or
+				// fewer songGridScrollX sits at 0 with nowhere to go, and clamping here would slide
+				// the column out from under the pad being held. clipPressEnded() puts the scroll back
+				// in range once the drag is over.
+				currentSong->songGridScrollX += offsetX;
+
+				requestRendering(getRootUI(), 0xFFFFFFFF, 0xFFFFFFFF);
+			}
+		}
+
+		return ActionResult::DEALT_WITH;
+	}
 	if (currentUIMode == UI_MODE_CLIP_PRESSED_IN_SONG_VIEW && offsetY != 0) {
 		auto track = gridTrackFromX(gridFirstPressedX, gridTrackCount());
 		if (track != nullptr) {
@@ -4674,6 +5009,57 @@ void SessionView::gridTransitionToViewForClip(Clip* clip) {
 
 	// Hook point for specificMidiDevice
 	iterateAndCallSpecificDeviceHook(MIDICableUSBHosted::Hook::HOOK_ON_TRANSITION_TO_CLIP_VIEW);
+}
+
+// Moves one track one column across the grid. offsetX > 0 moves it to the right on the display, which is
+// EARLIER in the output list - the grid's X axis runs backwards, firstOutput being the rightmost column.
+// Outputs with no active clip occupy no column, so they are skipped rather than swapped with, otherwise a
+// detent of the knob could produce a list change the display cannot show.
+bool SessionView::gridMoveTrack(Output* track, int32_t offsetX) {
+	if (track == nullptr || offsetX == 0) {
+		return false;
+	}
+
+	Output** slot = &currentSong->firstOutput; // ends up pointing at track
+	Output** visibleBefore = nullptr;          // slot holding the nearest visible output before track
+	while (*slot != nullptr && *slot != track) {
+		if ((*slot)->getActiveClip() != nullptr) {
+			visibleBefore = slot;
+		}
+		slot = &((*slot)->next);
+	}
+
+	if (*slot == nullptr) {
+		return false; // not in the list
+	}
+
+	// Rightwards - move earlier, in front of the visible output before it
+	if (offsetX > 0) {
+		if (visibleBefore == nullptr) {
+			return false; // already the rightmost column
+		}
+
+		*slot = track->next;
+		track->next = *visibleBefore;
+		*visibleBefore = track;
+	}
+
+	// Leftwards - move later, behind the next visible output after it
+	else {
+		Output* after = track->next;
+		while (after != nullptr && after->getActiveClip() == nullptr) {
+			after = after->next;
+		}
+		if (after == nullptr) {
+			return false; // already the leftmost column
+		}
+
+		*slot = track->next;
+		track->next = after->next;
+		after->next = track;
+	}
+
+	return true;
 }
 
 const size_t SessionView::gridTrackCount() const {
@@ -4907,6 +5293,15 @@ void SessionView::gridPulseSelectedClip() {
 
 	// Try getting the current clip. If there isn't one, exit
 	Clip* clip = getCurrentClip();
+	// While a pad is actively held, keep showing that live touch feedback (useful mid-hold, e.g.
+	// while deciding whether to relock). Once nothing is pressed, though, this function runs on a
+	// repeating timer and would otherwise keep re-showing whatever was last tapped indefinitely --
+	// pin it back onto the MIDI Follow lock instead, so the lit pad always matches what Follow is
+	// actually controlling rather than what a since-finished launch tap last touched.
+	if (!gridFirstPadActive() && currentSong->sessionLayout == SessionLayoutType::SessionLayoutTypeGrid
+	    && midiFollow.gridSelectedClip != nullptr) {
+		clip = midiFollow.gridSelectedClip;
+	}
 	if (clip == nullptr || clip->output == nullptr) {
 		return;
 	}
@@ -4921,8 +5316,9 @@ void SessionView::gridPulseSelectedClip() {
 
 	// get the X, Y coordinates of the current clip
 	Cartesian pad = gridXYFromClip(*clip);
-	// don't render pulse if clip is scrolled out of view (coords = - 1)
-	if (pad.x < 0 && pad.y < 0) {
+	// Either axis can leave the visible grid while the selected / MIDI Follow clip stays locked.
+	// Reject the whole offscreen pad before any rendering or image access.
+	if (pad.x < 0 || pad.x >= kDisplayWidth || pad.y < 0 || pad.y >= kDisplayHeight) {
 		return;
 	}
 

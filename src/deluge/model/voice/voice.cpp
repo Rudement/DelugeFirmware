@@ -21,6 +21,8 @@
 #include "dsp/dx/engine.h"
 #include "dsp/filter/filter_set.h"
 #include "dsp/oscillators/sine_osc.h"
+#include "dsp/plaits_adapter.h"
+#include "dsp/sear.hpp"
 #include "dsp/timestretch/time_stretcher.h"
 #include "dsp/util.hpp"
 #include "gui/waveform/waveform_renderer.h"
@@ -622,6 +624,13 @@ void Voice::noteOff(ModelStackWithSoundFlags* modelStack, bool allowReleaseStage
 				for (int u = 0; u < sound.numUnison; u++) {
 					if (unisonParts[u].sources[s].dxVoice) {
 						unisonParts[u].sources[s].dxVoice->keyup();
+					}
+				}
+			}
+			else if (sound.sources[s].oscType == OscType::PLAITS) {
+				for (int u = 0; u < sound.numUnison; u++) {
+					if (unisonParts[u].sources[s].plaitsVoice) {
+						unisonParts[u].sources[s].plaitsVoice->keyup();
 					}
 				}
 			}
@@ -1521,6 +1530,10 @@ skipUnisonPart: {}
 		// Filters
 		filterSet.renderLongStereo(oscBuffer, oscBufferEnd);
 
+		// Sear runs once per Sound on the summed voices (see sound.h). Each voice only reports
+		// its own final drive, so per-voice modulation of it still counts.
+		sound.searDriveThisBlock = std::max(sound.searDriveThisBlock, paramFinalValues[params::LOCAL_SEAR]);
+
 		// No clipping
 		if (!sound.clippingAmount) {
 
@@ -1604,6 +1617,9 @@ skipUnisonPart: {}
 		}
 
 		filterSet.renderLong(oscBuffer, oscBufferEnd, numSamples);
+
+		// Sear runs once per Sound on the summed voices (see sound.h).
+		sound.searDriveThisBlock = std::max(sound.searDriveThisBlock, paramFinalValues[params::LOCAL_SEAR]);
 
 		// No clipping
 		if (!sound.clippingAmount) {
@@ -2442,6 +2458,56 @@ dontUseCache: {}
 				for (int i = 0; i < numSamples; i++) {
 					sourceAmplitudeNow += amplitudeIncrement;
 					oscBuffer[i] += multiply_32x32_rshift32(uniBuf[i], sourceAmplitudeNow) << 6;
+				}
+			}
+
+			// Or regular wave
+		}
+		else if (sound.sources[s].oscType == OscType::PLAITS) {
+			// Same mixing convention as the DX7 block above; see dsp/plaits_adapter.h.
+			static int32_t plaitsBuf[SSI_TX_BUFFER_NUM_SAMPLES] __attribute__((aligned(CACHE_LINE_SIZE)));
+
+			PlaitsVoice* pv = unisonParts[u].sources[s].plaitsVoice;
+			if (pv == nullptr) {
+				goto instantUnassign;
+			}
+
+			{
+				// Harmonics / Timbre / Morph ride on existing patched params, so
+				// automation, MIDI learn, the mod matrix and grid pads all work.
+				// Harmonics = OSC 1 pulse width, Timbre = OSC 1 wave index,
+				// Morph = OSC 2 pulse width (Plaits is source-0-only). If OSC 2
+				// is itself a square, its width and Morph are one control.
+				const Source& src = sound.sources[s];
+				PlaitsControls controls;
+				controls.engine = src.plaitsEngine;
+				controls.aux = src.plaitsAux;
+				controls.lpg = src.plaitsLpg;
+				controls.decay = static_cast<float>(src.plaitsDecay) * (1.0f / 50.0f);
+				controls.lpgColour = static_cast<float>(src.plaitsLpgColour) * (1.0f / 50.0f);
+				controls.harmonics =
+				    PlaitsVoice::unitFromHalfPrecisionParam(paramFinalValues[params::LOCAL_OSC_A_PHASE_WIDTH + s]);
+				controls.timbre =
+				    PlaitsVoice::unitFromBipolarParam(paramFinalValues[params::LOCAL_OSC_A_WAVE_INDEX + s]);
+				controls.morph =
+				    PlaitsVoice::unitFromHalfPrecisionParam(paramFinalValues[params::LOCAL_OSC_B_PHASE_WIDTH]);
+
+				pv->compute(plaitsBuf, numSamples, phaseIncrement, controls);
+
+				int32_t sourceAmplitudeNow = sourceAmplitude;
+				if (stereoUnison) {
+					for (int i = 0; i < numSamples; i++) {
+						sourceAmplitudeNow += amplitudeIncrement;
+						int amplified = multiply_32x32_rshift32(plaitsBuf[i], sourceAmplitudeNow) << 6;
+						oscBuffer[(i << 1)] += multiply_32x32_rshift32(amplified, amplitudeL) << 2;
+						oscBuffer[(i << 1) + 1] += multiply_32x32_rshift32(amplified, amplitudeR) << 2;
+					}
+				}
+				else {
+					for (int i = 0; i < numSamples; i++) {
+						sourceAmplitudeNow += amplitudeIncrement;
+						oscBuffer[i] += multiply_32x32_rshift32(plaitsBuf[i], sourceAmplitudeNow) << 6;
+					}
 				}
 			}
 

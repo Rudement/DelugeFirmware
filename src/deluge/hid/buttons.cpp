@@ -24,8 +24,11 @@
 #include "gui/views/arranger_view.h"
 #include "gui/views/session_view.h"
 #include "gui/views/view.h"
+#include "hid/display/visualizer.h"
+#include "hid/display/visualizer/visualizer_common.h"
 #include "model/mod_controllable/mod_controllable.h"
 #include "model/settings/runtime_feature_settings.h"
+#include "modulation/temp_hold.h"
 #include "playback/mode/playback_mode.h"
 #include "playback/playback_handler.h"
 #include "processing/engines/audio_engine.h"
@@ -102,6 +105,14 @@ ActionResult buttonAction(deluge::hid::Button b, bool on, bool inCardRoutine) {
 		if (xy.x == modButtonX[i] && xy.y == modButtonY[i]) {
 
 			getCurrentUI()->modButtonAction(i, on);
+			goto dealtWith;
+		}
+	}
+
+	// With a Visualizer on screen, SYNTH / KIT / MIDI pick a mode and CV cycles the rest. These are
+	// session-only: the saved Community Features choice is not changed.
+	if (on) {
+		if (deluge::hid::display::handleVisualizerModeButton(b, view) == ActionResult::DEALT_WITH) {
 			goto dealtWith;
 		}
 	}
@@ -281,6 +292,10 @@ void commandToggleShift(bool on) {
 		if (!shiftCurrentlyStuck) {
 			shiftCurrentlyPressed = false;
 			shiftHasChangedSinceLastCheck = true;
+			// Temp Hold ends when shift stops being held - which is here, and deliberately not on the
+			// physical release, so that sticky shift gives a latched Temp for free: short-press to
+			// arm, change what you like, short-press again to put it all back.
+			deluge::modulation::temp_hold::tempHold.end();
 		}
 	}
 }
@@ -311,6 +326,9 @@ void clearShiftSticky() {
 	shiftCurrentlyStuck = false;
 	shiftCurrentlyPressed = false;
 	shiftHasChangedSinceLastCheck = true;
+	// Shift is being taken away from under a hold, so the hold has to finish here too or it would
+	// sit open with nothing left to close it.
+	deluge::modulation::temp_hold::tempHold.end();
 }
 
 bool shiftHasChanged() {

@@ -22,6 +22,7 @@
 #include "gui/ui/ui.h"
 #include "hid/button.h"
 #include "modulation/arpeggiator.h"
+#include "modulation/midi_fx/midi_fx_settings.h"
 
 #define SHORTCUTS_VERSION_1 0
 #define SHORTCUTS_VERSION_3 1
@@ -67,6 +68,11 @@ public:
 	ParamManagerForTimeline* currentParamManager;
 	SideChain* currentSidechain;
 	ArpeggiatorSettings* currentArpSettings;
+
+	/// Per-drum on Kits, per-clip elsewhere. Null only when there is genuinely nothing to edit
+	/// (no drum selected, audio clips), in which case the MIDI FX items hide themselves via
+	/// isRelevant() rather than appearing and doing nothing.
+	deluge::modulation::midi_fx::MidiFxSettings* currentMidiFxSettings;
 	::MultiRange* currentMultiRange;
 	SampleControls* currentSampleControls;
 	VoicePriority* currentPriority;

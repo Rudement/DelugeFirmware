@@ -115,6 +115,7 @@ int32_t getParamNeutralValue(int32_t p) {
 	case params::LOCAL_LPF_MORPH:
 	case params::LOCAL_HPF_MORPH:
 	case params::LOCAL_FOLD:
+	case params::LOCAL_SEAR:
 		return 25 * 10737418; // Room to be quadrupled
 
 	case params::LOCAL_PAN:
@@ -715,6 +716,9 @@ char const* oscTypeToString(OscType oscType) {
 	case OscType::DX7:
 		return "dx7";
 
+	case OscType::PLAITS:
+		return "plaits";
+
 	default:
 		__builtin_unreachable();
 	}
@@ -754,6 +758,9 @@ OscType stringToOscType(char const* string) {
 	}
 	else if (!strcmp(string, "dx7")) {
 		return OscType::DX7;
+	}
+	else if (!strcmp(string, "plaits")) {
+		return OscType::PLAITS;
 	}
 	else {
 		return OscType::TRIANGLE;
@@ -925,6 +932,50 @@ ModFXType stringToFXType(char const* string) {
 	else {
 		return ModFXType::NONE;
 	}
+}
+
+char const* cloudsModeToString(CloudsMode mode) {
+	switch (mode) {
+	case CloudsMode::GRANULAR:
+		return "granular";
+	case CloudsMode::STRETCH:
+		return "stretch";
+	case CloudsMode::DELAY:
+		return "loopingDelay";
+	case CloudsMode::SPECTRAL:
+		return "spectral";
+	case CloudsMode::OLIVERB:
+		return "oliverb";
+	case CloudsMode::RESONESTOR:
+		return "resonestor";
+	default:
+		return "off";
+	}
+}
+
+CloudsMode stringToCloudsMode(char const* string) {
+	if (!strcmp(string, "granular")) {
+		return CloudsMode::GRANULAR;
+	}
+	if (!strcmp(string, "stretch")) {
+		return CloudsMode::STRETCH;
+	}
+	if (!strcmp(string, "loopingDelay")) {
+		return CloudsMode::DELAY;
+	}
+	if (!strcmp(string, "spectral")) {
+		return CloudsMode::SPECTRAL;
+	}
+	if (!strcmp(string, "oliverb")) {
+		return CloudsMode::OLIVERB;
+	}
+	if (!strcmp(string, "resonestor")) {
+		return CloudsMode::RESONESTOR;
+	}
+	// Anything unrecognised -- including the absent attribute in every song
+	// saved before Clouds existed -- means off, which is also the state in
+	// which Clouds allocates nothing.
+	return CloudsMode::OFF;
 }
 
 char const* modFXParamToString(ModFXParam fxType) {
@@ -1212,6 +1263,24 @@ char const* inputChannelToString(AudioInputChannel inputChannel) {
 	case AudioInputChannel::SPECIFIC_OUTPUT:
 		return "specificTrack";
 
+	case AudioInputChannel::USB_1:
+		return "usb1";
+
+	case AudioInputChannel::USB_2:
+		return "usb2";
+
+	case AudioInputChannel::USB_3:
+		return "usb3";
+
+	case AudioInputChannel::USB_4:
+		return "usb4";
+
+	case AudioInputChannel::USB_1_2:
+		return "usb12";
+
+	case AudioInputChannel::USB_3_4:
+		return "usb34";
+
 	default: // AudioInputChannel::NONE
 		return "none";
 	}
@@ -1238,6 +1307,24 @@ AudioInputChannel stringToInputChannel(char const* string) {
 	}
 	else if (!strcmp(string, "specificTrack")) {
 		return AudioInputChannel::SPECIFIC_OUTPUT;
+	}
+	else if (!strcmp(string, "usb1")) {
+		return AudioInputChannel::USB_1;
+	}
+	else if (!strcmp(string, "usb2")) {
+		return AudioInputChannel::USB_2;
+	}
+	else if (!strcmp(string, "usb3")) {
+		return AudioInputChannel::USB_3;
+	}
+	else if (!strcmp(string, "usb4")) {
+		return AudioInputChannel::USB_4;
+	}
+	else if (!strcmp(string, "usb12")) {
+		return AudioInputChannel::USB_1_2;
+	}
+	else if (!strcmp(string, "usb34")) {
+		return AudioInputChannel::USB_3_4;
 	}
 
 	else {
@@ -1376,6 +1463,8 @@ int32_t getParamFromUserValue(uint8_t p, int8_t userValue) {
 
 	case params::UNPATCHED_START + params::UNPATCHED_BASS:
 	case params::UNPATCHED_START + params::UNPATCHED_TREBLE:
+	case params::UNPATCHED_START + params::UNPATCHED_LOW_MID:
+	case params::UNPATCHED_START + params::UNPATCHED_HIGH_MID:
 		if (userValue == -50) {
 			return -2147483648;
 		}

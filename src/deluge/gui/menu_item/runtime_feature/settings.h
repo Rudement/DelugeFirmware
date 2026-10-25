@@ -21,8 +21,12 @@
 
 namespace deluge::gui::menu_item::runtime_feature {
 
-/// Some runtime feature settings are squirrled away in submenus.
-constexpr size_t kNonTopLevelSettings = 0;
+/// Some runtime feature settings are squirrled away in submenus / used directly without a top-level menu item.
+/// This MUST equal (number of RuntimeFeatureSettingType entries) minus (number of items in subMenuEntries below),
+/// or the std::array ends up with trailing nullptr(s) and scrolling onto one freezes the device. On this line
+/// twenty-three settings live inside the "Rudement upgrades" folder, which itself takes one top-level slot, so
+/// 23 - 1 = 22.
+constexpr size_t kNonTopLevelSettings = 22;
 // RuntimeFeatureSettingType::MaxElement - kNonTopLevelSettings
 class Settings final : public Submenu {
 public:

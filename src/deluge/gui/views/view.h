@@ -153,6 +153,17 @@ public:
 
 	int32_t calculateKnobPosForModEncoderTurn(deluge::modulation::params::Kind kind, int32_t knobPos, int32_t offset);
 
+	/// Drop a throttled value popup that has not been replayed yet.
+	///
+	/// The mod-encoder *turn* popup is rate-limited and replayed on a timer. A popup put up by
+	/// a knob *press* therefore lands first and is wiped a fraction of a second later by the
+	/// stale value replaying over it. Anything that shows its own message from a press calls
+	/// this first.
+	void cancelPendingModEncoderValuePopup() { hasPendingModEncoderValuePopup = false; }
+
+	/// True when this gold knob is the song's MORPH SLOT selector, whose SHIFT + press belongs to the morph.
+	bool isMorphSlotKnob(uint8_t whichModEncoder);
+
 private:
 	void pretendModKnobsUntouchedForAWhile();
 	void instrumentBeenEdited();

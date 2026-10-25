@@ -40,11 +40,15 @@ public:
 
 private:
 	void offsetPads(int32_t offset, bool shiftEnabled);
+	// Chroma: name the chord currently held on the grid and show it on the display (the harmonic layout
+	// does this on a pick; the iso grid never did). Only redraws when the held pitch-class set changes.
+	void nameHeldChordOnDisplay();
 	inline uint8_t noteFromCoords(int32_t x, int32_t y) {
 		return getState().isomorphic.scrollOffset + x + y * getState().isomorphic.rowInterval;
 	}
 
 	RGB noteColours[kDisplayHeight * kMaxIsomorphicRowInterval + kDisplayWidth];
+	uint16_t lastChordPcMask_ = 0xFFFF; // pitch-class set last named (0xFFFF = nothing yet), to avoid redraw spam
 };
 
 }; // namespace deluge::gui::ui::keyboard::layout

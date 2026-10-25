@@ -17,6 +17,7 @@
 
 #include "model/global_effectable/global_effectable.h"
 #include "definitions_cxx.hpp"
+#include "dsp/clouds_adapter.h"
 #include "dsp/stereo_sample.h"
 #include "gui/l10n/l10n.h"
 #include "gui/views/performance_view.h"
@@ -28,15 +29,18 @@
 #include "model/mod_controllable/ModFXProcessor.h"
 #include "model/settings/runtime_feature_settings.h"
 #include "model/song/song.h"
+#include "modulation/morph.h"
 #include "modulation/params/param.h"
 #include "modulation/params/param_collection.h"
 #include "modulation/params/param_set.h"
 #include "playback/playback_handler.h"
+#include "processing/engines/cv_audio_stream.h"
 #include "storage/storage_manager.h"
 #include "util/comparison.h"
 #include "util/firmware_version.h"
 
 using namespace deluge;
+using namespace deluge::processing::engines;
 namespace params = deluge::modulation::params;
 
 GlobalEffectable::GlobalEffectable() {
@@ -90,6 +94,50 @@ void GlobalEffectable::initParams(ParamManager* paramManager) {
 
 	unpatchedParams->params[params::UNPATCHED_LPF_MORPH].setCurrentValueBasicForSetup(NEGATIVE_ONE_Q31);
 	unpatchedParams->params[params::UNPATCHED_HPF_MORPH].setCurrentValueBasicForSetup(NEGATIVE_ONE_Q31);
+
+	// Clouds. These defaults are Mutable's own centre-detented panel
+	// positions -- everything mid-travel except Blend, which starts fully dry
+	// so that selecting a mode is audible as "nothing yet" rather than as an
+	// abrupt wall of grains, and Feedback/Reverb, which start off. In q31,
+	// 0 is the centre of the knob's travel and NEGATIVE_ONE_Q31 is the bottom.
+	unpatchedParams->params[params::UNPATCHED_CLOUDS_POSITION].setCurrentValueBasicForSetup(0);
+	unpatchedParams->params[params::UNPATCHED_CLOUDS_SIZE].setCurrentValueBasicForSetup(0);
+	unpatchedParams->params[params::UNPATCHED_CLOUDS_PITCH].setCurrentValueBasicForSetup(0);
+	// NOT centre, unlike the rest. Clouds treats Density as a meta parameter
+	// and deliberately emits NO grains around the middle of its travel:
+	// granular_processor.cc zeroes grain overlap for density in [0.47, 0.53],
+	// and in practice the audible dead zone is wider still because overlap
+	// stays near zero either side of it. A Deluge q31 default of 0 maps to
+	// menu position 25 of 50, i.e. density 0.50 -- the exact centre of that
+	// dead zone. Shipping that would mean Clouds is silent out of the box no
+	// matter how far up Blend is turned, which is indistinguishable from
+	// being broken. Confirmed on hardware: menu positions 26-30 emit nothing.
+	// 1288490152 is menu position 40, density 0.80, which produces grains
+	// comfortably louder than the dry signal.
+	unpatchedParams->params[params::UNPATCHED_CLOUDS_DENSITY].setCurrentValueBasicForSetup(1288490152);
+	unpatchedParams->params[params::UNPATCHED_CLOUDS_TEXTURE].setCurrentValueBasicForSetup(0);
+	unpatchedParams->params[params::UNPATCHED_CLOUDS_BLEND].setCurrentValueBasicForSetup(NEGATIVE_ONE_Q31);
+	// Centre, not minimum -- and this one is load-bearing. In Resonestor mode
+	// stereo_spread drives two things at once:
+	//     set_stereo(ss < 0.5 ? 0 : (ss - 0.5) * 2)
+	//     set_separation(ss > 0.5 ? 0 : (0.5 - ss) * 2)
+	// so ss = 0 means separation = 1.0, which silences the mode outright.
+	// Measured against the real engine: at Spread 0 Resonestor is silent for
+	// every combination of density, reverb, feedback and distortion; at Spread
+	// 0.5 it produces output at the defaults. Centre is also the neutral
+	// setting for the granular modes, so nothing else is compromised.
+	unpatchedParams->params[params::UNPATCHED_CLOUDS_SPREAD].setCurrentValueBasicForSetup(0);
+	unpatchedParams->params[params::UNPATCHED_CLOUDS_FEEDBACK].setCurrentValueBasicForSetup(NEGATIVE_ONE_Q31);
+	unpatchedParams->params[params::UNPATCHED_CLOUDS_REVERB].setCurrentValueBasicForSetup(NEGATIVE_ONE_Q31);
+
+	// AUX MASTER. Set on every GlobalEffectable rather than only the song's, because they all
+	// share one initParams -- the copies on Kits and audio clips are inert, since only the
+	// song's pair is ever read and only the song's pair is reachable from a knob.
+	unpatchedParams->params[params::UNPATCHED_CV1_MASTER].setCurrentValueBasicForSetup(params::kCvMasterDefault);
+	unpatchedParams->params[params::UNPATCHED_CV2_MASTER].setCurrentValueBasicForSetup(params::kCvMasterDefault);
+
+	unpatchedParams->params[params::UNPATCHED_MORPH].setCurrentValueBasicForSetup(params::kMorphDefault);
+	unpatchedParams->params[params::UNPATCHED_MORPH_SLOT].setCurrentValueBasicForSetup(params::kMorphSlotDefault);
 }
 
 void GlobalEffectable::initParamsForAudioClip(ParamManagerForTimeline* paramManager) {
@@ -223,6 +271,64 @@ bool GlobalEffectable::modEncoderButtonAction(uint8_t whichModEncoder, bool on,
                                               ModelStackWithThreeMainThings* modelStack) {
 	using enum l10n::String;
 	int32_t modKnobMode = *getModKnobMode();
+
+
+	// AUX MASTER: the bottom encoder of the stutter button switches which socket it edits.
+	// One knob for two sockets means the socket it is on is otherwise invisible, so this
+	// pops it up -- the same thing mode 5 does when its bottom encoder switches mod-FX param.
+	//
+	// Nothing to switch when the two cables are one stereo destination: there is a single
+	// master then, so the press is deliberately inert rather than toggling a hidden value that
+	// would surprise you the next time you unsplit.
+	if (modKnobMode == 6 && whichModEncoder == 0 && currentSong != nullptr && this == &currentSong->globalEffectable) {
+		if (on && cvOutputsAvailable() && !cvGetStereoSplit()) {
+			cvMasterKnobSocket ^= 1;
+			display->displayPopup(
+			    l10n::get(cvMasterKnobSocket == 0 ? STRING_FOR_OUTPUT_LEVEL_CV1 : STRING_FOR_OUTPUT_LEVEL_CV2));
+			// The knob now points at the other socket's param, which is almost certainly at a
+			// different level, so redraw the ring rather than leave it showing the old socket.
+			view.setKnobIndicatorLevels();
+			return true;
+		}
+		return false;
+	}
+
+	// MORPH capture, on a press of the same knob that sweeps it.
+	//
+	// The morph has to be armable with nothing plugged in. The MIDI command is the good way to
+	// drive it live -- a footswitch leaves both hands free -- but a performance control you
+	// cannot arm without a controller is not finished, so the knob press does it too.
+	//
+	// Mode 2's presses are unhandled for a GlobalEffectable, the same reason its turns were
+	// free, so this displaces nothing. Song only, matching the param's own guard.
+	if (modKnobMode == 2 && whichModEncoder == 1 && currentSong != nullptr
+	    && this == &currentSong->globalEffectable) {
+		if (on) {
+			morph.capture();
+		}
+		return false;
+	}
+
+	// MORPH SLOT, on the lower knob of the same pair: a press cues the selected slot, so the
+	// upper knob then sweeps from the song as it is now to that slot. SHIFT + press instead
+	// stamps the song into the selected slot, replacing it -- the only way to reuse a slot, and
+	// the way out of BANK FULL without losing the other fifteen.
+	if (modKnobMode == 2 && whichModEncoder == 0 && currentSong != nullptr
+	    && this == &currentSong->globalEffectable) {
+		if (on) {
+			UnpatchedParamSet* songUnpatched = currentSong->paramManager.getUnpatchedParamSet();
+			if (songUnpatched) {
+				int32_t slot = morphSlotFromValue(songUnpatched->getValue(params::UNPATCHED_MORPH_SLOT));
+				if (Buttons::isShiftButtonPressed()) {
+					morph.replaceSlot(slot);
+				}
+				else {
+					morph.cue(slot);
+				}
+			}
+		}
+		return false;
+	}
 
 	// Stutter section
 	if (modKnobMode == 6 && whichModEncoder == 1) {
@@ -655,6 +761,26 @@ int32_t GlobalEffectable::getParameterFromKnob(int32_t whichModEncoder) {
 			}
 		}
 	}
+	// MORPH on the envelope button's upper encoder.
+	//
+	// Mode 2 is the envelope pair, which a GlobalEffectable has no equivalent of -- stock
+	// firmware returns 255 for both of its encoders here, so this displaces nothing and needs
+	// no opt-in toggle. Same reasoning as the AUX MASTER placement in mode 6 below.
+	//
+	// Gold knobs cannot be *learned* to a song param at all: learnKnob's mod-knob branch
+	// writes into Sound::modKnobs, which only Sounds have, so ModControllableAudio::learnKnob
+	// rejects the attempt. A fixed slot is the only way a song param reaches a knob.
+	//
+	// Song only. This function also serves Kits and audio clips, whose GlobalEffectables carry
+	// inert copies of these params; without the guard the knob would light up there and
+	// silently edit a value nothing reads.
+	else if (modKnobMode == 2) {
+		if (currentSong != nullptr && this == &currentSong->globalEffectable) {
+			// Upper knob sweeps the morph, lower knob picks the bank slot it sweeps toward.
+			return (whichModEncoder != 0) ? params::UNPATCHED_MORPH : params::UNPATCHED_MORPH_SLOT;
+		}
+	}
+
 	else if (modKnobMode == 3) {
 		if (whichModEncoder != 0) {
 			return params::UNPATCHED_DELAY_RATE;
@@ -688,6 +814,20 @@ int32_t GlobalEffectable::getParameterFromKnob(int32_t whichModEncoder) {
 	else if (modKnobMode == 6) {
 		if (whichModEncoder != 0) {
 			return params::UNPATCHED_STUTTER_RATE;
+		}
+		// AUX MASTER on the bottom encoder. In stock firmware mode 6's bottom encoder returns
+		// 255 -- stutter rate is on the top encoder, and so is the stutter trigger -- so this
+		// displaces nothing and needs no opt-in toggle.
+		//
+		// Song only. This function also serves Kits and audio clips, whose GlobalEffectables
+		// carry their own inert copies of these params; without the guard the knob would light
+		// up there and silently edit a value nothing ever reads.
+		if (currentSong != nullptr && this == &currentSong->globalEffectable) {
+			// Split on means one destination and therefore one master, so both the knob and the
+			// menu drive CV1's param while CV2's sits idle. That is also why the push does
+			// nothing in that mode: there is nothing to switch to.
+			return (cvGetStereoSplit() || cvMasterKnobSocket == 0) ? params::UNPATCHED_CV1_MASTER
+			                                                       : params::UNPATCHED_CV2_MASTER;
 		}
 	}
 	else if (modKnobMode == 7) {
@@ -820,6 +960,28 @@ void GlobalEffectable::writeParamAttributesToFile(Serializer& writer, ParamManag
 	unpatchedParams->writeParamAsAttribute(writer, "pan", params::UNPATCHED_PAN, writeAutomation, false,
 	                                       valuesForOverride);
 
+	// Written only when moved off the default, the same opt-in pitchAdjust uses below. A song
+	// that never touches its aux master stays byte-identical to one saved before this existed,
+	// and stock 1.2.1 skips the unknown attribute on read either way.
+	if (unpatchedParams->params[params::UNPATCHED_CV1_MASTER].containsSomething(params::kCvMasterDefault)) {
+		unpatchedParams->writeParamAsAttribute(writer, "cv1Master", params::UNPATCHED_CV1_MASTER, writeAutomation,
+		                                       false, valuesForOverride);
+	}
+	if (unpatchedParams->params[params::UNPATCHED_CV2_MASTER].containsSomething(params::kCvMasterDefault)) {
+		unpatchedParams->writeParamAsAttribute(writer, "cv2Master", params::UNPATCHED_CV2_MASTER, writeAutomation,
+		                                       false, valuesForOverride);
+	}
+
+	if (unpatchedParams->params[params::UNPATCHED_MORPH].containsSomething(params::kMorphDefault)) {
+		unpatchedParams->writeParamAsAttribute(writer, "morph", params::UNPATCHED_MORPH, writeAutomation, false,
+		                                       valuesForOverride, params::kMorphDefault);
+	}
+
+	if (unpatchedParams->params[params::UNPATCHED_MORPH_SLOT].containsSomething(params::kMorphSlotDefault)) {
+		unpatchedParams->writeParamAsAttribute(writer, "morphSlot", params::UNPATCHED_MORPH_SLOT, writeAutomation,
+		                                       false, valuesForOverride, params::kMorphSlotDefault);
+	}
+
 	if (unpatchedParams->params[params::UNPATCHED_PITCH_ADJUST].containsSomething(0)) {
 		unpatchedParams->writeParamAsAttribute(writer, "pitchAdjust", params::UNPATCHED_PITCH_ADJUST, writeAutomation,
 		                                       false, valuesForOverride);
@@ -845,6 +1007,29 @@ void GlobalEffectable::writeParamAttributesToFile(Serializer& writer, ParamManag
 	                                       valuesForOverride);
 	unpatchedParams->writeParamAsAttribute(writer, "hpfMorph", params::UNPATCHED_HPF_MORPH, writeAutomation, false,
 	                                       valuesForOverride);
+	// Clouds. Written unconditionally alongside the other FX params rather
+	// than gated on cloudsMode != OFF: a user who dials in a texture, turns
+	// Clouds off to hear the dry signal, and saves would otherwise lose all
+	// nine settings. The mode attribute is what is gated; these are cheap.
+	unpatchedParams->writeParamAsAttribute(writer, "cloudsPosition", params::UNPATCHED_CLOUDS_POSITION,
+	                                       writeAutomation, false, valuesForOverride);
+	unpatchedParams->writeParamAsAttribute(writer, "cloudsSize", params::UNPATCHED_CLOUDS_SIZE, writeAutomation, false,
+	                                       valuesForOverride);
+	unpatchedParams->writeParamAsAttribute(writer, "cloudsPitch", params::UNPATCHED_CLOUDS_PITCH, writeAutomation,
+	                                       false, valuesForOverride);
+	unpatchedParams->writeParamAsAttribute(writer, "cloudsDensity", params::UNPATCHED_CLOUDS_DENSITY, writeAutomation,
+	                                       false, valuesForOverride);
+	unpatchedParams->writeParamAsAttribute(writer, "cloudsTexture", params::UNPATCHED_CLOUDS_TEXTURE, writeAutomation,
+	                                       false, valuesForOverride);
+	unpatchedParams->writeParamAsAttribute(writer, "cloudsBlend", params::UNPATCHED_CLOUDS_BLEND, writeAutomation,
+	                                       false, valuesForOverride);
+	unpatchedParams->writeParamAsAttribute(writer, "cloudsSpread", params::UNPATCHED_CLOUDS_SPREAD, writeAutomation,
+	                                       false, valuesForOverride);
+	unpatchedParams->writeParamAsAttribute(writer, "cloudsFeedback", params::UNPATCHED_CLOUDS_FEEDBACK, writeAutomation,
+	                                       false, valuesForOverride);
+	unpatchedParams->writeParamAsAttribute(writer, "cloudsReverb", params::UNPATCHED_CLOUDS_REVERB, writeAutomation,
+	                                       false, valuesForOverride);
+
 	unpatchedParams->writeParamAsAttribute(writer, "tempo", params::UNPATCHED_TEMPO, writeAutomation, false,
 	                                       valuesForOverride);
 
@@ -982,6 +1167,52 @@ bool GlobalEffectable::readParamTagFromFile(Deserializer& reader, char const* ta
 		reader.exitTag("tempo");
 	}
 
+	else if (!strcmp(tagName, "cloudsPosition")) {
+		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_CLOUDS_POSITION,
+		                           readAutomationUpToPos);
+		reader.exitTag("cloudsPosition");
+	}
+	else if (!strcmp(tagName, "cloudsSize")) {
+		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_CLOUDS_SIZE,
+		                           readAutomationUpToPos);
+		reader.exitTag("cloudsSize");
+	}
+	else if (!strcmp(tagName, "cloudsPitch")) {
+		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_CLOUDS_PITCH,
+		                           readAutomationUpToPos);
+		reader.exitTag("cloudsPitch");
+	}
+	else if (!strcmp(tagName, "cloudsDensity")) {
+		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_CLOUDS_DENSITY,
+		                           readAutomationUpToPos);
+		reader.exitTag("cloudsDensity");
+	}
+	else if (!strcmp(tagName, "cloudsTexture")) {
+		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_CLOUDS_TEXTURE,
+		                           readAutomationUpToPos);
+		reader.exitTag("cloudsTexture");
+	}
+	else if (!strcmp(tagName, "cloudsBlend")) {
+		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_CLOUDS_BLEND,
+		                           readAutomationUpToPos);
+		reader.exitTag("cloudsBlend");
+	}
+	else if (!strcmp(tagName, "cloudsSpread")) {
+		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_CLOUDS_SPREAD,
+		                           readAutomationUpToPos);
+		reader.exitTag("cloudsSpread");
+	}
+	else if (!strcmp(tagName, "cloudsFeedback")) {
+		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_CLOUDS_FEEDBACK,
+		                           readAutomationUpToPos);
+		reader.exitTag("cloudsFeedback");
+	}
+	else if (!strcmp(tagName, "cloudsReverb")) {
+		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_CLOUDS_REVERB,
+		                           readAutomationUpToPos);
+		reader.exitTag("cloudsReverb");
+	}
+
 	else if (!strcmp(tagName, "volume")) {
 		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_VOLUME, readAutomationUpToPos);
 		reader.exitTag("volume");
@@ -1002,6 +1233,27 @@ bool GlobalEffectable::readParamTagFromFile(Deserializer& reader, char const* ta
 	else if (!strcmp(tagName, "pan")) {
 		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_PAN, readAutomationUpToPos);
 		reader.exitTag("pan");
+	}
+
+	else if (!strcmp(tagName, "cv1Master")) {
+		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_CV1_MASTER, readAutomationUpToPos);
+		reader.exitTag("cv1Master");
+	}
+
+	else if (!strcmp(tagName, "cv2Master")) {
+		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_CV2_MASTER, readAutomationUpToPos);
+		reader.exitTag("cv2Master");
+	}
+
+	else if (!strcmp(tagName, "morph")) {
+		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_MORPH, readAutomationUpToPos);
+		reader.exitTag("morph");
+	}
+
+	else if (!strcmp(tagName, "morphSlot")) {
+		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_MORPH_SLOT,
+		                           readAutomationUpToPos);
+		reader.exitTag("morphSlot");
 	}
 
 	else if (!strcmp(tagName, "pitchAdjust")) {
@@ -1176,8 +1428,23 @@ void GlobalEffectable::processFXForGlobalEffectable(std::span<StereoSample> buff
 		disableGrain();
 	}
 
+	// Clouds runs at the head of the chain, ahead of mod FX, EQ, delay and
+	// reverb. It is a texture generator rather than a colouring effect: the
+	// musically useful arrangement is to grain the raw signal and then shape
+	// the result, not to grain something already drenched in delay. It is
+	// also the only stage here that is rate-converted, so keeping it first
+	// means only one resampling boundary in the whole chain.
+	processClouds(buffer, paramManager);
+
 	processFX(buffer, modFXTypeNow, modFXRate, modFXDepth, delayWorkingState, postFXVolume, paramManager,
 	          anySoundComingIn, verbAmount);
+}
+
+void GlobalEffectable::processClouds(std::span<StereoSample> buffer, ParamManager* paramManager) {
+	// Only an audio clip ever has Wisps on (allowsClouds()); for Song FX and kit-wide FX the mode
+	// stays OFF and this returns at once.
+	ModControllableAudio::processClouds(buffer, paramManager->getUnpatchedParamSet(),
+	                                    deluge::modulation::params::kCloudsGlobalParamIds);
 }
 
 namespace modfx {

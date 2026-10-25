@@ -37,6 +37,8 @@ public:
 	void readFromFile(Deserializer& reader);
 
 private:
+	// Which slot is currently held (lights bright in renderColumn). The store/recall/highlight/naming
+	// logic lives in ChordMemService (shared with the future center bank).
 	uint8_t activeChordMem = 0xFF;
 };
 

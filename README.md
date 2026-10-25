@@ -1,17 +1,46 @@
-# Deluge Community Firmware
+# Rudement Firmware for the Synthstrom Deluge
 
-## Dear Deluge owners
-If you want to start using the community firmware please visit https://delugecommunity.com/ for all relevant details.
+Rudement is a fork of the [Deluge Community Firmware](https://github.com/SynthstromAudible/DelugeFirmware),
+built on community release **1.3 RC2**. It adds new instruments, effects, MIDI tools and live-performance
+features. Almost every addition has its own On/Off switch under
+`SETTINGS > COMMUNITY FEATURES > Rudement upgrades`, so you can turn on only what you want.
 
-## About
-The [Deluge](https://synthstrom.com/product/deluge/) from [Synthstrom Audible](https://synthstrom.com/) is a portable sequencer, synthesizer and sampler. Synthstrom Audible decided to [open source](https://synthstrom.com/open/) the firmware application that runs on the Deluge to allow the community to customize and extend the capabilities of the device. 
+## What's in it
 
-The hardware is built around a Renesas RZ/A1L processor with an Arm® Cortex®-A9 core running at 400MHz and 3MB of on-chip SRAM. Connected to that is a 64MB SDRAM chip, a PIC for button handling and either a 7-Segment array or an OLED screen. The application is written in C and C++ and some occasional assembly in bare metal style without an operating system.
+- **Sound:** Bouls (Mutable Instruments Plaits oscillator), Wisps (Mutable Instruments Clouds texture effect),
+  Four-Band EQ, Delay & Reverb Filters, Sear, Gristleator
+- **Song and grid:** Grid Column Reorder, Track Edit, Altered-Note Shading
+- **Instruments and kits:** Kit Split, Chroma
+- **MIDI and sequencing:** MIDI FX (MIDI Delay, Strum, Spread, Spice & Dice, Stochastic, Harmonize, Generate), Groove
+- **Live performance:** Temp Hold, Morph, Loop Remix, Scene Capture, MIDI Follow Grid Hold-to-Lock
+- **System:** OLED Visualizer, USB Audio (8 out / 4 in), SETTINGS > CPU load page
 
-## Important links
-* For acquiring and using the firmware visit the [community firmware website](https://delugecommunity.com/)
-* Once you have the firmware, consult our detailed [update guide](https://github.com/SynthstromAudible/DelugeFirmware/wiki/Update-guide) for instructions on how to install it
-* To contribute to the project with code, bug reports, suggestions, and feedback see: [How to contribute to Deluge Firmware](https://github.com/SynthstromAudible/DelugeFirmware/blob/main/docs/CONTRIBUTING.md)
-* To learn about the toolchain, application, and to start working on the code continue with: [Getting Started with Deluge Development](https://delugecommunity.com/development/deluge/getting_started/)
-* Please also visit the [Synthstrom Forum](https://forums.synthstrom.com/) and the community [Discord](https://discord.gg/BnRcyFSgaT) to interact with other users and the developers
-* You can donate to the project using the [Synthstrom Patreon](https://www.patreon.com/Synthstrom)
+The full operating manual is in [`manuals/`](manuals/) and attached to each release.
+
+## Installing
+
+1. **Back up your whole SD card** to your computer first. Songs saved with newer firmware may not open on older firmware.
+2. Download the `.bin` file from [Releases](../../releases).
+3. Copy it to the top level of the SD card (not in a folder). Make sure it's the only `.bin` there.
+4. Put the card back in the Deluge, **hold SHIFT and switch it on**, and keep holding until it has started up.
+5. Check `SETTINGS > FIRMWARE VERSION`. It should read `1.3.0-rudement`.
+
+To go back, put your previous `.bin` on the card instead and repeat step 4. Chapter 00 of the manual has the details.
+
+## Building from source
+
+This repository builds the same way as the upstream firmware. See
+[Getting Started with Deluge Development](https://delugecommunity.com/development/deluge/getting_started/),
+then run `./dbt build release` (or `dbt build release` on Windows). The `.bin` lands in `build/Release/`.
+
+## Credits
+
+- **Synthstrom Audible** and the Deluge community developers, for the open-source firmware this is built on
+- **Émilie Gillet / Mutable Instruments**: Plaits and Clouds DSP, MIT licence (see `src/deluge/dsp/plaits/` and `src/deluge/dsp/clouds/`)
+- **sticknobills**: USB Audio, adapted for this firmware ([original](https://github.com/sticknobills/DelugeFirmware))
+- **Bruce Zawadzki (Tone Coder / bzawad)**: OLED Visualizer, adapted for this firmware
+- **Commander Cody**: Chroma, adapted from his unofficial Chroma firmware
+
+## Licence
+
+GPL-3.0, the same as the Deluge firmware. See [LICENSE](LICENSE). Third-party code keeps its own licence notices.

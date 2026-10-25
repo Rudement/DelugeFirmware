@@ -516,6 +516,8 @@ void MelodicInstrument::stopAnyAuditioning(ModelStack* modelStack) {
 	notesAuditioned.clear();
 	earlyNotes.clear(); // This is fine, though in a perfect world we'd prefer to just mark the notes as no
 	                    // longer active
+
+	flushMidiFx();
 	if (activeClip) {
 		activeClip->expectEvent(); // Because the absence of auditioning here means sequenced notes may play
 	}
@@ -670,6 +672,48 @@ ArpeggiatorSettings* MelodicInstrument::getArpSettings(InstrumentClip* clip) {
 	}
 	else if (activeClip) {
 		return &((InstrumentClip*)activeClip)->arpSettings;
+	}
+	else {
+		return nullptr;
+	}
+}
+
+// Deliberately the same shape as getArpSettings() above, including returning nullptr with no
+// clip. Callers already handle a null ArpeggiatorSettings; making this one differ would be a
+// trap for anyone who reads one and assumes the other.
+// Every escape path that can cut notes short has to reach this, or an effect with something
+// pending leaves a note hanging on an external synth. Enumerating those paths and testing each
+// one deliberately is the acceptance criterion for this stage - see docs/MIDI-FX-DESIGN.md §9.
+// Deliberately not gated on settings->enabled: switching the effect off is itself one of the
+// paths that must flush.
+void MelodicInstrument::flushMidiFx() {
+	if (midiFx.isEmpty()) {
+		return;
+	}
+	deluge::modulation::midi_fx::MidiFxContext context{.settings = getMidiFxSettings(),
+	                                                   .arpIsOn = !ArpeggiatorBase::arpIsOff(getArpSettings())};
+
+	// An instruction carries four note-offs, and a chain can owe more than that - a chord's worth
+	// of echoes, say. Keep going with a fresh instruction until the chain says it is done, but
+	// bounded: a loop that depends on an effect answering honestly is a hang waiting to happen,
+	// and this runs on the path that stops the transport.
+	constexpr int32_t kMaxFlushPasses = 8;
+	for (int32_t pass = 0; pass < kMaxFlushPasses; pass++) {
+		ArpReturnInstruction instruction;
+		const bool moreToDo = midiFx.flush(context, instruction);
+		dispatchMidiFxFlushNoteOffs(instruction);
+		if (!moreToDo) {
+			break;
+		}
+	}
+}
+
+deluge::modulation::midi_fx::MidiFxSettings* MelodicInstrument::getMidiFxSettings(InstrumentClip* clip) {
+	if (clip) {
+		return &clip->midiFxSettings;
+	}
+	else if (activeClip) {
+		return &((InstrumentClip*)activeClip)->midiFxSettings;
 	}
 	else {
 		return nullptr;

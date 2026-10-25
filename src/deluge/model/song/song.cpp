@@ -40,7 +40,9 @@
 #include "model/clip/clip_instance.h"
 #include "model/clip/instrument_clip.h"
 #include "model/consequence/consequence_clip_existence.h"
+#include "model/drum/drum.h"
 #include "model/instrument/cv_instrument.h"
+#include "model/instrument/kit.h"
 #include "model/instrument/midi_instrument.h"
 #include "model/mod_controllable/mod_controllable_audio.h"
 #include "model/sample/sample_recorder.h"
@@ -50,17 +52,23 @@
 #include "model/settings/runtime_feature_settings.h"
 #include "model/song/clip_iterators.h"
 #include "model/voice/voice_sample.h"
+#include "modulation/midi_fx/chord_source.h"
+#include "modulation/midi_fx/spice.h"
+#include "modulation/morph.h"
 #include "modulation/patch/patch_cable_set.h"
 #include "playback/mode/arrangement.h"
 #include "playback/mode/session.h"
 #include "playback/playback_handler.h"
 #include "processing/audio_output.h"
 #include "processing/engines/audio_engine.h"
+#include "processing/engines/cv_audio_stream.h"
 #include "processing/engines/cv_engine.h"
+#include "processing/engines/usb_audio_stream.h"
 #include "processing/sound/sound_instrument.h"
 #include "processing/stem_export/stem_export.h"
 #include "storage/flash_storage.h"
 #include "storage/storage_manager.h"
+#include "util/functions.h"
 #include "util/lookuptables/lookuptables.h"
 #include "util/try.h"
 #include <cstring>
@@ -133,8 +141,11 @@ OutputType getCurrentOutputType() {
 }
 
 using namespace deluge;
+using namespace deluge::processing::engines;
 
 Song::Song() : backedUpParamManagers(sizeof(BackedUpParamManager)) {
+	// A new song must not inherit the last chord of the one before it.
+	deluge::modulation::midi_fx::chord_source::forget();
 	outputClipInstanceListIsCurrentlyInvalid = false;
 	insideWorldTickMagnitude = FlashStorage::defaultMagnitude;
 	insideWorldTickMagnitudeOffsetFromBPM = 0;
@@ -242,6 +253,7 @@ Song::~Song() {
 
 #include "gui/menu_item/integer_range.h"
 #include "gui/menu_item/key_range.h"
+#include "hid/hid_sysex.h" // Chroma: broadcast global key/scale to the CT/host on any change (all layouts)
 #include "timers_interrupts/timers_interrupts.h"
 extern gui::menu_item::IntegerRange defaultTempoMenu;
 extern gui::menu_item::IntegerRange defaultSwingAmountMenu;
@@ -624,6 +636,10 @@ void Song::setRootNote(int32_t newRootNote, InstrumentClip* clipToAvoidAdjusting
 			instrumentClip->yScroll += numMoreNotes * numOctaves + rootNoteChangeEffect;
 		}
 	}
+	// Chroma: the global key changed — tell the CT/host so it follows in ANY layout (ISO, harmonic, …).
+	// A chord-state with no notes/ctx = a pure key+scale update (no-op if no host has handshaked).
+	HIDSysex::sendChordState((uint8_t)(((key.rootNote % 12) + 12) % 12), nullptr, 0, "", 0, 0,
+	                         (uint8_t)getCurrentScale());
 }
 
 /* Moves the intervals in the current modeNotes by some number of steps
@@ -954,6 +970,62 @@ void Song::changeFillMode(bool on) {
 	}
 }
 
+void Song::rollSpiceDice() {
+	namespace spice = deluge::modulation::midi_fx::spice;
+
+	// One draw for the whole song, not one per track. Two spiced tracks rolled to the same number
+	// still play different patterns - the note row is in the hash - so a shared number costs
+	// nothing musically, and it means one press moves the whole song to a new variation rather than
+	// to a new set of unrelated ones.
+	//
+	// Remembered across calls so a roll always lands somewhere new. A 1-in-100 chance of pressing
+	// the footswitch and hearing nothing change would read as a dropped press, not as luck.
+	static uint8_t lastRolled = spice::kDiceMin;
+	uint8_t rolled = static_cast<uint8_t>(getRandom255() % (spice::kDiceMax - spice::kDiceMin + 1)) + spice::kDiceMin;
+	if (rolled == lastRolled) {
+		rolled = (rolled == spice::kDiceMax) ? spice::kDiceMin : static_cast<uint8_t>(rolled + 1);
+	}
+	lastRolled = rolled;
+
+	const auto rollSettings = [rolled](deluge::modulation::midi_fx::MidiFxSettings& settings) {
+		// Untouched Spice is left untouched. Rolling a track that is not spiced would do nothing
+		// audible now but would quietly change what it sounds like the moment Spice came up, which
+		// is a surprise waiting to happen.
+		if (settings.spiceAmount != spice::kAmountOff) {
+			settings.spiceDice = rolled;
+		}
+	};
+
+	// Melodic clips carry their own settings. Both arrays, because an arrangement-only clip is just
+	// as playable as a session one.
+	const auto rollClips = [&rollSettings](ClipArray& clips) {
+		for (int32_t c = 0; c < clips.getNumElements(); c++) {
+			Clip* clip = clips.getClipAtIndex(c);
+			if (clip == nullptr || clip->type != ClipType::INSTRUMENT) {
+				continue;
+			}
+			Output* output = clip->output;
+			if (output != nullptr && output->type == OutputType::KIT) {
+				continue; // Kits are handled below, on the Drum.
+			}
+			rollSettings(((InstrumentClip*)clip)->midiFxSettings);
+		}
+	};
+	rollClips(sessionClips);
+	rollClips(arrangementOnlyClips);
+
+	// Kits keep theirs per Drum, on the Output rather than the Clip - so they are rolled once here
+	// rather than once per clip that happens to point at the same kit.
+	for (Output* thisOutput = firstOutput; thisOutput; thisOutput = thisOutput->next) {
+		if (thisOutput->type != OutputType::KIT) {
+			continue;
+		}
+		for (Drum* drum = ((Kit*)thisOutput)->firstDrum; drum != nullptr; drum = drum->next) {
+			rollSettings(drum->midiFxSettings);
+		}
+	}
+}
+
 void Song::loadNextSong() {
 	loadSongUI.queueLoadNextSongIfAvailable(1);
 }
@@ -1225,6 +1297,7 @@ weAreInArrangementEditorOrInClipInstance:
 	writer.writeAttribute("songGridScrollX", songGridScrollX);
 	writer.writeAttribute("songGridScrollY", songGridScrollY);
 	writer.writeAttribute("sessionLayout", sessionLayout);
+	writer.writeAttribute("harmonizeChordTrack", harmonizeChordTrack.get());
 
 	writer.writeOpeningTagEnd();
 	// Attributes end
@@ -1309,6 +1382,11 @@ weAreInArrangementEditorOrInClipInstance:
 		}
 	}
 	writer.writeArrayEnding("sections");
+
+	// The morph bank, as differences from the song being written right here.
+	if (this == currentSong) {
+		morph.writeToFile(writer);
+	}
 
 	writer.writeArrayStart("sessionClips");
 	for (int32_t c = 0; c < sessionClips.getNumElements(); c++) {
@@ -1430,6 +1508,9 @@ Error Song::readFromFile(Deserializer& reader) {
 	for (int32_t y = 0; y < 8; y++) {
 		sessionMacros[y].kind = NO_MACRO;
 	}
+
+	// Any morph slots in this file are held for this song until it becomes the current one.
+	morph.beginReading(this);
 
 	uint64_t newTimePerTimerTick = (uint64_t)1 << 32; // TODO: make better!
 
@@ -1628,6 +1709,11 @@ unknownTag:
 			else if (!strcmp(tagName, "sessionLayout")) {
 				sessionLayout = (SessionLayoutType)reader.readTagOrAttributeValueInt();
 				reader.exitTag("sessionLayout");
+			}
+
+			else if (!strcmp(tagName, "harmonizeChordTrack")) {
+				reader.readTagOrAttributeValueString(&harmonizeChordTrack);
+				reader.exitTag("harmonizeChordTrack");
 			}
 
 			else if (!strcmp(tagName, "songGridScrollX")) {
@@ -1900,6 +1986,21 @@ unknownTag:
 				}
 				reader.match(']'); // end array
 				reader.exitTag("sessionMacros");
+			}
+
+			else if (!strcmp(tagName, "morphBank")) {
+				reader.match('[');
+				while (reader.match('{') && *(tagName = reader.readNextTagOrAttributeName())) {
+					if (!strcmp(tagName, "morphSlot")) {
+						morph.readSlotFromFile(reader);
+						reader.exitTag("morphSlot", true);
+					}
+					else {
+						reader.exitTag(tagName);
+					}
+				}
+				reader.exitTag("morphBank");
+				reader.match(']');
 			}
 
 			else if (!strcmp(tagName, "scales")) {
@@ -2500,7 +2601,19 @@ void Song::renderAudio(std::span<StereoSample> outputBuffer, int32_t* reverbBuff
 	char modelStackMemory[MODEL_STACK_MAX_SIZE];
 	ModelStack* modelStack = setupModelStackWithSong(modelStackMemory, this);
 
+	// AUX MASTER, once per window and before the loop -- it is the song's own level, so it does
+	// not belong inside a per-Output pass, and this keeps the read out of the interrupts-disabled
+	// window below. Reading it here rather than in the pump also puts it somewhere `this` is
+	// certainly the song being rendered.
+	if (cvOutputsAvailable()) {
+		UnpatchedParamSet* const songUnpatched = paramManager.getUnpatchedParamSet();
+		cvSetMasterFromParams(songUnpatched->getValue(params::UNPATCHED_CV1_MASTER),
+		                      songUnpatched->getValue(params::UNPATCHED_CV2_MASTER));
+	}
+
 	AudioEngine::logAction("Start output render");
+	using deluge::processing::engines::USBAudioStream;
+	const bool captureStems = USBAudioStream::stemsWanted();
 	for (Output* output = firstOutput; output; output = output->next) {
 		if (!output->inValidState) {
 			continue;
@@ -2510,8 +2623,111 @@ void Song::renderAudio(std::span<StereoSample> outputBuffer, int32_t* reverbBuff
 		    (output->getActiveClip() && isClipActive(output->getActiveClip()->getClipBeingRecordedFrom()));
 		ENTER_CRITICAL_SECTION();
 		if (output->shouldRenderInSong()) {
+			// Routing lives on the Clip, so read it from whichever one is playing.
+			// A track with nothing playing has no routing, and behaves as before.
+			Clip* const routingClip = output->getActiveClip();
+			const uint8_t routing = (routingClip && cvOutputsAvailable()) ? routingClip->cvRouting : ClipRoute::DEFAULT;
+
+			// Send amounts are real params, so they come from the playing Clip's param
+			// manager. For a Kit that store is the kit-wide one -- each Drum keeps its own
+			// copy of every shared param, but the capture below can only isolate a whole
+			// track, so the per-Drum copies are deliberately not the ones read here.
+			//
+			// ONLY SYNTH, KIT AND AUDIO TRACKS HAVE AN UNPATCHED PARAM SET. An earlier comment here
+			// said MIDI and CV tracks reach this line with no unpatched params, and leaned on
+			// containsAnyMainParamCollections() to keep them out. That was wrong:
+			// ParamManager::setupMIDI() puts a MIDIParamCollection in summaries[0] and sets the
+			// expression offset to 1, so a MIDI or CV clip PASSES that test, and
+			// getUnpatchedParamSet() hands back a MIDIParamCollection cast to UnpatchedParamSet.
+			// The send read is then ~2 KB past the end of a small object. MIDIParamCollection is
+			// allocated with allocMaxSpeed, i.e. in on-chip RAM, so when one lands near the top of
+			// that region the read leaves mapped memory: a data abort, hard fault, every render
+			// window. Found 2026-10-05 loading MIDI-heavy songs (FUTURISM 8, ASMBLY THEOS 3) —
+			// claude/sear-bite-load-crash-2026-10-05.md. Worse, the legacy-bits branch below
+			// WRITES through the same pointer, so on a MIDI clip carrying old routing bits it
+			// silently corrupted whatever followed the collection on the heap.
+			const OutputType routingType = output->type;
+			const bool hasUnpatchedParams = routingType == OutputType::SYNTH || routingType == OutputType::KIT
+			                                || routingType == OutputType::AUDIO;
+			int32_t sendGain[2] = {0, 0};
+			if (routingClip != nullptr && hasUnpatchedParams && cvOutputsAvailable()
+			    && routingClip->paramManager.containsAnyMainParamCollections()) {
+				UnpatchedParamSet* const unpatched = routingClip->paramManager.getUnpatchedParamSet();
+
+				// A song written before sends existed expressed routing as bits, which meant
+				// "on, at full". Convert them here, at the first render after load, because
+				// this is the first point at which the param manager is certainly set up --
+				// the attribute and the params are not ordered against each other on load.
+				if (routingClip->cvRoutingLegacyBits != 0) {
+					if (routingClip->cvRoutingLegacyBits & ClipRoute::CV1) {
+						unpatched->params[params::UNPATCHED_CV1_SEND].setCurrentValueBasicForSetup(params::kCvSendFull);
+					}
+					if (routingClip->cvRoutingLegacyBits & ClipRoute::CV2) {
+						unpatched->params[params::UNPATCHED_CV2_SEND].setCurrentValueBasicForSetup(params::kCvSendFull);
+					}
+					routingClip->cvRoutingLegacyBits = 0;
+				}
+
+				sendGain[0] = cvSendParamToGain(unpatched->getValue(params::UNPATCHED_CV1_SEND));
+				// With the pair patched as one stereo destination there is one send, not two:
+				// the sockets carry left and right of the same thing, so one level drives both.
+				sendGain[1] = cvGetStereoSplit() ? sendGain[0]
+				                                 : cvSendParamToGain(unpatched->getValue(params::UNPATCHED_CV2_SEND));
+			}
+
+			// Snapshot the mix before this track renders and take the difference
+			// afterwards. That isolates its contribution without changing how
+			// anything is rendered, and the same difference serves both jobs
+			// below. Failure mode is silence, not a damaged mix.
+			const uint32_t numSamples = (uint32_t)outputBuffer.size();
+			const uint32_t numMono = numSamples * 2;
+			const bool fitsScratch = numMono <= 512;
+			// A send above zero *is* what "routed to that socket" means now -- there are no
+			// routing toggles any more. The CV bits in `routing` survive only for reading old
+			// song files, and have already been converted above.
+			const bool toCV = (sendGain[0] > 0 || sendGain[1] > 0) && fitsScratch;
+			const bool removeFromMain = !(routing & ClipRoute::MAIN) && fitsScratch;
+			const bool capture = toCV || removeFromMain;
+
+			int32_t* const mixRaw = (int32_t*)outputBuffer.data();
+			if (capture) {
+				memcpy(cvStreamCaptureScratch(), mixRaw, numMono * sizeof(int32_t));
+			}
+
+			// USB audio: the same snapshot-and-difference, for the track's USB channels. Its own snapshot, so it
+			// is taken whether or not the hidden AUX capture above runs.
+			const uint16_t route = output->usbRouting;
+			const bool wantsCopy = captureStems && (route & UsbRoute::ANY_USB) != 0;
+			const bool wantsOut = !output->isInMainMix();
+			if (wantsCopy || wantsOut) {
+				USBAudioStream::snapshotBeforeTrack(mixRaw, numSamples);
+			}
 			output->renderOutput(modelStack, outputBuffer, reverbBuffer, volumePostFX >> 1, sideChainHitPending,
 			                     !isClipActiveNow, isClipActiveNow);
+
+			// Every capture reads the post-render mix, so all of them come before anything is taken back out.
+			if (toCV) {
+				// The difference against the snapshot is taken inside the accumulate loop
+				// rather than in a pass of its own here -- that pass walked every sample
+				// only to hand them straight to a loop that was about to walk them again.
+				cvStreamCapture((uint32_t)routingClip, mixRaw, cvStreamCaptureScratch(), numSamples, sendGain,
+				                routingClip->cvSendGainLast);
+			}
+			if (wantsCopy) {
+				USBAudioStream::captureStem(route, mixRaw, numSamples);
+			}
+
+			// Taking the track back out of the mix it was just added to. Subtracting the contribution and restoring
+			// the snapshot are the same thing -- mix minus (mix minus snapshot) is the snapshot -- so this is a
+			// copy. Both snapshots hold the same pre-render mix, so either restores it. This cannot undo the
+			// track's reverb send, written into the shared reverb buffer during renderOutput, so the reverb tail
+			// of a track taken out of the main mix still reaches the main outputs.
+			if (wantsOut) {
+				USBAudioStream::removeTrackFromMix(mixRaw, numSamples);
+			}
+			else if (removeFromMain) {
+				memcpy(mixRaw, cvStreamCaptureScratch(), numMono * sizeof(int32_t));
+			}
 		}
 		EXIT_CRITICAL_SECTION();
 #if DO_AUDIO_LOG
@@ -2520,7 +2736,18 @@ void Song::renderAudio(std::span<StereoSample> outputBuffer, int32_t* reverbBuff
 		AudioEngine::logAction(buf);
 #endif
 	}
+
+	// The Deluge's own tracks are held back by the compensation delay, then audio returning over USB joins the song
+	// here, before every song-level effect, so a track sent out and returned lands where it left.
+	if (!stemExport.renderingOffline()) {
+		USBAudioStream::compensate(outputBuffer.data(), reverbBuffer, (uint32_t)outputBuffer.size());
+	}
+	USBAudioStream::mixReturn(outputBuffer.data(), (uint32_t)outputBuffer.size());
+
 	AudioEngine::logAction("done rendering outputs");
+	// The full set of Clips feeding each CV socket is now known for this window.
+	cvStreamRenderComplete();
+
 	// If recording the "MIX", this is the place where we want to grab it - before any master FX or volume applied
 	// Go through each SampleRecorder, feeding them audio
 	for (SampleRecorder* recorder = AudioEngine::firstRecorder; recorder; recorder = recorder->next) {
@@ -2534,6 +2761,10 @@ void Song::renderAudio(std::span<StereoSample> outputBuffer, int32_t* reverbBuff
 		}
 	}
 	AudioEngine::logAction("done recorders");
+
+	// Song-wide snapshot morph. Returns at once unless the morph position actually moved, so
+	// the cost when it is parked -- which is nearly always -- is one comparison.
+	morph.apply();
 
 	Delay::State delayWorkingState = globalEffectable.createDelayWorkingState(paramManager);
 
@@ -3034,15 +3265,18 @@ Scale Song::cycleThroughScales() {
 /// Returns CUSTOM_SCALE_WITH_MORE_THAN_7_NOTES we can't use the newScale
 Scale Song::setScale(Scale newScale) {
 	// Make sure newScale is a legal one
+	Scale result = NO_SCALE;
 	if (0 <= newScale && newScale < NUM_PRESET_SCALES && setScaleNotes(presetScaleNotes[newScale])) {
-		return newScale;
+		result = newScale;
 	}
 	else if (newScale == NUM_PRESET_SCALES && !userScaleNotes.isEmpty() && setScaleNotes(userScaleNotes)) {
-		return newScale;
+		result = newScale;
 	}
-	else {
-		return NO_SCALE;
+	if (result != NO_SCALE) {
+		// Chroma: the global mode changed — broadcast key+scale so the CT follows in any layout.
+		HIDSysex::sendChordState((uint8_t)(((key.rootNote % 12) + 12) % 12), nullptr, 0, "", 0, 0, (uint8_t)result);
 	}
+	return result;
 }
 
 bool Song::setScaleNotes(NoteSet newScaleNotes) {

@@ -21,6 +21,7 @@
 #include "deluge/dsp/granular/GranularProcessor.h"
 #include "dsp/compressor/rms_feedback.h"
 #include "dsp/delay/delay.h"
+#include "dsp/gristle.hpp"
 #include "dsp/stereo_sample.h"
 #include "hid/button.h"
 #include "model/fx/stutterer.h"
@@ -35,6 +36,7 @@
 #include "modulation/sidechain/sidechain.h"
 
 class Clip;
+class CloudsAdapter;
 class Knob;
 class MIDICable;
 class ModelStack;
@@ -88,16 +90,39 @@ public:
 	bool isSRREnabled(ParamManager* paramManager);
 	bool hasBassAdjusted(ParamManager* paramManager);
 	bool hasTrebleAdjusted(ParamManager* paramManager);
+	bool hasLowMidAdjusted(ParamManager* paramManager);
+	bool hasHighMidAdjusted(ParamManager* paramManager);
 	ModelStackWithAutoParam* getParamFromMIDIKnob(MIDIKnob& knob, ModelStackWithThreeMainThings* modelStack) override;
+
+	// The Gristleizer's LFO phase plus its state-variable filter memory. The two channels MUST
+	// keep separate filter state: running one filter over an interleaved buffer combs instead
+	// of filtering. The LFO phase is deliberately shared so both sides chop together.
+	deluge::dsp::gristle::Memory gristleMemory{};
 
 	// EQ
 	int32_t bassFreq{}; // These two should eventually not be variables like this
 	int32_t trebleFreq{};
+	// One-pole coefficients for the two lowpasses bracketing each mid bell (an octave below / above centre)
+	int32_t lowMidFreqLo{};
+	int32_t lowMidFreqHi{};
+	int32_t highMidFreqLo{};
+	int32_t highMidFreqHi{};
 
 	int32_t withoutTrebleL;
 	int32_t bassOnlyL;
 	int32_t withoutTrebleR;
 	int32_t bassOnlyR;
+	// Mid bell filter state. Stereo state must stay separate per channel — see HANDOFF.md.
+	int32_t lowMidLoL;
+	int32_t lowMidHiL;
+	int32_t lowMidLoR;
+	int32_t lowMidHiR;
+	// The second bell keeps its own state. Sharing it would couple the two bands, and per-channel
+	// state is what keeps stereo material from combing.
+	int32_t highMidLoL;
+	int32_t highMidHiL;
+	int32_t highMidLoR;
+	int32_t highMidHiR;
 
 	// Delay
 	Delay delay;
@@ -114,6 +139,18 @@ public:
 	ModFXProcessor modfx{};
 	RMSFeedbackCompressor compressor;
 	GranularProcessor* grainFX{nullptr};
+
+	// Clouds (Wisps) -------------------------------------------------------
+	// State lives here, alongside modFXType_/grainFX, so the menu items can
+	// reach it through soundEditor.currentModControllable like every other FX
+	// setting. It renders on Sounds (synths and kit rows, from Sound::render)
+	// and on audio clips (from GlobalEffectable::processFXForGlobalEffectable);
+	// allowsClouds() says which. A Sound reads its own copy of the nine params
+	// (UNPATCHED_SOUND_CLOUDS_*), an audio clip the global ones -- see
+	// params::CloudsParamIds. Song FX and kit-wide FX do not carry it.
+	CloudsMode cloudsMode{CloudsMode::OFF};
+	bool cloudsFreeze{false};
+	CloudsAdapter* cloudsFX{nullptr};
 
 	uint32_t lowSampleRatePos{};
 	uint32_t highSampleRatePos{};
@@ -164,8 +201,32 @@ protected:
 	bool enableGrain();
 	void disableGrain();
 
+public:
+	/// Switch Clouds to `mode`. Constructs the adapter on the first non-OFF
+	/// mode and tears it down again on OFF, so the engine costs nothing --
+	/// neither the ~180 KB working buffer nor the per-block resampling --
+	/// while it is switched off. Returns false if the adapter could not be
+	/// allocated, in which case the mode stays OFF.
+	bool setCloudsMode(CloudsMode mode);
+	void disableClouds();
+
+	/// Whether Wisps can run on this owner: Sounds and audio clips. Song FX and kit-wide FX
+	/// cannot -- for those setCloudsMode() keeps the mode OFF (an older song that had Wisps there
+	/// loads with it off).
+	[[nodiscard]] virtual bool allowsClouds() const { return false; }
+
+	/// Wisps is on and audible, so this owner must keep rendering after its input stops: grains,
+	/// delay repeats and reverb tails, a frozen buffer.
+	[[nodiscard]] bool cloudsWantsRendering() const;
+
+	/// Run Wisps over `buffer` in place, reading its nine params from `unpatchedParams` at `ids`.
+	/// Does nothing while it is OFF.
+	void processClouds(std::span<StereoSample> buffer, UnpatchedParamSet* unpatchedParams,
+	                   const deluge::modulation::params::CloudsParamIds& ids);
+
 private:
-	void doEQ(bool doBass, bool doTreble, int32_t* inputL, int32_t* inputR, int32_t bassAmount, int32_t trebleAmount);
+	void doEQ(bool doBass, bool doTreble, bool doLowMid, bool doHighMid, int32_t* inputL, int32_t* inputR,
+	          int32_t bassAmount, int32_t trebleAmount, int32_t lowMidAmount, int32_t highMidAmount);
 	ModelStackWithThreeMainThings* addNoteRowIndexAndStuff(ModelStackWithTimelineCounter* modelStack,
 	                                                       int32_t noteRowIndex);
 	void switchHPFModeWithOff();

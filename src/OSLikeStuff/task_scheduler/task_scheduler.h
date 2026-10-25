@@ -45,6 +45,12 @@ struct TaskManager {
 
 	[[nodiscard]] Time getAverageRunTimeForCurrentTask() const;
 	[[nodiscard]] Time getAverageRunTimeForTask(TaskID id) const;
+	[[nodiscard]] Time getMaxRunTimeForTask(TaskID id) const;
+	[[nodiscard]] Time getTotalRunTimeForTask(TaskID id) const;
+	/// printStats() calls this on its way out, every 10 s, as it always did.
+	void resetStats();
+	/// SETTINGS > CPU > RESET: resetStats() plus the peaks and totals carried across printStats().
+	void resetAllStats();
 
 private:
 	// All current tasks
@@ -62,10 +68,15 @@ private:
 	Time lastPrintedStats{0};
 
 	volatile TaskID currentID{0};
+	// SETTINGS > CPU: printStats() clears every task's statistics every 10 s, which made the CPU
+	// page's peak and load readings cover only the last few seconds. What it clears is carried
+	// here, so getMaxRunTimeForTask()/getTotalRunTimeForTask() span the whole window since the
+	// user's last reset.
+	Time carriedMax_[kMaxTasks]{};
+	Time carriedTotal_[kMaxTasks]{};
 	// for time tracking with rollover
 	Time lastTime{0};
 	Time runningTime{0};
-	void resetStats();
 	// needs to be volatile, GCC misses that the handle call can call ignoreForStats and optimizes the check away
 	volatile bool countThisTask{true};
 	void startClock();

@@ -17,9 +17,13 @@
 
 #include "model/mod_controllable/mod_controllable_audio.h"
 #include "ModFXProcessor.h"
+#include "OSLikeStuff/timers_interrupts/timers_interrupts.h"
 #include "definitions_cxx.hpp"
 #include "deluge/dsp/granular/GranularProcessor.h"
 #include "deluge/model/settings/runtime_feature_settings.h"
+#include "dsp/clouds_adapter.h"
+#include "dsp/eq_bands.hpp"
+#include "dsp/gristle.hpp"
 #include "dsp/stereo_sample.h"
 #include "gui/l10n/l10n.h"
 #include "gui/ui/ui.h"
@@ -38,6 +42,7 @@
 #include "model/song/song.h"
 #include "modulation/knob.h"
 #include "modulation/params/param_set.h"
+#include "playback/playback_handler.h"
 #include "processing/engines/audio_engine.h"
 #include "processing/sound/sound.h"
 #include "storage/storage_manager.h"
@@ -56,6 +61,14 @@ ModControllableAudio::ModControllableAudio() {
 	bassOnlyL = 0;
 	withoutTrebleR = 0;
 	bassOnlyR = 0;
+	lowMidLoL = 0;
+	lowMidHiL = 0;
+	lowMidLoR = 0;
+	lowMidHiR = 0;
+	highMidLoL = 0;
+	highMidHiL = 0;
+	highMidLoR = 0;
+	highMidHiR = 0;
 
 	// Filters
 	lpfMode = FilterMode::TRANSISTOR_24DB;
@@ -85,6 +98,7 @@ ModControllableAudio::ModControllableAudio() {
 ModControllableAudio::~ModControllableAudio() {
 	// delay.discardBuffers(); // No! The DelayBuffers will themselves destruct and do this
 	delete grainFX;
+	disableClouds();
 }
 
 void ModControllableAudio::cloneFrom(ModControllableAudio* other) {
@@ -92,8 +106,18 @@ void ModControllableAudio::cloneFrom(ModControllableAudio* other) {
 	hpfMode = other->hpfMode;
 	clippingAmount = other->clippingAmount;
 	modFXType_ = other->modFXType_;
+	// Clouds' mode and freeze are copied; the adapter itself deliberately is
+	// not. It holds a live recording buffer and its own resampler phase, and
+	// the clone gets its own on first render via setCloudsMode() below. A
+	// shared pointer here would be a double free.
+	cloudsFreeze = other->cloudsFreeze;
+	setCloudsMode(other->cloudsMode);
 	bassFreq = other->bassFreq; // Eventually, these shouldn't be variables like this
 	trebleFreq = other->trebleFreq;
+	lowMidFreqLo = other->lowMidFreqLo;
+	lowMidFreqHi = other->lowMidFreqHi;
+	highMidFreqLo = other->highMidFreqLo;
+	highMidFreqHi = other->highMidFreqHi;
 	filterRoute = other->filterRoute;
 	sidechain.cloneFrom(&other->sidechain);
 	midi_knobs = other->midi_knobs; // Could fail if no RAM... not too big a concern
@@ -109,6 +133,11 @@ void ModControllableAudio::initParams(ParamManager* paramManager) {
 	unpatchedParams->params[params::UNPATCHED_TREBLE].setCurrentValueBasicForSetup(0);
 	unpatchedParams->params[params::UNPATCHED_BASS_FREQ].setCurrentValueBasicForSetup(0);
 	unpatchedParams->params[params::UNPATCHED_TREBLE_FREQ].setCurrentValueBasicForSetup(0);
+	unpatchedParams->params[params::UNPATCHED_LOW_MID].setCurrentValueBasicForSetup(0);
+	unpatchedParams->params[params::UNPATCHED_LOW_MID_FREQ].setCurrentValueBasicForSetup(0);
+	// Both mids default to 0, which is centre, which the amount law treats as an exact bypass.
+	unpatchedParams->params[params::UNPATCHED_HIGH_MID].setCurrentValueBasicForSetup(0);
+	unpatchedParams->params[params::UNPATCHED_HIGH_MID_FREQ].setCurrentValueBasicForSetup(0);
 
 	unpatchedParams->params[params::UNPATCHED_ARP_GATE].setCurrentValueBasicForSetup(0);
 	unpatchedParams->params[params::UNPATCHED_NOTE_PROBABILITY].setCurrentValueBasicForSetup(2147483647);
@@ -135,8 +164,54 @@ void ModControllableAudio::initParams(ParamManager* paramManager) {
 
 	unpatchedParams->params[params::UNPATCHED_BITCRUSHING].setCurrentValueBasicForSetup(-2147483648);
 
+	// Sear Tone defaults to centre, which the tilt filter treats as a true bypass.
+	unpatchedParams->params[params::UNPATCHED_SEAR_TONE].setCurrentValueBasicForSetup(0);
+
+	// The Gristleizer. ON is the only one of these that decides whether the effect is heard — it
+	// is the master switch, and isEnabled() reads nothing else — so a song that has never touched
+	// the effect loads bypassed and sounds exactly as it did before the feature existed. It starts
+	// at kOnUnset rather than at the minimum: both read as OFF, but the sentinel additionally
+	// marks the param as never explicitly written, which is what the legacy migration keys off.
+	// See the comment on gristle::kOnUnset.
+	//
+	// The other nine are still set to their inactive values, but for a different reason now: they
+	// are what you get when you switch the effect ON for the first time, and landing on a neutral
+	// patch rather than an arbitrary one is the difference between "switch it on and hear the
+	// source" and "switch it on and get a surprise". Depth, Mode, Reso and Dirt sit at minimum;
+	// Level sits at maximum, which is unity gain; Shape at minimum is a plain triangle; Bias and
+	// Freq are bipolar and sit at centre. Changing any of these defaults would retroactively alter
+	// saved songs.
+	unpatchedParams->params[params::UNPATCHED_GRISTLE_ON].setCurrentValueBasicForSetup(deluge::dsp::gristle::kOnUnset);
+	unpatchedParams->params[params::UNPATCHED_GRISTLE_RATE].setCurrentValueBasicForSetup(0);
+	unpatchedParams->params[params::UNPATCHED_GRISTLE_DEPTH].setCurrentValueBasicForSetup(-2147483648);
+	unpatchedParams->params[params::UNPATCHED_GRISTLE_SHAPE].setCurrentValueBasicForSetup(-2147483648);
+	unpatchedParams->params[params::UNPATCHED_GRISTLE_BIAS].setCurrentValueBasicForSetup(0);
+	unpatchedParams->params[params::UNPATCHED_GRISTLE_MODE].setCurrentValueBasicForSetup(-2147483648);
+	unpatchedParams->params[params::UNPATCHED_GRISTLE_LEVEL].setCurrentValueBasicForSetup(2147483647);
+	unpatchedParams->params[params::UNPATCHED_GRISTLE_FREQ].setCurrentValueBasicForSetup(0);
+	unpatchedParams->params[params::UNPATCHED_GRISTLE_RES].setCurrentValueBasicForSetup(-2147483648);
+	unpatchedParams->params[params::UNPATCHED_GRISTLE_DIRT].setCurrentValueBasicForSetup(-2147483648);
+	// The Slicer. Blend at minimum is the whole of the compatibility story: the pattern is not
+	// mixed in, the sample loop below never touches it, and the effect is what it always was.
+	// Pattern, Variation and Sync still get definite values so that turning Blend up lands on a
+	// musical default — the first rhythm, its base variation, 1/16 steps — rather than on
+	// whatever the bottom of each knob happens to be.
+	unpatchedParams->params[params::UNPATCHED_GRISTLE_PATTERN].setCurrentValueBasicForSetup(
+	    deluge::dsp::gristle::sliceParamForIndex(0, deluge::dsp::gristle::kNumSlicePatterns));
+	unpatchedParams->params[params::UNPATCHED_GRISTLE_VARIATION].setCurrentValueBasicForSetup(
+	    deluge::dsp::gristle::sliceParamForIndex(0, deluge::dsp::gristle::kNumSliceVariations));
+	unpatchedParams->params[params::UNPATCHED_GRISTLE_SYNC].setCurrentValueBasicForSetup(
+	    deluge::dsp::gristle::sliceParamForIndex(2, deluge::dsp::gristle::kNumSliceSyncLevels));
+	unpatchedParams->params[params::UNPATCHED_GRISTLE_BLEND].setCurrentValueBasicForSetup(-2147483648);
+
 	unpatchedParams->params[params::UNPATCHED_SIDECHAIN_SHAPE].setCurrentValueBasicForSetup(-601295438);
 	unpatchedParams->params[params::UNPATCHED_COMPRESSOR_THRESHOLD].setCurrentValueBasicForSetup(0);
+
+	// Off, because a send above zero is now what "routed to that socket" means. Songs saved
+	// before sends existed carry routing bits instead; Clip::cvRoutingLegacyBits turns those
+	// into full sends at first render. Untouched sends stay out of the song file entirely.
+	unpatchedParams->params[params::UNPATCHED_CV1_SEND].setCurrentValueBasicForSetup(params::kCvSendOff);
+	unpatchedParams->params[params::UNPATCHED_CV2_SEND].setCurrentValueBasicForSetup(params::kCvSendOff);
 }
 
 bool ModControllableAudio::hasBassAdjusted(ParamManager* paramManager) {
@@ -147,6 +222,16 @@ bool ModControllableAudio::hasBassAdjusted(ParamManager* paramManager) {
 bool ModControllableAudio::hasTrebleAdjusted(ParamManager* paramManager) {
 	UnpatchedParamSet* unpatchedParams = paramManager->getUnpatchedParamSet();
 	return (unpatchedParams->getValue(params::UNPATCHED_TREBLE) != 0);
+}
+
+bool ModControllableAudio::hasLowMidAdjusted(ParamManager* paramManager) {
+	UnpatchedParamSet* unpatchedParams = paramManager->getUnpatchedParamSet();
+	return (unpatchedParams->getValue(params::UNPATCHED_LOW_MID) != 0);
+}
+
+bool ModControllableAudio::hasHighMidAdjusted(ParamManager* paramManager) {
+	UnpatchedParamSet* unpatchedParams = paramManager->getUnpatchedParamSet();
+	return (unpatchedParams->getValue(params::UNPATCHED_HIGH_MID) != 0);
 }
 
 void ModControllableAudio::processFX(std::span<StereoSample> buffer, ModFXType modFXType, int32_t modFXRate,
@@ -164,9 +249,172 @@ void ModControllableAudio::processFX(std::span<StereoSample> buffer, ModFXType m
 		modfx.processModFX(buffer, modFXType, modFXRate, modFXDepth, postFXVolume, unpatchedParams, anySoundComingIn);
 	}
 
+	// Gristleizer ----------------------------------------------------------------------------
+	// Placed after ModFX and before EQ so the shelves can tame the chop's edges, and so the delay
+	// hears the chopped signal rather than the other way round.
+	//
+	// The enable test is one comparison against one param, done once per buffer; when it is false
+	// nothing else is even read and the sample loop never runs, which is what makes the default
+	// state a true bypass at no CPU cost. See isEnabled() for why the switch replaced the old
+	// rule that inferred enablement from Depth / Mode / Level / Dirt, and for why nothing about
+	// the other nine params belongs in that test.
+	//
+	// This is a standalone effect with its own params, NOT a ModFX type. On the 1.2.1 branch it
+	// was first built as one and did nothing on song / kit / audio-clip FX, because
+	// GlobalEffectable::getActiveModFXType() forces the type to NONE whenever the selected
+	// gold-knob param sits at its minimum — and it borrowed FEEDBACK, whose minimum is both a
+	// legitimate setting and where an untouched knob rests. Owning its params removes that gate
+	// and the four-knob ceiling. Do not "simplify" this back into a ModFX type.
+	{
+		// The switch is crossfaded, not thrown: see kEnableRampStep. So the effect keeps running
+		// while the fade is still moving, which is why this asks about the ramp as well as the
+		// switch. Once the ramp reaches zero the loop is skipped exactly as it always was, and a
+		// song that never turns the effect on still pays nothing for it.
+		bool gristleEnabled = deluge::dsp::gristle::isEnabled(unpatchedParams->getValue(params::UNPATCHED_GRISTLE_ON));
+		if (gristleEnabled || gristleMemory.enableRamp > 0) {
+			q31_t gristleDepth = unpatchedParams->getValue(params::UNPATCHED_GRISTLE_DEPTH);
+			q31_t gristleMode = unpatchedParams->getValue(params::UNPATCHED_GRISTLE_MODE);
+			q31_t gristleLevel = unpatchedParams->getValue(params::UNPATCHED_GRISTLE_LEVEL);
+			q31_t gristleDirt = unpatchedParams->getValue(params::UNPATCHED_GRISTLE_DIRT);
+
+			deluge::dsp::gristle::Config gristleConfig = deluge::dsp::gristle::setup(
+			    unpatchedParams->getValue(params::UNPATCHED_GRISTLE_SHAPE),
+			    unpatchedParams->getValue(params::UNPATCHED_GRISTLE_BIAS), gristleDepth, gristleMode, gristleLevel,
+			    unpatchedParams->getValue(params::UNPATCHED_GRISTLE_FREQ),
+			    unpatchedParams->getValue(params::UNPATCHED_GRISTLE_RES), gristleDirt);
+
+			// The Slicer's four knobs. Shape and Bias are handed over a second time on purpose:
+			// this stage reads them as the step's attack and duty. See setupSlice().
+			deluge::dsp::gristle::setupSlice(gristleConfig,
+			                                 unpatchedParams->getValue(params::UNPATCHED_GRISTLE_PATTERN),
+			                                 unpatchedParams->getValue(params::UNPATCHED_GRISTLE_VARIATION),
+			                                 unpatchedParams->getValue(params::UNPATCHED_GRISTLE_SYNC),
+			                                 unpatchedParams->getValue(params::UNPATCHED_GRISTLE_BLEND),
+			                                 unpatchedParams->getValue(params::UNPATCHED_GRISTLE_SHAPE),
+			                                 unpatchedParams->getValue(params::UNPATCHED_GRISTLE_BIAS));
+
+			// Rate rides the same exponential law the ModFX LFO uses, reusing GLOBAL_MOD_FX_RATE's
+			// neutral value. That means the top of the knob reaches audio rate (~1.3 kHz) and buzzes
+			// rather than chops. That is DELIBERATE and faithful — the original box went audio-rate,
+			// which is where its "pseudo ring modulation" came from. If it ever needs more resolution
+			// in the chop window, shift the phase increment right here, inside the Gristleizer; never
+			// touch the shared law, which flanger and chorus also use.
+			uint32_t phaseIncrement = getFinalParameterValueExp(
+			    paramNeutralValues[params::GLOBAL_MOD_FX_RATE],
+			    cableToExpParamShortcut(unpatchedParams->getValue(params::UNPATCHED_GRISTLE_RATE)));
+
+			// The slice cycle's speed and where the song says it currently is. Read ONCE per
+			// buffer, not per sample: getActualSwungTickCount() walks the transport and this
+			// function runs for every track that has the effect on.
+			//
+			// The transport is asked only when the pattern is actually being mixed in, so a song
+			// using the Gristleizer the way it was costs nothing for the Slicer existing.
+			deluge::dsp::gristle::SliceClock sliceTransport{};
+			if (gristleConfig.doSlice) {
+				uint32_t tickRemainder = 0;
+				bool clockActive = playbackHandler.isEitherClockActive();
+				int64_t swungTick = clockActive ? playbackHandler.getActualSwungTickCount(&tickRemainder) : 0;
+				// A new Sync level waits for a moment where the jump is inaudible — see
+				// latchSliceSync(). It rewrites the config's sync index, so it must run before the
+				// clock is worked out, not after.
+				deluge::dsp::gristle::latchSliceSync(gristleConfig, gristleMemory, clockActive, swungTick,
+				                                     currentSong->getInputTickMagnitude());
+
+				sliceTransport = deluge::dsp::gristle::sliceClock(
+				    gristleConfig, playbackHandler.getTimePerInternalTick(), currentSong->getInputTickMagnitude(),
+				    clockActive, swungTick, tickRemainder);
+				deluge::dsp::gristle::alignSlicePhase(gristleMemory, sliceTransport);
+			}
+
+			q31_t gristleRampTarget = gristleEnabled ? ONE_Q31 : 0;
+
+			for (StereoSample& sample : buffer) {
+				// Kept so the crossfade has something to fade back to.
+				q31_t dryL = sample.l;
+				q31_t dryR = sample.r;
+
+				// One LFO value per frame, shared by both channels so the two sides chop together;
+				// separate filter state per channel so they do not comb.
+				gristleMemory.lfoPhase += phaseIncrement;
+				q31_t shaped = deluge::dsp::gristle::shapeLFO(getTriangle(gristleMemory.lfoPhase), gristleConfig);
+
+				// The pattern, when it is mixed in at all. Blend decides how much of each lane is
+				// heard; what comes back out is in the same shape shapeLFO() produces, so
+				// processSample() below needs no knowledge of any of this.
+				//
+				// LANE B GOES TO ONE OF TWO PLACES. Normally it drives the filter, which is what
+				// makes a dual pattern two rhythms at once. When the pattern says dirt instead,
+				// the filter follows lane A as it always did and lane B attenuates the
+				// distortion, so the grind arrives on its own rhythm.
+				q31_t shapedVca = shaped;
+				q31_t shapedFilter = shaped;
+				q31_t dirtScale = ONE_Q31;
+
+				if (gristleConfig.doSlice) {
+					gristleMemory.slicePhase += sliceTransport.increment;
+					deluge::dsp::gristle::SliceGates gates =
+					    deluge::dsp::gristle::sliceGates01(gristleMemory.slicePhase, gristleConfig, gristleMemory);
+
+					shapedVca = deluge::dsp::gristle::blendSlice(shaped, gates.a, gristleConfig);
+					if (gristleConfig.sliceDirtDest) {
+						shapedFilter = shapedVca;
+						// Blend still decides how far in the pattern is, so at Blend zero this is
+						// exactly ONE_Q31 and the dirt is untouched.
+						dirtScale = deluge::dsp::gristle::blendToUnity(gates.b, gristleConfig);
+					}
+					else {
+						shapedFilter = deluge::dsp::gristle::blendSlice(shaped, gates.b, gristleConfig);
+					}
+				}
+
+				q31_t wetL = deluge::dsp::gristle::processSample(sample.l, shapedVca, shapedFilter, dirtScale,
+				                                                 gristleConfig, gristleMemory.l);
+				q31_t wetR = deluge::dsp::gristle::processSample(sample.r, shapedVca, shapedFilter, dirtScale,
+				                                                 gristleConfig, gristleMemory.r);
+
+				gristleMemory.enableRamp =
+				    deluge::dsp::gristle::advanceEnableRamp(gristleMemory.enableRamp, gristleRampTarget);
+				sample.l = deluge::dsp::gristle::crossfadeBypass(dryL, wetL, gristleMemory.enableRamp);
+				sample.r = deluge::dsp::gristle::crossfadeBypass(dryR, wetR, gristleMemory.enableRamp);
+			}
+
+			// Park everything the moment the fade-out finishes, so the next buffer takes the
+			// skip-the-loop path and resumption starts from silence rather than stale state.
+			if (!gristleEnabled && gristleMemory.enableRamp == 0) {
+				gristleMemory.l = {};
+				gristleMemory.r = {};
+				gristleMemory.sliceEnv = 0;
+				deluge::dsp::gristle::resetSliceLatch(gristleMemory);
+			}
+		}
+		else {
+			// Park the filter at rest while bypassed. This matters now that the switch is a param
+			// and can be automated: the SVF's low/band words hold whatever the signal left in them,
+			// and resuming from a stale non-zero state steps the output on the first sample back,
+			// which is an audible tick every time the effect is thrown back in. Zero is silence, so
+			// starting from zero is the only click-free resumption.
+			//
+			// lfoPhase is deliberately NOT reset. Letting it free-run keeps the chop locked to the
+			// timeline across a bypass, so switching out for a bar and back in lands where the
+			// pattern expects rather than restarting the cycle. That is also what the hardware does
+			// — the LFO in the box does not stop when you unpatch the output.
+			gristleMemory.l = {};
+			gristleMemory.r = {};
+			// The step envelope is parked for the same reason as the filter: it is a gain, and
+			// resuming from a half-open one steps the output. slicePhase, like lfoPhase, is left
+			// to free-run so that throwing the effect back in lands on the beat rather than at
+			// step 0.
+			gristleMemory.sliceEnv = 0;
+			gristleMemory.sliceEnvB = 0;
+			deluge::dsp::gristle::resetSliceLatch(gristleMemory);
+		}
+	}
+
 	// EQ -------------------------------------------------------------------------------------
 	bool thisDoBass = hasBassAdjusted(paramManager);
 	bool thisDoTreble = hasTrebleAdjusted(paramManager);
+	bool thisDoLowMid = hasLowMidAdjusted(paramManager);
+	bool thisDoHighMid = hasHighMidAdjusted(paramManager);
 
 	// Bass. No-change represented by 0. Off completely represented by -536870912
 	int32_t positive = (unpatchedParams->getValue(params::UNPATCHED_BASS) >> 1) + 1073741824;
@@ -176,18 +424,63 @@ void ModControllableAudio::processFX(std::span<StereoSample> buffer, ModFXType m
 	positive = (unpatchedParams->getValue(params::UNPATCHED_TREBLE) >> 1) + 1073741824;
 	int32_t trebleAmount = multiply_32x32_rshift32_rounded(positive, positive) << 1;
 
-	if (thisDoBass || thisDoTreble) {
+	// Both mids. Same law as bass: no-change represented by 0.
+	positive = (unpatchedParams->getValue(params::UNPATCHED_LOW_MID) >> 1) + 1073741824;
+	int32_t lowMidAmount = (multiply_32x32_rshift32_rounded(positive, positive) << 1) - 536870912;
 
+	positive = (unpatchedParams->getValue(params::UNPATCHED_HIGH_MID) >> 1) + 1073741824;
+	int32_t highMidAmount = (multiply_32x32_rshift32_rounded(positive, positive) << 1) - 536870912;
+
+	if (thisDoBass || thisDoTreble || thisDoLowMid || thisDoHighMid) {
+
+		// The preset bases and octave multipliers all four bands use now live in dsp/eq_bands.hpp, so
+		// that the Hz readout in FX > EQ is computed from the very same coefficients this loop is
+		// about to filter with. The values are unchanged; only their home moved. The reasoning that
+		// pins each of them is still below, next to the band it constrains.
 		if (thisDoBass) {
-			bassFreq = getExp(120000000, (unpatchedParams->getValue(params::UNPATCHED_BASS_FREQ) >> 5) * 6);
+			bassFreq = deluge::dsp::eq::bassCoefficient(unpatchedParams->getValue(params::UNPATCHED_BASS_FREQ));
 		}
 
 		if (thisDoTreble) {
-			trebleFreq = getExp(700000000, (unpatchedParams->getValue(params::UNPATCHED_TREBLE_FREQ) >> 5) * 6);
+			trebleFreq = deluge::dsp::eq::trebleCoefficient(unpatchedParams->getValue(params::UNPATCHED_TREBLE_FREQ));
+		}
+
+		if (thisDoLowMid) {
+			// The bell is the difference of two one-pole lowpasses, an octave either side of the centre.
+			// Bases put the neutral centre at ~1kHz; the sweep is deliberately only +/-3 octaves
+			// (*3 rather than the *6 bass/treble use), i.e. ~120Hz to ~7.5kHz of centre travel.
+			// Verified numerically 2026-08-05: at *6 BOTH coefficients hit getExp's saturation ceiling
+			// (q31 max, one-pole coefficient == 1) over roughly the top fifth of the knob, the two
+			// lowpasses become identical, their difference cancels, and the whole band silently does
+			// NOTHING there — a dead knob zone, the same failure class as Sear's octaves==0 bug.
+			// At *3 only the upper lowpass ever saturates, and the band then degrades gracefully
+			// into a presence tilt instead of vanishing. Do not raise this multiplier.
+			int32_t lowMidFreqParam = unpatchedParams->getValue(params::UNPATCHED_LOW_MID_FREQ);
+			lowMidFreqLo = deluge::dsp::eq::lowMidLoCoefficient(lowMidFreqParam);
+			lowMidFreqHi = deluge::dsp::eq::lowMidHiCoefficient(lowMidFreqParam);
+		}
+
+		if (thisDoHighMid) {
+			// Second bell, same construction, neutral centre ~2 kHz. The sweep here is only +/-1
+			// octave, NOT the *3 the low mid uses, and the reason is the same saturation ceiling —
+			// but it bites much sooner up here. A one-pole coefficient approaches 1.0 as its corner
+			// rises, so this band's upper lowpass starts out already close to the rail: at *3 it and
+			// the lower one BOTH saturate near the top of the knob, the difference cancels, and the
+			// band dies exactly as the low mid did at *6.
+			//
+			// Swept numerically over centres 2-3.5 kHz and multipliers 1-3 before writing this:
+			// *3 is dead at the top for every centre tried, *2 keeps a bell but the upper coefficient
+			// pins over the last fifth, and 2 kHz at *1 is the only combination that stays a true
+			// bell across ALL 51 knob positions with no saturation anywhere. Peak travels ~900 Hz to
+			// ~6 kHz, worst peak magnitude 0.56 of input. Do not raise this multiplier either.
+			int32_t highMidFreqParam = unpatchedParams->getValue(params::UNPATCHED_HIGH_MID_FREQ);
+			highMidFreqLo = deluge::dsp::eq::highMidLoCoefficient(highMidFreqParam);
+			highMidFreqHi = deluge::dsp::eq::highMidHiCoefficient(highMidFreqParam);
 		}
 
 		for (StereoSample& sample : buffer) {
-			doEQ(thisDoBass, thisDoTreble, &sample.l, &sample.r, bassAmount, trebleAmount);
+			doEQ(thisDoBass, thisDoTreble, thisDoLowMid, thisDoHighMid, &sample.l, &sample.r, bassAmount, trebleAmount,
+			     lowMidAmount, highMidAmount);
 		}
 	}
 
@@ -370,8 +663,9 @@ void ModControllableAudio::processSRRAndBitcrushing(std::span<StereoSample> buff
 	}
 }
 
-inline void ModControllableAudio::doEQ(bool doBass, bool doTreble, int32_t* inputL, int32_t* inputR, int32_t bassAmount,
-                                       int32_t trebleAmount) {
+inline void ModControllableAudio::doEQ(bool doBass, bool doTreble, bool doLowMid, bool doHighMid, int32_t* inputL,
+                                       int32_t* inputR, int32_t bassAmount, int32_t trebleAmount, int32_t lowMidAmount,
+                                       int32_t highMidAmount) {
 	int32_t trebleOnlyL;
 	int32_t trebleOnlyR;
 
@@ -401,10 +695,67 @@ inline void ModControllableAudio::doEQ(bool doBass, bool doTreble, int32_t* inpu
 		*inputL += (multiply_32x32_rshift32(bassOnlyL, bassAmount) << 3);
 		*inputR += (multiply_32x32_rshift32(bassOnlyR, bassAmount) << 3);
 	}
+
+	// The two mid bells, in series after the shelves. Each band is the difference of two one-pole
+	// lowpasses an octave either side of its centre; that difference is purely real (zero phase
+	// rotation) at the centre, where it reaches ~0.6 of the input. Both amounts use the same law as
+	// bassAmount (no-change == 0), applied at 12x rather than 8x to compensate for the band's 0.6
+	// peak — full cut still removes (a bit more than) the whole band.
+	//
+	// They are genuinely independent: each keeps its own pair of one-pole states, so overlapping
+	// their sweeps does not make them interact beyond simple summing. Running one bell's output
+	// into the other's state would couple them.
+	if (doLowMid) {
+		int32_t distanceToGoL = *inputL - lowMidLoL;
+		int32_t distanceToGoR = *inputR - lowMidLoR;
+		lowMidLoL += multiply_32x32_rshift32(distanceToGoL, lowMidFreqLo) << 1;
+		lowMidLoR += multiply_32x32_rshift32(distanceToGoR, lowMidFreqLo) << 1;
+		distanceToGoL = *inputL - lowMidHiL;
+		distanceToGoR = *inputR - lowMidHiR;
+		lowMidHiL += multiply_32x32_rshift32(distanceToGoL, lowMidFreqHi) << 1;
+		lowMidHiR += multiply_32x32_rshift32(distanceToGoR, lowMidFreqHi) << 1;
+		int32_t lowMidOnlyL = lowMidHiL - lowMidLoL;
+		int32_t lowMidOnlyR = lowMidHiR - lowMidLoR;
+		int32_t lowMidBoostL = multiply_32x32_rshift32(lowMidOnlyL, lowMidAmount) << 3;
+		int32_t lowMidBoostR = multiply_32x32_rshift32(lowMidOnlyR, lowMidAmount) << 3;
+		// SATURATING, not a plain +=. One bell fully boosted reaches ~+12 dB; with the second bell
+		// added, two bells plus the two shelves can reach ~+18 dB (7.8x) on overlapping material,
+		// measured. A plain int32 += would WRAP there rather than clip — a loud crackle that would
+		// read as a broken filter rather than as "you boosted too much". qadd costs one instruction.
+		// The bass and treble shelves are deliberately left on stock += : they are lower-gain and it
+		// is not this change's business to alter them.
+		*inputL = add_saturate(*inputL, lowMidBoostL + (lowMidBoostL >> 1));
+		*inputR = add_saturate(*inputR, lowMidBoostR + (lowMidBoostR >> 1));
+	}
+
+	if (doHighMid) {
+		int32_t distanceToGoL = *inputL - highMidLoL;
+		int32_t distanceToGoR = *inputR - highMidLoR;
+		highMidLoL += multiply_32x32_rshift32(distanceToGoL, highMidFreqLo) << 1;
+		highMidLoR += multiply_32x32_rshift32(distanceToGoR, highMidFreqLo) << 1;
+		distanceToGoL = *inputL - highMidHiL;
+		distanceToGoR = *inputR - highMidHiR;
+		highMidHiL += multiply_32x32_rshift32(distanceToGoL, highMidFreqHi) << 1;
+		highMidHiR += multiply_32x32_rshift32(distanceToGoR, highMidFreqHi) << 1;
+		int32_t highMidOnlyL = highMidHiL - highMidLoL;
+		int32_t highMidOnlyR = highMidHiR - highMidLoR;
+		int32_t highMidBoostL = multiply_32x32_rshift32(highMidOnlyL, highMidAmount) << 3;
+		int32_t highMidBoostR = multiply_32x32_rshift32(highMidOnlyR, highMidAmount) << 3;
+		// Saturating for the same reason as the low mid above.
+		*inputL = add_saturate(*inputL, highMidBoostL + (highMidBoostL >> 1));
+		*inputR = add_saturate(*inputR, highMidBoostR + (highMidBoostR >> 1));
+	}
 }
 
 void ModControllableAudio::writeAttributesToFile(Serializer& writer) {
 	writer.writeAttribute("modFXType", (char*)fxTypeToString(modFXType_));
+	// Only written when Clouds is actually on, so songs that never touch it
+	// stay byte-identical to what earlier firmware wrote. stringToCloudsMode
+	// maps the absent attribute to OFF on the way back in.
+	if (cloudsMode != CloudsMode::OFF) {
+		writer.writeAttribute("cloudsMode", (char*)cloudsModeToString(cloudsMode));
+		writer.writeAttribute("cloudsFreeze", cloudsFreeze ? 1 : 0);
+	}
 	writer.writeAttribute("lpfMode", (char*)lpfTypeToString(lpfMode));
 	// Community Firmware parameters (always write them after the official ones, just before closing the parent tag)
 	writer.writeAttribute("hpfMode", (char*)lpfTypeToString(hpfMode));
@@ -422,6 +773,14 @@ void ModControllableAudio::writeTagsToFile(Serializer& writer) {
 	writer.writeAbsoluteSyncLevelToFile(currentSong, "syncLevel", delay.syncLevel, true);
 	// Community Firmware parameters (always write them after the official ones, just before closing the parent tag)
 	writer.writeSyncTypeToFile(currentSong, "syncType", delay.syncType, true);
+	// Rudement: delay HPF/LPF, same encoding as the song's reverb hpf/lpf. Only written when not at the default, so a
+	// song that never touched them saves exactly as the stock firmware would.
+	if (delay.getHPF() > 0.f) {
+		writer.writeAttribute("hpf", static_cast<int32_t>(std::min(delay.getHPF() * 2147483648.f, 2147483647.f)));
+	}
+	if (delay.getLPF() < 1.f) {
+		writer.writeAttribute("lpf", static_cast<int32_t>(std::min(delay.getLPF() * 2147483648.f, 2147483647.f)));
+	}
 	writer.closeTag();
 
 	// MIDI knobs
@@ -496,6 +855,8 @@ void ModControllableAudio::writeParamAttributesToFile(Serializer& writer, ParamM
 	                                       writeAutomation, false, valuesForOverride);
 	unpatchedParams->writeParamAsAttribute(writer, "bitCrush", params::UNPATCHED_BITCRUSHING, writeAutomation, false,
 	                                       valuesForOverride);
+	unpatchedParams->writeParamAsAttribute(writer, "searTone", params::UNPATCHED_SEAR_TONE, writeAutomation, false,
+	                                       valuesForOverride);
 	unpatchedParams->writeParamAsAttribute(writer, "modFXOffset", params::UNPATCHED_MOD_FX_OFFSET, writeAutomation,
 	                                       false, valuesForOverride);
 	unpatchedParams->writeParamAsAttribute(writer, "modFXFeedback", params::UNPATCHED_MOD_FX_FEEDBACK, writeAutomation,
@@ -503,6 +864,42 @@ void ModControllableAudio::writeParamAttributesToFile(Serializer& writer, ParamM
 	// Community Firmware parameters (always write them after the official ones, just before closing the parent tag)
 	unpatchedParams->writeParamAsAttribute(writer, "compressorThreshold", params::UNPATCHED_COMPRESSOR_THRESHOLD,
 	                                       writeAutomation, false, valuesForOverride);
+
+	// The Gristleizer. Attribute names match paramNameForFile() so that a song written here reads
+	// back on any build carrying the effect.
+	//
+	// gristleOn is written FIRST, before the params it gates. The reader does not depend on that
+	// — it tracks whether the tag was seen and lets the explicit value win whenever it arrives —
+	// but a file is also read by people, and the switch is the first thing you want to know.
+	unpatchedParams->writeParamAsAttribute(writer, "gristleOn", params::UNPATCHED_GRISTLE_ON, writeAutomation, false,
+	                                       valuesForOverride);
+	unpatchedParams->writeParamAsAttribute(writer, "gristleRate", params::UNPATCHED_GRISTLE_RATE, writeAutomation,
+	                                       false, valuesForOverride);
+	unpatchedParams->writeParamAsAttribute(writer, "gristleDepth", params::UNPATCHED_GRISTLE_DEPTH, writeAutomation,
+	                                       false, valuesForOverride);
+	unpatchedParams->writeParamAsAttribute(writer, "gristleShape", params::UNPATCHED_GRISTLE_SHAPE, writeAutomation,
+	                                       false, valuesForOverride);
+	unpatchedParams->writeParamAsAttribute(writer, "gristleBias", params::UNPATCHED_GRISTLE_BIAS, writeAutomation,
+	                                       false, valuesForOverride);
+	unpatchedParams->writeParamAsAttribute(writer, "gristleMode", params::UNPATCHED_GRISTLE_MODE, writeAutomation,
+	                                       false, valuesForOverride);
+	unpatchedParams->writeParamAsAttribute(writer, "gristleLevel", params::UNPATCHED_GRISTLE_LEVEL, writeAutomation,
+	                                       false, valuesForOverride);
+	unpatchedParams->writeParamAsAttribute(writer, "gristleFreq", params::UNPATCHED_GRISTLE_FREQ, writeAutomation,
+	                                       false, valuesForOverride);
+	unpatchedParams->writeParamAsAttribute(writer, "gristleRes", params::UNPATCHED_GRISTLE_RES, writeAutomation, false,
+	                                       valuesForOverride);
+	// The Slicer's four. Written after the nine, so the file reads in the order the menu does.
+	unpatchedParams->writeParamAsAttribute(writer, "gristlePattern", params::UNPATCHED_GRISTLE_PATTERN, writeAutomation,
+	                                       false, valuesForOverride);
+	unpatchedParams->writeParamAsAttribute(writer, "gristleVariation", params::UNPATCHED_GRISTLE_VARIATION,
+	                                       writeAutomation, false, valuesForOverride);
+	unpatchedParams->writeParamAsAttribute(writer, "gristleSync", params::UNPATCHED_GRISTLE_SYNC, writeAutomation,
+	                                       false, valuesForOverride);
+	unpatchedParams->writeParamAsAttribute(writer, "gristleBlend", params::UNPATCHED_GRISTLE_BLEND, writeAutomation,
+	                                       false, valuesForOverride);
+	unpatchedParams->writeParamAsAttribute(writer, "gristleDirt", params::UNPATCHED_GRISTLE_DIRT, writeAutomation,
+	                                       false, valuesForOverride);
 
 	unpatchedParams->writeParamAsAttribute(writer, "arpeggiatorGate", params::UNPATCHED_ARP_GATE, writeAutomation);
 	unpatchedParams->writeParamAsAttribute(writer, "noteProbability", params::UNPATCHED_NOTE_PROBABILITY,
@@ -531,6 +928,12 @@ void ModControllableAudio::writeParamAttributesToFile(Serializer& writer, ParamM
 	unpatchedParams->writeParamAsAttribute(writer, "spreadGate", params::UNPATCHED_ARP_SPREAD_GATE, writeAutomation);
 	unpatchedParams->writeParamAsAttribute(writer, "spreadOctave", params::UNPATCHED_ARP_SPREAD_OCTAVE,
 	                                       writeAutomation);
+	// Written only when actually used, so songs which never touch the CV sends stay
+	// byte-for-byte as before. Every other param here is written unconditionally.
+	unpatchedParams->writeParamAsAttribute(writer, "cv1Send", params::UNPATCHED_CV1_SEND, writeAutomation, true,
+	                                       valuesForOverride, params::kCvSendOff);
+	unpatchedParams->writeParamAsAttribute(writer, "cv2Send", params::UNPATCHED_CV2_SEND, writeAutomation, true,
+	                                       valuesForOverride, params::kCvSendOff);
 }
 
 void ModControllableAudio::writeParamTagsToFile(Serializer& writer, ParamManager* paramManager, bool writeAutomation,
@@ -546,7 +949,61 @@ void ModControllableAudio::writeParamTagsToFile(Serializer& writer, ParamManager
 	                                       valuesForOverride);
 	unpatchedParams->writeParamAsAttribute(writer, "trebleFrequency", params::UNPATCHED_TREBLE_FREQ, writeAutomation,
 	                                       false, valuesForOverride);
+	unpatchedParams->writeParamAsAttribute(writer, "mid", params::UNPATCHED_LOW_MID, writeAutomation, false,
+	                                       valuesForOverride);
+	unpatchedParams->writeParamAsAttribute(writer, "midFrequency", params::UNPATCHED_LOW_MID_FREQ, writeAutomation,
+	                                       false, valuesForOverride);
+	unpatchedParams->writeParamAsAttribute(writer, "highMid", params::UNPATCHED_HIGH_MID, writeAutomation, false,
+	                                       valuesForOverride);
+	unpatchedParams->writeParamAsAttribute(writer, "highMidFrequency", params::UNPATCHED_HIGH_MID_FREQ, writeAutomation,
+	                                       false, valuesForOverride);
 	writer.closeTag();
+}
+
+/*
+ * Reconstruct the Gristleizer's master switch for songs written before it existed.
+ *
+ * THE PROBLEM. Enablement used to be inferred from the params themselves: the effect ran if any
+ * of Depth, Mode or Dirt was off its minimum, or Level off its maximum (the old
+ * gristle::isEnabled). Those songs carry the nine param tags and no gristleOn tag, so if the new
+ * switch simply took its initParams() default they would all load bypassed — the effect would
+ * vanish from work that was already made with it. Defaulting the switch ON instead is worse: it
+ * would enable the effect on every song that has ever merely touched a gristle knob, and on every
+ * song that has none of these tags at all.
+ *
+ * THE RULE. Apply the old test, one param at a time as the tags arrive, and switch ON the first
+ * time any of the four is found away from its inactive value. A song that predates the effect
+ * entirely has no tags, so nothing calls this and the switch stays off. A song that has the tags
+ * but never enabled anything also stays off, correctly — under the old rule it was silent too.
+ *
+ * WHY THIS CARRIES NO STATE. The obvious implementation is a "have I seen a gristleOn tag yet"
+ * flag on the object. It cannot be done that way: readParamTagFromFile is STATIC, so there is no
+ * instance to hang a flag on, and a file-scope static would be shared across every object in the
+ * song with no reliable point to reset it between them. Instead the sentinel value in the ON
+ * param IS the flag — gristle::kOnUnset means "no gristleOn tag has been seen", and the tag
+ * reader stamps a definite value over it the moment one is.
+ *
+ * That makes the result independent of the order the tags arrive in, which matters because file
+ * order is not something this code should have to trust. Tag first: the sentinel is gone before
+ * any of the four is read, so nothing here fires. Tag last: these may have set ON, and the tag
+ * then overwrites it with the truth. Either way the explicit value wins.
+ *
+ * KNOWN EDGE. If a legacy param is automated but happens to sit at its inactive value at the
+ * point getValue() samples it, this will not see it, and the switch stays off until the user
+ * flips it. Rare enough, and recoverable in one button press, that detecting it is not worth
+ * reaching into the automation nodes.
+ *
+ * DELETING THIS. It stops being reachable once no file in the wild lacks a gristleOn tag, which
+ * is not a date anyone can name. It is a dozen lines; leave it.
+ */
+static void inferLegacyGristleOn(UnpatchedParamSet* unpatchedParams, int32_t param, int32_t inactiveValue) {
+	if (unpatchedParams->getValue(params::UNPATCHED_GRISTLE_ON) != deluge::dsp::gristle::kOnUnset) {
+		return; // a gristleOn tag has already spoken for this song
+	}
+	if (unpatchedParams->getValue(param) == inactiveValue) {
+		return;
+	}
+	unpatchedParams->params[params::UNPATCHED_GRISTLE_ON].setCurrentValueBasicForSetup(2147483647);
 }
 
 bool ModControllableAudio::readParamTagFromFile(Deserializer& reader, char const* tagName,
@@ -577,6 +1034,28 @@ bool ModControllableAudio::readParamTagFromFile(Deserializer& reader, char const
 				                           readAutomationUpToPos);
 				reader.exitTag("trebleFrequency");
 			}
+			else if (!strcmp(tagName, "mid")) {
+				unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_LOW_MID,
+				                           readAutomationUpToPos);
+				reader.exitTag("mid");
+			}
+			else if (!strcmp(tagName, "midFrequency")) {
+				unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_LOW_MID_FREQ,
+				                           readAutomationUpToPos);
+				reader.exitTag("midFrequency");
+			}
+			// High mid. Absent from songs saved before the EQ became four-band, so those simply keep
+			// the flat default and sound unchanged.
+			else if (!strcmp(tagName, "highMid")) {
+				unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_HIGH_MID,
+				                           readAutomationUpToPos);
+				reader.exitTag("highMid");
+			}
+			else if (!strcmp(tagName, "highMidFrequency")) {
+				unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_HIGH_MID_FREQ,
+				                           readAutomationUpToPos);
+				reader.exitTag("highMidFrequency");
+			}
 		}
 		reader.exitTag("equalizer", true);
 	}
@@ -599,6 +1078,11 @@ bool ModControllableAudio::readParamTagFromFile(Deserializer& reader, char const
 		reader.exitTag("bitCrush");
 	}
 
+	else if (!strcmp(tagName, "searTone")) {
+		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_SEAR_TONE, readAutomationUpToPos);
+		reader.exitTag("searTone");
+	}
+
 	else if (!strcmp(tagName, "modFXOffset")) {
 		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_MOD_FX_OFFSET,
 		                           readAutomationUpToPos);
@@ -614,6 +1098,98 @@ bool ModControllableAudio::readParamTagFromFile(Deserializer& reader, char const
 		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_COMPRESSOR_THRESHOLD,
 		                           readAutomationUpToPos);
 		reader.exitTag("compressorThreshold");
+	}
+
+	// The Gristleizer. A song saved before the effect existed simply has none of these tags, so the
+	// params keep the inactive defaults set in initParams() and the song is unchanged.
+	//
+	// A song saved after the effect existed but before the master switch has the other nine tags
+	// and no gristleOn, and must NOT load silent — see inferLegacyGristleOn(), which the four
+	// gating params call to reconstruct the switch position from the old rule.
+	else if (!strcmp(tagName, "gristleOn")) {
+		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_GRISTLE_ON, readAutomationUpToPos);
+		// Stamp a definite value over the sentinel. A file that stores centre here means the switch
+		// was never touched, i.e. off — and writing the OFF rail instead says so unambiguously, so
+		// the four gating params below cannot mistake this song for a legacy one. Behaviourally
+		// invisible: centre and the OFF rail both read as off through isEnabled().
+		if (unpatchedParams->getValue(params::UNPATCHED_GRISTLE_ON) == deluge::dsp::gristle::kOnUnset) {
+			unpatchedParams->params[params::UNPATCHED_GRISTLE_ON].setCurrentValueBasicForSetup(-2147483648);
+		}
+		reader.exitTag("gristleOn");
+	}
+	else if (!strcmp(tagName, "gristleRate")) {
+		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_GRISTLE_RATE,
+		                           readAutomationUpToPos);
+		reader.exitTag("gristleRate");
+	}
+	else if (!strcmp(tagName, "gristleDepth")) {
+		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_GRISTLE_DEPTH,
+		                           readAutomationUpToPos);
+		inferLegacyGristleOn(unpatchedParams, params::UNPATCHED_GRISTLE_DEPTH, -2147483648);
+		reader.exitTag("gristleDepth");
+	}
+	else if (!strcmp(tagName, "gristleShape")) {
+		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_GRISTLE_SHAPE,
+		                           readAutomationUpToPos);
+		reader.exitTag("gristleShape");
+	}
+	else if (!strcmp(tagName, "gristleBias")) {
+		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_GRISTLE_BIAS,
+		                           readAutomationUpToPos);
+		reader.exitTag("gristleBias");
+	}
+	else if (!strcmp(tagName, "gristleMode")) {
+		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_GRISTLE_MODE,
+		                           readAutomationUpToPos);
+		inferLegacyGristleOn(unpatchedParams, params::UNPATCHED_GRISTLE_MODE, -2147483648);
+		reader.exitTag("gristleMode");
+	}
+	else if (!strcmp(tagName, "gristleLevel")) {
+		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_GRISTLE_LEVEL,
+		                           readAutomationUpToPos);
+		// Level is the one whose inactive value is the MAXIMUM, not the minimum: unity gain.
+		inferLegacyGristleOn(unpatchedParams, params::UNPATCHED_GRISTLE_LEVEL, 2147483647);
+		reader.exitTag("gristleLevel");
+	}
+	else if (!strcmp(tagName, "gristleFreq")) {
+		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_GRISTLE_FREQ,
+		                           readAutomationUpToPos);
+		reader.exitTag("gristleFreq");
+	}
+	else if (!strcmp(tagName, "gristleRes")) {
+		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_GRISTLE_RES,
+		                           readAutomationUpToPos);
+		reader.exitTag("gristleRes");
+	}
+	else if (!strcmp(tagName, "gristleDirt")) {
+		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_GRISTLE_DIRT,
+		                           readAutomationUpToPos);
+		inferLegacyGristleOn(unpatchedParams, params::UNPATCHED_GRISTLE_DIRT, -2147483648);
+		reader.exitTag("gristleDirt");
+	}
+
+	// The Slicer. NONE of these four call inferLegacyGristleOn(): a file carrying them was
+	// written by a build that already has the master switch, so there is nothing to reconstruct,
+	// and Blend in particular is a level rather than evidence that the effect was ever on.
+	else if (!strcmp(tagName, "gristlePattern")) {
+		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_GRISTLE_PATTERN,
+		                           readAutomationUpToPos);
+		reader.exitTag("gristlePattern");
+	}
+	else if (!strcmp(tagName, "gristleVariation")) {
+		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_GRISTLE_VARIATION,
+		                           readAutomationUpToPos);
+		reader.exitTag("gristleVariation");
+	}
+	else if (!strcmp(tagName, "gristleSync")) {
+		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_GRISTLE_SYNC,
+		                           readAutomationUpToPos);
+		reader.exitTag("gristleSync");
+	}
+	else if (!strcmp(tagName, "gristleBlend")) {
+		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_GRISTLE_BLEND,
+		                           readAutomationUpToPos);
+		reader.exitTag("gristleBlend");
 	}
 
 	// Arpeggiator stuff
@@ -706,6 +1282,16 @@ bool ModControllableAudio::readParamTagFromFile(Deserializer& reader, char const
 		reader.exitTag("spreadOctave");
 	}
 
+	else if (!strcmp(tagName, "cv1Send")) {
+		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_CV1_SEND, readAutomationUpToPos);
+		reader.exitTag("cv1Send");
+	}
+
+	else if (!strcmp(tagName, "cv2Send")) {
+		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_CV2_SEND, readAutomationUpToPos);
+		reader.exitTag("cv2Send");
+	}
+
 	else {
 		return false;
 	}
@@ -736,6 +1322,22 @@ Error ModControllableAudio::readTagFromFile(Deserializer& reader, char const* ta
 	else if (!strcmp(tagName, "clippingAmount")) {
 		clippingAmount = reader.readTagOrAttributeValueInt();
 		reader.exitTag("clippingAmount");
+	}
+
+	else if (!strcmp(tagName, "cloudsMode")) {
+		// setCloudsMode allocates, and can legitimately fail on a full heap.
+		// Failing here is not a load error -- the song still opens, Clouds is
+		// just off -- so its return value is deliberately not checked.
+		setCloudsMode(stringToCloudsMode(reader.readTagOrAttributeValue()));
+		reader.exitTag("cloudsMode");
+	}
+
+	else if (!strcmp(tagName, "cloudsFreeze")) {
+		cloudsFreeze = reader.readTagOrAttributeValueInt() != 0;
+		if (cloudsFX != nullptr) {
+			cloudsFX->setFreeze(cloudsFreeze);
+		}
+		reader.exitTag("cloudsFreeze");
 	}
 
 	// Arpeggiator
@@ -788,6 +1390,8 @@ Error ModControllableAudio::readTagFromFile(Deserializer& reader, char const* ta
 		// Set default values in case they are not configured
 		delay.syncType = SYNC_TYPE_EVEN;
 		delay.syncLevel = SYNC_LEVEL_NONE;
+		delay.setHPF(0.f);
+		delay.setLPF(1.f);
 		reader.match('{');
 		while (*(tagName = reader.readNextTagOrAttributeName())) {
 
@@ -827,6 +1431,14 @@ doReadPatchedParam:
 			else if (!strcmp(tagName, "syncType")) {
 				delay.syncType = (SyncType)reader.readTagOrAttributeValueInt();
 				reader.exitTag("syncType");
+			}
+			else if (!strcmp(tagName, "hpf")) {
+				delay.setHPF(static_cast<float>(reader.readTagOrAttributeValueInt()) / 2147483648.f);
+				reader.exitTag("hpf");
+			}
+			else if (!strcmp(tagName, "lpf")) {
+				delay.setLPF(static_cast<float>(reader.readTagOrAttributeValueInt()) / 2147483648.f);
+				reader.exitTag("lpf");
 			}
 			else if (!strcmp(tagName, "syncLevel")) {
 				delay.syncLevel =
@@ -1754,6 +2366,112 @@ bool ModControllableAudio::enableGrain() {
 	}
 	return false;
 }
+bool ModControllableAudio::setCloudsMode(CloudsMode mode) {
+	if (mode == CloudsMode::OFF || !allowsClouds()) {
+		// Not an error for a song that had Wisps on its Song or kit-wide FX before it moved to
+		// synths and audio clips: it simply loads with Wisps off there.
+		disableClouds();
+		return true;
+	}
+	if (mode == cloudsMode && cloudsFX != nullptr) {
+		return true;
+	}
+	// Already running in another mode: let the render ramp the old mode out and switch at
+	// silence, rather than re-preparing here and cutting it mid-waveform (a pop per menu step).
+	if (cloudsFX != nullptr && cloudsMode != CloudsMode::OFF) {
+		cloudsFX->requestMode(mode);
+		cloudsMode = mode;
+		return true;
+	}
+
+	// First make the current adapter undiscoverable. The audio interrupt can run throughout the
+	// expensive initialization below, but it will see a complete bypass state while it does.
+	CloudsAdapter* adapter;
+	{
+		CriticalSectionGuard guard;
+		adapter = cloudsFX;
+		cloudsFX = nullptr;
+		cloudsMode = CloudsMode::OFF;
+	}
+
+	if (adapter == nullptr) {
+		// Not allocStealable: the adapter object itself is small and must not
+		// vanish underneath a render. Only its working buffer is stealable,
+		// and that is managed inside the adapter.
+		void* memory = GeneralMemoryAllocator::get().allocLowSpeed(sizeof(CloudsAdapter));
+		if (memory == nullptr) {
+			return false;
+		}
+		adapter = new (memory) CloudsAdapter();
+		if (!adapter->isValid()) {
+			// The upstream processor object failed to allocate; do not leave a
+			// half-built adapter behind for the render path to trip over.
+			adapter->~CloudsAdapter();
+			delugeDealloc(adapter);
+			return false;
+		}
+	}
+
+	adapter->setMode(mode);
+	if (!adapter->prepareOffAudioThread()) {
+		adapter->releaseBuffer();
+		adapter->~CloudsAdapter();
+		delugeDealloc(adapter);
+		return false;
+	}
+	// Prepare resets upstream parameters in some modes, so apply the latched state afterwards.
+	adapter->setFreeze(cloudsFreeze);
+
+	adapter->setOwner(this);
+	// Publish the fully initialized adapter and its active mode as one interrupt-atomic state.
+	{
+		CriticalSectionGuard guard;
+		cloudsFX = adapter;
+		cloudsMode = mode;
+	}
+	return true;
+}
+
+bool ModControllableAudio::cloudsWantsRendering() const {
+	return cloudsMode != CloudsMode::OFF && cloudsFX != nullptr && cloudsFX->isAudible();
+}
+
+void ModControllableAudio::processClouds(std::span<StereoSample> buffer, UnpatchedParamSet* unpatchedParams,
+                                         const deluge::modulation::params::CloudsParamIds& ids) {
+	if (cloudsMode == CloudsMode::OFF || cloudsFX == nullptr) {
+		// Nothing allocated and nothing to do -- the common case, and the
+		// reason Clouds is free when switched off.
+		return;
+	}
+	cloudsFX->setPosition(unpatchedParams->getValue(ids.position));
+	cloudsFX->setSize(unpatchedParams->getValue(ids.size));
+	cloudsFX->setPitch(unpatchedParams->getValue(ids.pitch));
+	cloudsFX->setDensity(unpatchedParams->getValue(ids.density));
+	cloudsFX->setTexture(unpatchedParams->getValue(ids.texture));
+	cloudsFX->setBlend(unpatchedParams->getValue(ids.blend));
+	cloudsFX->setSpread(unpatchedParams->getValue(ids.spread));
+	cloudsFX->setFeedback(unpatchedParams->getValue(ids.feedback));
+	cloudsFX->setReverb(unpatchedParams->getValue(ids.reverb));
+	cloudsFX->process(buffer);
+}
+
+void ModControllableAudio::disableClouds() {
+	// Detach before destruction. Once the short critical section ends, any audio interrupt sees
+	// OFF/null and the detached adapter is exclusively owned by this thread.
+	CloudsAdapter* adapter;
+	{
+		CriticalSectionGuard guard;
+		adapter = cloudsFX;
+		cloudsFX = nullptr;
+		cloudsMode = CloudsMode::OFF;
+	}
+	if (adapter != nullptr) {
+		adapter->releaseBuffer();
+		adapter->~CloudsAdapter();
+		delugeDealloc(adapter);
+	}
+}
+
 void ModControllableAudio::disableGrain() {
 	// grainFX is lazily allocated (null until GRAIN mod-FX is first used), but this is called whenever
 	// mod-FX is *not* grain — so null is the common case. Guard it like every other grainFX access.

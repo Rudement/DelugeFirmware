@@ -30,6 +30,19 @@ public:
 		}
 		void* addr = GeneralMemoryAllocator::get().allocExternal(n * sizeof(T));
 		if (addr == nullptr) [[unlikely]] {
+			// Rudement 2026-10-05: fall back to the general allocator before giving up. The external
+			// regions can be full right after a heavy song loads (seen within ~5 s of loading, on some
+			// songs and not others), and every menu that lists options builds a deluge::vector through
+			// here on each frame. The throw below is caught by nothing, so a 392-byte option list for
+			// Play FX > Stretch terminated the instrument ("ERROR: TERM"); resuming from that left a
+			// half-built ParamManager behind and the next lookup froze with E410.
+			// alloc() tries on-chip RAM, then external again, then the stealable region (by evicting
+			// cached sample data), so a small list practically always fits somewhere. deallocate()
+			// already frees by address through getRegion(), so it handles memory from any region.
+			// See claude/play-fx-term-freeze-2026-10-05.md.
+			addr = GeneralMemoryAllocator::get().alloc(n * sizeof(T), true, false, nullptr);
+		}
+		if (addr == nullptr) [[unlikely]] {
 			throw deluge::exception::BAD_ALLOC;
 		}
 		return static_cast<T*>(addr);

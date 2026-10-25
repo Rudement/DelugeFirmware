@@ -35,6 +35,7 @@
 #include "RZA1/usb/r_usb_basic/src/hw/inc/r_usb_reg_access.h"
 
 // Added by Rohan
+#include "deluge/drivers/usb/userdef/r_usb_paudio_config.h"
 #include "deluge/drivers/usb/userdef/r_usb_pmidi_config.h"
 #include "deluge/io/midi/midi_device_manager.h"
 #include "deluge/io/midi/midi_engine.h"
@@ -1101,7 +1102,9 @@ void usb_pstd_bemp_pipe_process_rohan_midi(uint16_t bitsts)
 {
     uint16_t pipe = USB_CFG_PMIDI_BULK_OUT;
 
-    if (true || (bitsts & USB_BITSET(pipe)) != 0) // Surely we can skip this. Rohan
+    // One interrupt carries every pipe that finished. Taking another pipe's completion would end a MIDI send that
+    // is still in progress.
+    if ((bitsts & USB_BITSET(pipe)) != 0)
     {
         /* Interrupt check */
         if (true || USB_NULL != g_p_usb_pipe[pipe]) // Don't bother with this check now we don't actually need to
@@ -1193,6 +1196,88 @@ void usb_pstd_bemp_pipe_process_rohan_midi(uint16_t bitsts)
         }
     }
 }
+
+/***********************************************************************************************************************
+ Function Name   : usb_pstd_brdy_pipe_process_paudio
+ Description     : The audio pipes' share of the non-zero-pipe BRDY interrupt. On the outgoing pipe, continue a write
+                 : that did not finish in one pass; on the return pipe, read out a packet that has arrived.
+ Arguments       : uint16_t     bitsts       : BRDYSTS Register
+ Return value    : none
+ ***********************************************************************************************************************/
+void usb_pstd_brdy_pipe_process_paudio(uint16_t bitsts)
+{
+    const uint16_t pipes[2] = {USB_CFG_PAUDIO_ISO_IN, USB_CFG_PAUDIO_ISO_OUT};
+    uint16_t n;
+
+    for (n = 0; n < 2; n++)
+    {
+        const uint16_t pipe = pipes[n];
+
+        if ((bitsts & USB_BITSET(pipe)) == 0)
+        {
+            continue;
+        }
+
+        hw_usb_clear_status_bemp(USB_NULL, pipe);
+
+        /* Once the DMA controller owns the return pipe, reading it here would end the transfer and NAK the pipe
+         * underneath the controller. BRDYSTS is not masked by BRDYENB, so the flag arrives with every MIDI packet. */
+        if ((pipe == USB_CFG_PAUDIO_ISO_OUT) && (usbReturnPipeUnderDma != 0u))
+        {
+            continue;
+        }
+
+        if ((USB_NULL == g_p_usb_pipe[pipe]) || (USB_CUSE != usb_pstd_pipe2fport(pipe)))
+        {
+            continue;
+        }
+
+        if (USB_BUF2FIFO == usb_cstd_get_pipe_dir(USB_NULL, pipe))
+        {
+            usb_pstd_buf2fifo(pipe, USB_CUSE);
+        }
+        else
+        {
+            usb_pstd_fifo_to_buf(pipe, USB_CUSE);
+        }
+    }
+} /* End of function usb_pstd_brdy_pipe_process_paudio() */
+
+/***********************************************************************************************************************
+ Function Name   : usb_pstd_bemp_pipe_process_paudio
+ Description     : The outgoing audio pipe's share of the non-zero-pipe BEMP interrupt: hand a sent packet back to its
+                 : owner.
+ Arguments       : uint16_t     bitsts       : BEMPSTS Register
+ Return value    : none
+ ***********************************************************************************************************************/
+void usb_pstd_bemp_pipe_process_paudio(uint16_t bitsts)
+{
+    const uint16_t pipe = USB_CFG_PAUDIO_ISO_IN;
+
+    if (((bitsts & USB_BITSET(pipe)) == 0) || (USB_NULL == g_p_usb_pipe[pipe]))
+    {
+        return;
+    }
+
+    if ((usb_cstd_get_pid(USB_NULL, pipe) & USB_PID_STALL) == USB_PID_STALL)
+    {
+        usb_pstd_forced_termination(pipe, (uint16_t)USB_DATA_STALL);
+        return;
+    }
+
+    /* The transfer that opened the pipe has gone out. Hand it back to its owner WITHOUT usb_pstd_data_end, which
+     * sets the pipe to NAK: from here the stream is fed by the DMA controller on the write timer, and a NAK left
+     * by every completion shut the pipe on packets the controller had already loaded, until the background task
+     * came round to re-open it. The host heard that as gaps between chunks of audio. The pipe stays at BUF; the
+     * empty interrupt is switched off, because nothing more is waiting on it. */
+    hw_usb_clear_bempenb(USB_NULL, pipe);
+    {
+        usb_utr_t* const p_utr = g_p_usb_pipe[pipe];
+        g_p_usb_pipe[pipe]     = (usb_utr_t*)USB_NULL;
+        p_utr->status          = (uint16_t)USB_DATA_NONE;
+        ((usb_cb_t)p_utr->complete)(p_utr, USB_NULL, USB_NULL);
+    }
+} /* End of function usb_pstd_bemp_pipe_process_paudio() */
 
 /***********************************************************************************************************************
  Function Name   : usb_pstd_bemp_pipe_process

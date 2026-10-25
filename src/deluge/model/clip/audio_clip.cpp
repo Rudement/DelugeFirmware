@@ -154,12 +154,19 @@ Error AudioClip::beginLinearRecording(ModelStackWithTimelineCounter* modelStack,
 	bool shouldNormalize{false};
 	if (isEmpty()) {
 
+		// Track default: a fresh recording on this track starts from the track's stored treatment, whichever clip
+		// this one was cloned from. Only an empty clip - an overdub onto existing audio keeps what it has.
+		((AudioOutput*)output)->applyTrackDefaultTo(&paramManager);
+
 		inputChannel = ((AudioOutput*)output)->inputChannel;
 		outputRecordingFrom = ((AudioOutput*)output)->getOutputRecordingFrom();
-		numChannels =
-		    (inputChannel >= AUDIO_INPUT_CHANNEL_FIRST_INTERNAL_OPTION || inputChannel == AudioInputChannel::STEREO)
-		        ? 2
-		        : 1;
+		// A single USB channel records as one channel, like a single line input.
+		numChannels = (usbReturnMonoChannelOf(inputChannel) != 0)
+		                  ? 1
+		                  : ((inputChannel >= AUDIO_INPUT_CHANNEL_FIRST_INTERNAL_OPTION
+		                      || inputChannel == AudioInputChannel::STEREO)
+		                         ? 2
+		                         : 1);
 		shouldNormalize =
 		    (inputChannel < AUDIO_INPUT_CHANNEL_FIRST_INTERNAL_OPTION); // if reading from input we need this
 	}

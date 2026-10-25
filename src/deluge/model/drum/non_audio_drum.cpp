@@ -20,6 +20,7 @@
 #include "gui/ui/ui.h"
 #include "gui/views/automation_view.h"
 #include "gui/views/instrument_clip_view.h"
+#include "modulation/arpeggiator.h"
 #include "storage/storage_manager.h"
 #include "util/functions.h"
 
@@ -119,4 +120,16 @@ bool NonAudioDrum::readDrumTagFromFile(Deserializer& reader, char const* tagName
 	}
 
 	return true;
+}
+
+void NonAudioDrum::dispatchMidiFxFlushNoteOffs(ArpReturnInstruction& instruction) {
+	// A MIDI or gate drum sends somewhere this firmware cannot reach back into, so a note the MIDI
+	// FX chain generated has to be released here or not at all. The dispatch loops elsewhere stop
+	// at the first ARP_NOTE_NONE, and so does this one.
+	for (uint32_t n = 0; n < ARP_MAX_INSTRUCTION_NOTES; n++) {
+		if (instruction.noteCodeOffPostArp[n] == ARP_NOTE_NONE) {
+			break;
+		}
+		noteOffPostArp(instruction.noteCodeOffPostArp[n]);
+	}
 }

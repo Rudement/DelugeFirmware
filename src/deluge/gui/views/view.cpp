@@ -42,8 +42,10 @@
 #include "hid/buttons.h"
 #include "hid/display/display.h"
 #include "hid/display/oled.h"
+#include "hid/display/visualizer.h"
 #include "hid/encoder_input.h"
 #include "hid/encoders.h"
+#include "hid/hid_sysex.h" // Chroma: push an "fx" context on gold-knob turns so a following host jumps to FX
 #include "hid/led/indicator_leds.h"
 #include "hid/led/pad_leds.h"
 #include "hid/matrix/matrix_driver.h"
@@ -70,12 +72,15 @@
 #include "model/note/note_row.h"
 #include "model/settings/runtime_feature_settings.h"
 #include "model/song/song.h"
+#include "model/song/track_link.h"
 #include "model/timeline_counter.h"
 #include "modulation/arpeggiator_rhythms.h"
 #include "modulation/automation/auto_param.h"
+#include "modulation/morph.h"
 #include "modulation/params/param.h"
 #include "modulation/params/param_collection.h"
 #include "modulation/params/param_set.h"
+#include "modulation/temp_hold.h"
 #include "playback/mode/arrangement.h"
 #include "playback/mode/session.h"
 #include "processing/audio_output.h"
@@ -130,6 +135,8 @@ void View::focusRegained() {
 	renderedVUMeter = false;
 	cachedMaxYDisplayForVUMeterL = 255;
 	cachedMaxYDisplayForVUMeterR = 255;
+	// and a fresh Visualizer, so a mode does not come back holding the last screen's levels
+	deluge::hid::display::Visualizer::reset();
 }
 
 extern GlobalMIDICommand pendingGlobalMIDICommandNumClustersWritten;
@@ -820,7 +827,15 @@ void View::modEncoderAction(int32_t whichModEncoder, int32_t offset) {
 	//  	return;
 	//  }
 
+	// Track edit mode with no usable track picked yet: say so rather than leaving the knob dead.
+	if (deluge::model::track_link::modeIsOn() && !activeModControllableModelStack.modControllable) {
+		display->displayPopup("PICK A TRACK");
+		return;
+	}
+
 	if (activeModControllableModelStack.modControllable) {
+
+		HIDSysex::sendFxContext(); // Chroma: gold-knob turn → tell a following host we're on FX (throttled)
 
 		bool noteTailsAllowedBefore;
 		ModelStackWithAutoParam* modelStackWithParam = getModelStackWithParam(whichModEncoder, noteTailsAllowedBefore);
@@ -861,6 +876,18 @@ void View::modEncoderAction_existentParam(int32_t whichModEncoder, int32_t offse
 	int32_t knobPos = modelStackWithParam->paramCollection->paramValueToKnobPos(value, modelStackWithParam);
 	int32_t newKnobPos = calculateKnobPosForModEncoderTurn(kind, knobPos, offset);
 
+	// MORPH SLOT steps a whole slot per click and names the slot instead of showing a number.
+	// Snapping from the slot the knob is currently in means a value left between detents by
+	// automation or an old song lands back on one with the first click.
+	const bool isMorphSlot =
+	    (kind == params::Kind::UNPATCHED_GLOBAL && modelStackWithParam->paramId == params::UNPATCHED_MORPH_SLOT);
+	if (isMorphSlot) {
+		int32_t slot = morphSlotFromKnobPos(knobPos) + ((offset > 0) ? 1 : ((offset < 0) ? -1 : 0));
+		slot = std::clamp<int32_t>(slot, 0, kMorphNumSlots - 1);
+		newKnobPos = morphSlotToKnobPos(slot);
+		morph.showSlot(slot);
+	}
+
 	// if you had selected a parameter in performance view and the parameter name
 	// and current value is displayed on the screen, don't show pop-up as the display
 	// already shows it
@@ -884,7 +911,15 @@ void View::modEncoderAction_existentParam(int32_t whichModEncoder, int32_t offse
 	// let's see if we're browsing for a song
 	bool inSongBrowser = getCurrentUI() == &loadSongUI;
 
-	if (!editingParamInPerformanceView && !editingParamInMenu && !inSongBrowser) {
+	// MORPH: landing on either end names the slot that end is, instead of showing 0 or 50.
+	bool isMorphEnd = false;
+	if (kind == params::Kind::UNPATCHED_GLOBAL && modelStackWithParam->paramId == params::UNPATCHED_MORPH
+	    && morph.isArmed() && (newKnobPos <= -64 || newKnobPos >= 64)) {
+		isMorphEnd = true;
+		morph.showEnd(newKnobPos >= 64);
+	}
+
+	if (!isMorphSlot && !isMorphEnd && !editingParamInPerformanceView && !editingParamInMenu && !inSongBrowser) {
 		PatchSource source1 = PatchSource::NONE;
 		PatchSource source2 = PatchSource::NONE;
 		if (kind == params::Kind::PATCH_CABLE) {
@@ -908,12 +943,31 @@ void View::modEncoderAction_existentParam(int32_t whichModEncoder, int32_t offse
 
 	char newModelStackMemory[MODEL_STACK_MAX_SIZE];
 
+	// Temp Hold rides the stutter hack below, for a related reason: a value that is going to be put
+	// back when SHIFT is released must not leave an automation node behind on the way in. Without
+	// this a temp twist would carve a real curve into the clip and the restore would carve a second
+	// one over the top - the opposite of what the feature is for. See modulation/temp_hold.h.
+	const bool tempHolding = deluge::modulation::temp_hold::TempHold::shouldCapture();
+
 	// Hack to make it so stutter can't be automated
 	if (modelStackWithParam->timelineCounterIsSet()
-	    && !modelStackWithParam->paramCollection->doesParamIdAllowAutomation(modelStackWithParam)) {
+	    && (tempHolding || !modelStackWithParam->paramCollection->doesParamIdAllowAutomation(modelStackWithParam))) {
 		copyModelStack(newModelStackMemory, modelStackWithParam, sizeof(ModelStackWithAutoParam));
 		modelStackWithParam = (ModelStackWithAutoParam*)newModelStackMemory;
 		modelStackWithParam->setTimelineCounter(nullptr);
+	}
+
+	if (!tempHolding) {
+		// Turning a knob by hand while a released hold is still gliding it back: the hand wins.
+		deluge::modulation::temp_hold::tempHold.dropGlide(modelStackWithParam->autoParam);
+	}
+
+	if (tempHolding) {
+		// Recorded after the nulling above, so the stack that gets stored is the one the restore
+		// should write through. `value` is what this param held before this turn, read at the top
+		// of this function - which is the value the user gets back, however many turns follow.
+		deluge::modulation::temp_hold::tempHold.beginIfNeeded();
+		deluge::modulation::temp_hold::tempHold.noteParam(modelStackWithParam, value);
 	}
 
 	int32_t newValue = modelStackWithParam->paramCollection->knobPosToParamValue(newKnobPos, modelStackWithParam);
@@ -1361,13 +1415,25 @@ void View::modEncoderButtonAction(uint8_t whichModEncoder, bool on) {
 
 	if (activeModControllableModelStack.modControllable) {
 
-		if (Buttons::isShiftButtonPressed() && on) {
+		// SHIFT + press on the MORPH SLOT knob replaces the selected morph slot. The selector is
+		// never automated in practice, and stock SHIFT + press would only delete its automation,
+		// so the gesture goes to the morph instead. Every other knob keeps the stock behaviour.
+		if (Buttons::isShiftButtonPressed() && on && !isMorphSlotKnob(whichModEncoder)) {
 			modEncoderButtonAction_deleteAutomation(whichModEncoder);
 		}
 		else {
 			modEncoderButtonAction_changeModControllable(whichModEncoder, on);
 		}
 	}
+}
+
+bool View::isMorphSlotKnob(uint8_t whichModEncoder) {
+	ModelStackWithAutoParam* modelStackWithParam =
+	    activeModControllableModelStack.modControllable->getParamFromModEncoder(whichModEncoder,
+	                                                                            &activeModControllableModelStack);
+	return modelStackWithParam && modelStackWithParam->paramCollection
+	       && modelStackWithParam->paramCollection->getParamKind() == params::Kind::UNPATCHED_GLOBAL
+	       && modelStackWithParam->paramId == params::UNPATCHED_MORPH_SLOT;
 }
 
 void View::modEncoderButtonAction_deleteAutomation(uint8_t whichModEncoder) {
@@ -1529,6 +1595,12 @@ void View::modButtonAction(uint8_t whichButton, bool on) {
 
 	pretendModKnobsUntouchedForAWhile();
 
+	// SHIFT + LEVEL shows the Visualizer without having to arm the VU meter first. The call checks
+	// shift and the mode setting itself, and returns false when it did not take the press.
+	if (on && whichButton == 0 && deluge::hid::display::Visualizer::handleModButtonToggle(*this)) {
+		return;
+	}
+
 	if (activeModControllableModelStack.modControllable) {
 		if (on) {
 			if (isUIModeWithinRange(modButtonUIModes) || (rootUI == &performanceView)) {
@@ -1570,6 +1642,11 @@ void View::modButtonAction(uint8_t whichButton, bool on) {
 void View::setModLedStates() {
 
 	RootUI* rootUI = getRootUI();
+
+	// Track edit mode only lives in song view.
+	if (deluge::model::track_link::modeIsOn() && rootUI != &sessionView) {
+		deluge::model::track_link::exitMode();
+	}
 	UIType uiType = UIType::NONE;
 	UIType uiContextType = UIType::NONE;
 	if (rootUI) {
@@ -1594,7 +1671,13 @@ void View::setModLedStates() {
 		// enabled
 		affectEntire = (uiContextType == UIType::INSTRUMENT_CLIP) ? ((InstrumentClip*)clip)->affectEntire : true;
 	}
-	indicator_leds::setLedState(IndicatorLED::AFFECT_ENTIRE, affectEntire);
+	if (deluge::model::track_link::modeIsOn()) {
+		// Track edit mode: the Affect-entire LED flashes so it is plain that the mode is on.
+		indicator_leds::blinkLed(IndicatorLED::AFFECT_ENTIRE);
+	}
+	else {
+		indicator_leds::setLedState(IndicatorLED::AFFECT_ENTIRE, affectEntire);
+	}
 
 	bool onAutomationClipView = false;
 

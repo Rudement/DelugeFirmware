@@ -48,13 +48,18 @@ const uint8_t SYSEX_UNIVERSAL_IDENTITY = 0x06;
 const uint8_t SYSEX_END = 0xF7;
 
 enum SysexCommands : uint8_t {
-	Ping,       // reply with pong
-	Popup,      // display info in popup
-	HID,        // HID access
-	Debug,      // Debugging
-	Json,       // Json Request
-	JsonReply,  // Json Response
-	Pong = 0x7F // Pong reply
+	Ping,      // reply with pong
+	Popup,     // display info in popup
+	HID,       // HID access
+	Debug,     // Debugging
+	Json,      // Json Request
+	JsonReply, // Json Response
+	LearnContext =
+	    0x4C,          // Chroma: outbound LEARN context event (host renders the docs) — see chroma-schema SCHEMA.md 2.1
+	ChordState = 0x43, // Chroma: outbound chord-state push on every NORMAL palette pick (key + voiced notes + ctx)
+	ChordApply = 0x44, // Chroma: INBOUND voicing-mod apply (host -> Deluge). Write direction; see hid_sysex.cpp.
+	ActiveView = 0x45, // Chroma: outbound active-view push on UI change (host auto-follows: Learn jumps to the screen)
+	Pong = 0x7F        // Pong reply
 };
 
 } // namespace SysEx

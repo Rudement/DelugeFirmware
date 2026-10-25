@@ -48,7 +48,13 @@ bool isParamPitch(Kind kind, int32_t paramID) {
 		       || (paramID == LOCAL_MODULATOR_1_PITCH_ADJUST);
 	}
 	else if (kind == Kind::UNPATCHED_GLOBAL) {
-		return static_cast<UnpatchedGlobal>(paramID) == UNPATCHED_PITCH_ADJUST;
+		// Clouds' pitch shift is a transposition either side of unity, so it
+		// wants the same centre-detented treatment master pitch gets.
+		return static_cast<UnpatchedGlobal>(paramID) == UNPATCHED_PITCH_ADJUST
+		       || static_cast<UnpatchedGlobal>(paramID) == UNPATCHED_CLOUDS_PITCH;
+	}
+	else if (kind == Kind::UNPATCHED_SOUND) {
+		return paramID == UNPATCHED_SOUND_CLOUDS_PITCH;
 	}
 	else {
 		return false;
@@ -126,6 +132,7 @@ char const* getPatchedParamShortName(ParamType type) {
 	    [LOCAL_CARRIER_1_FEEDBACK]       = "Osc2 feed",
 	    [LOCAL_LPF_RESONANCE]            = "LPF reso",
 	    [LOCAL_HPF_RESONANCE]            = "HPF reso",
+	    [LOCAL_SEAR]                     = "Sear",
 	    [LOCAL_ENV_0_SUSTAIN]            = "Env1 sus",
 	    [LOCAL_ENV_1_SUSTAIN]            = "Env2 sus",
 	    [LOCAL_ENV_2_SUSTAIN]            = "Env3 sus",
@@ -215,6 +222,7 @@ char const* getPatchedParamDisplayName(int32_t p) {
 	    [LOCAL_CARRIER_1_FEEDBACK] = STRING_FOR_PARAM_LOCAL_CARRIER_1_FEEDBACK,
 	    [LOCAL_LPF_RESONANCE] = STRING_FOR_PARAM_LOCAL_LPF_RESONANCE,
 	    [LOCAL_HPF_RESONANCE] = STRING_FOR_PARAM_LOCAL_HPF_RESONANCE,
+	    [LOCAL_SEAR] = STRING_FOR_SEAR,
 	    [LOCAL_ENV_0_SUSTAIN] = STRING_FOR_PARAM_LOCAL_ENV_0_SUSTAIN,
 	    [LOCAL_ENV_1_SUSTAIN] = STRING_FOR_PARAM_LOCAL_ENV_1_SUSTAIN,
 	    [LOCAL_ENV_2_SUSTAIN] = STRING_FOR_PARAM_LOCAL_ENV_2_SUSTAIN,
@@ -281,12 +289,33 @@ char const* getParamDisplayName(Kind kind, int32_t p) {
 		    [UNPATCHED_TREBLE] = STRING_FOR_TREBLE,
 		    [UNPATCHED_BASS_FREQ] = STRING_FOR_BASS_FREQUENCY,
 		    [UNPATCHED_TREBLE_FREQ] = STRING_FOR_TREBLE_FREQUENCY,
+		    [UNPATCHED_LOW_MID] = STRING_FOR_LOW_MID,
+		    [UNPATCHED_LOW_MID_FREQ] = STRING_FOR_LOW_MID_FREQUENCY,
+		    [UNPATCHED_HIGH_MID] = STRING_FOR_HIGH_MID,
+		    [UNPATCHED_HIGH_MID_FREQ] = STRING_FOR_HIGH_MID_FREQUENCY,
 		    [UNPATCHED_SAMPLE_RATE_REDUCTION] = STRING_FOR_DECIMATION,
 		    [UNPATCHED_BITCRUSHING] = STRING_FOR_BITCRUSH,
 		    [UNPATCHED_MOD_FX_OFFSET] = STRING_FOR_MODFX_OFFSET,
 		    [UNPATCHED_MOD_FX_FEEDBACK] = STRING_FOR_MODFX_FEEDBACK,
 		    [UNPATCHED_SIDECHAIN_SHAPE] = STRING_FOR_SIDECHAIN_SHAPE,
 		    [UNPATCHED_COMPRESSOR_THRESHOLD] = STRING_FOR_THRESHOLD,
+		    [UNPATCHED_SEAR_TONE] = STRING_FOR_SEAR_TONE,
+		    [UNPATCHED_GRISTLE_ON] = STRING_FOR_GRISTLE_ON,
+		    [UNPATCHED_GRISTLE_RATE] = STRING_FOR_GRISTLE_RATE,
+		    [UNPATCHED_GRISTLE_DEPTH] = STRING_FOR_GRISTLE_DEPTH,
+		    [UNPATCHED_GRISTLE_SHAPE] = STRING_FOR_GRISTLE_SHAPE,
+		    [UNPATCHED_GRISTLE_BIAS] = STRING_FOR_GRISTLE_BIAS,
+		    [UNPATCHED_GRISTLE_MODE] = STRING_FOR_GRISTLE_MODE,
+		    [UNPATCHED_GRISTLE_LEVEL] = STRING_FOR_GRISTLE_LEVEL,
+		    [UNPATCHED_GRISTLE_FREQ] = STRING_FOR_GRISTLE_FREQ,
+		    [UNPATCHED_GRISTLE_RES] = STRING_FOR_GRISTLE_RES,
+		    [UNPATCHED_GRISTLE_DIRT] = STRING_FOR_GRISTLE_DIRT,
+		    [UNPATCHED_GRISTLE_PATTERN] = STRING_FOR_GRISTLE_PATTERN,
+		    [UNPATCHED_GRISTLE_VARIATION] = STRING_FOR_GRISTLE_VARIATION,
+		    [UNPATCHED_GRISTLE_SYNC] = STRING_FOR_GRISTLE_SYNC,
+		    [UNPATCHED_GRISTLE_BLEND] = STRING_FOR_GRISTLE_BLEND,
+		    [UNPATCHED_CV1_SEND] = STRING_FOR_CV1_SEND,
+		    [UNPATCHED_CV2_SEND] = STRING_FOR_CV2_SEND,
 		    [UNPATCHED_ARP_GATE] = STRING_FOR_ARP_GATE_MENU_TITLE,
 		    [UNPATCHED_ARP_RHYTHM] = STRING_FOR_ARP_RHYTHM_MENU_TITLE,
 		    [UNPATCHED_ARP_SEQUENCE_LENGTH] = STRING_FOR_ARP_SEQUENCE_LENGTH_MENU_TITLE,
@@ -321,6 +350,15 @@ char const* getParamDisplayName(Kind kind, int32_t p) {
 		using enum UnpatchedSound;
 		static l10n::String const NAMES[UNPATCHED_SOUND_MAX_NUM - unc] = {
 		    [UNPATCHED_PORTAMENTO - unc] = STRING_FOR_PORTAMENTO,
+		    [UNPATCHED_SOUND_CLOUDS_POSITION - unc] = STRING_FOR_CLOUDS_POSITION,
+		    [UNPATCHED_SOUND_CLOUDS_SIZE - unc] = STRING_FOR_CLOUDS_SIZE,
+		    [UNPATCHED_SOUND_CLOUDS_PITCH - unc] = STRING_FOR_CLOUDS_PITCH,
+		    [UNPATCHED_SOUND_CLOUDS_DENSITY - unc] = STRING_FOR_CLOUDS_DENSITY,
+		    [UNPATCHED_SOUND_CLOUDS_TEXTURE - unc] = STRING_FOR_CLOUDS_TEXTURE,
+		    [UNPATCHED_SOUND_CLOUDS_BLEND - unc] = STRING_FOR_CLOUDS_BLEND,
+		    [UNPATCHED_SOUND_CLOUDS_SPREAD - unc] = STRING_FOR_CLOUDS_SPREAD,
+		    [UNPATCHED_SOUND_CLOUDS_FEEDBACK - unc] = STRING_FOR_CLOUDS_FEEDBACK,
+		    [UNPATCHED_SOUND_CLOUDS_REVERB - unc] = STRING_FOR_CLOUDS_REVERB,
 		};
 		return l10n::get(NAMES[p - unc]);
 	}
@@ -346,6 +384,19 @@ char const* getParamDisplayName(Kind kind, int32_t p) {
 		    [UNPATCHED_SIDECHAIN_VOLUME - unc] = STRING_FOR_SIDECHAIN_LEVEL,
 		    [UNPATCHED_PITCH_ADJUST - unc] = STRING_FOR_MASTER_PITCH,
 		    [UNPATCHED_TEMPO - unc] = STRING_FOR_TEMPO,
+		    [UNPATCHED_CLOUDS_POSITION - unc] = STRING_FOR_CLOUDS_POSITION,
+		    [UNPATCHED_CLOUDS_SIZE - unc] = STRING_FOR_CLOUDS_SIZE,
+		    [UNPATCHED_CLOUDS_PITCH - unc] = STRING_FOR_CLOUDS_PITCH,
+		    [UNPATCHED_CLOUDS_DENSITY - unc] = STRING_FOR_CLOUDS_DENSITY,
+		    [UNPATCHED_CLOUDS_TEXTURE - unc] = STRING_FOR_CLOUDS_TEXTURE,
+		    [UNPATCHED_CLOUDS_BLEND - unc] = STRING_FOR_CLOUDS_BLEND,
+		    [UNPATCHED_CLOUDS_SPREAD - unc] = STRING_FOR_CLOUDS_SPREAD,
+		    [UNPATCHED_CLOUDS_FEEDBACK - unc] = STRING_FOR_CLOUDS_FEEDBACK,
+		    [UNPATCHED_CLOUDS_REVERB - unc] = STRING_FOR_CLOUDS_REVERB,
+		    [UNPATCHED_CV1_MASTER - unc] = STRING_FOR_OUTPUT_LEVEL_CV1,
+		    [UNPATCHED_CV2_MASTER - unc] = STRING_FOR_OUTPUT_LEVEL_CV2,
+		    [UNPATCHED_MORPH - unc] = STRING_FOR_SNAPSHOT_MORPH,
+		    [UNPATCHED_MORPH_SLOT - unc] = STRING_FOR_MORPH_SLOT,
 		};
 		return l10n::get(NAMES[p - unc]);
 	}
@@ -423,6 +474,27 @@ constexpr char const* paramNameForFileConst(Kind const kind, ParamType const par
 		case UNPATCHED_PORTAMENTO:
 			return "portamento";
 
+		// Wisps on a Sound: the same file names as the global copies, resolved per kind, so a
+		// synth's settings read like an audio clip's. Round-tripped by validateParams().
+		case UNPATCHED_SOUND_CLOUDS_POSITION:
+			return "cloudsPosition";
+		case UNPATCHED_SOUND_CLOUDS_SIZE:
+			return "cloudsSize";
+		case UNPATCHED_SOUND_CLOUDS_PITCH:
+			return "cloudsPitch";
+		case UNPATCHED_SOUND_CLOUDS_DENSITY:
+			return "cloudsDensity";
+		case UNPATCHED_SOUND_CLOUDS_TEXTURE:
+			return "cloudsTexture";
+		case UNPATCHED_SOUND_CLOUDS_BLEND:
+			return "cloudsBlend";
+		case UNPATCHED_SOUND_CLOUDS_SPREAD:
+			return "cloudsSpread";
+		case UNPATCHED_SOUND_CLOUDS_FEEDBACK:
+			return "cloudsFeedback";
+		case UNPATCHED_SOUND_CLOUDS_REVERB:
+			return "cloudsReverb";
+
 		default:
 		    // Fall through to the other param kind handling
 		    ;
@@ -481,6 +553,40 @@ constexpr char const* paramNameForFileConst(Kind const kind, ParamType const par
 			}
 			return "pitchAdjust";
 
+		// Clouds. These names are what ends up in the song file, so they are
+		// API: renaming one orphans that setting in every song already saved.
+		// validateParams() below round-trips all of them at compile time.
+		case UNPATCHED_CLOUDS_POSITION:
+			return "cloudsPosition";
+		case UNPATCHED_CLOUDS_SIZE:
+			return "cloudsSize";
+		case UNPATCHED_CLOUDS_PITCH:
+			return "cloudsPitch";
+		case UNPATCHED_CLOUDS_DENSITY:
+			return "cloudsDensity";
+		case UNPATCHED_CLOUDS_TEXTURE:
+			return "cloudsTexture";
+		case UNPATCHED_CLOUDS_BLEND:
+			return "cloudsBlend";
+		case UNPATCHED_CLOUDS_SPREAD:
+			return "cloudsSpread";
+		case UNPATCHED_CLOUDS_FEEDBACK:
+			return "cloudsFeedback";
+		case UNPATCHED_CLOUDS_REVERB:
+			return "cloudsReverb";
+
+		case UNPATCHED_CV1_MASTER:
+			return "cv1Master";
+
+		case UNPATCHED_CV2_MASTER:
+			return "cv2Master";
+
+		case UNPATCHED_MORPH:
+			return "morph";
+
+		case UNPATCHED_MORPH_SLOT:
+			return "morphSlot";
+
 		// explicit fallthrough cases
 		case UNPATCHED_TEMPO: // nothing, really?
 		case UNPATCHED_GLOBAL_MAX_NUM:;
@@ -504,6 +610,70 @@ constexpr char const* paramNameForFileConst(Kind const kind, ParamType const par
 		case UNPATCHED_TREBLE_FREQ:
 			return "trebleFreq";
 
+		// The Low-Mid keeps the file names it had when it was simply "Mid", so automation and
+		// param references in songs saved before the EQ became four-band still resolve. The
+		// static_assert(validateParams()) below round-trips every one of these, so a duplicate or
+		// missing name is a compile-time failure rather than a silent data loss at load time.
+		case UNPATCHED_LOW_MID:
+			return "mid";
+
+		case UNPATCHED_LOW_MID_FREQ:
+			return "midFreq";
+
+		case UNPATCHED_HIGH_MID:
+			return "highMid";
+
+		case UNPATCHED_HIGH_MID_FREQ:
+			return "highMidFreq";
+
+		// The Gristleizer. These strings are what makes inserting the params mid-enum safe: songs
+		// store params by name, so a saved song survives the sub-ranges shifting. The
+		// static_assert(validateParams()) below round-trips every one of these, so a duplicate or
+		// a missing case is a compile-time failure rather than a runtime one.
+		case UNPATCHED_GRISTLE_ON:
+			return "gristleOn";
+
+		case UNPATCHED_GRISTLE_RATE:
+			return "gristleRate";
+
+		case UNPATCHED_GRISTLE_DEPTH:
+			return "gristleDepth";
+
+		case UNPATCHED_GRISTLE_SHAPE:
+			return "gristleShape";
+
+		case UNPATCHED_GRISTLE_BIAS:
+			return "gristleBias";
+
+		case UNPATCHED_GRISTLE_MODE:
+			return "gristleMode";
+
+		case UNPATCHED_GRISTLE_LEVEL:
+			return "gristleLevel";
+
+		case UNPATCHED_GRISTLE_FREQ:
+			return "gristleFreq";
+
+		case UNPATCHED_GRISTLE_RES:
+			return "gristleRes";
+
+		case UNPATCHED_GRISTLE_DIRT:
+			return "gristleDirt";
+
+		// The Slicer. Same rule as the nine above: the tag name is the contract, the enum value
+		// is not. A song that has never seen the Slicer simply has no such tags.
+		case UNPATCHED_GRISTLE_PATTERN:
+			return "gristlePattern";
+
+		case UNPATCHED_GRISTLE_VARIATION:
+			return "gristleVariation";
+
+		case UNPATCHED_GRISTLE_SYNC:
+			return "gristleSync";
+
+		case UNPATCHED_GRISTLE_BLEND:
+			return "gristleBlend";
+
 		case UNPATCHED_SAMPLE_RATE_REDUCTION:
 			return "sampleRateReduction";
 
@@ -521,6 +691,9 @@ constexpr char const* paramNameForFileConst(Kind const kind, ParamType const par
 
 		case UNPATCHED_COMPRESSOR_THRESHOLD:
 			return "compressorThreshold";
+
+		case UNPATCHED_SEAR_TONE:
+			return "searTone";
 
 		case UNPATCHED_ARP_GATE:
 			return "arpGate";
@@ -566,6 +739,12 @@ constexpr char const* paramNameForFileConst(Kind const kind, ParamType const par
 
 		case UNPATCHED_SPREAD_VELOCITY:
 			return "spreadVelocity";
+
+		case UNPATCHED_CV1_SEND:
+			return "cv1Send";
+
+		case UNPATCHED_CV2_SEND:
+			return "cv2Send";
 
 		case UNPATCHED_NUM_SHARED:
 		    // Intentionally not handled
@@ -736,6 +915,9 @@ constexpr char const* paramNameForFileConst(Kind const kind, ParamType const par
 
 		case LOCAL_FOLD:
 			return "waveFold";
+
+		case LOCAL_SEAR:
+			return "sear";
 
 		case LOCAL_LAST:
 		    // Intentionally not handled

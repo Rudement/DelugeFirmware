@@ -18,12 +18,14 @@
 #pragma once
 
 #include "definitions_cxx.hpp"
+#include "dsp/sear.hpp"
 #include "model/mod_controllable/mod_controllable_audio.h"
 #include "model/sample/sample_recorder.h"
 #include "model/voiced.h"
 #include "modulation/arpeggiator.h"
 #include "modulation/knob.h"
 #include "modulation/lfo.h"
+#include "modulation/midi_fx/midi_fx_chain.h"
 #include "modulation/params/param.h"
 #include "modulation/params/param_manager.h"
 #include "modulation/params/param_set.h"
@@ -75,6 +77,9 @@ constexpr int32_t kSampleDrumVelocityCableUserValue = 50;
 
 class Sound : public ModControllableAudio, public virtual Voiced {
 public:
+	/// Wisps runs on synths and kit rows (Sound::render), as well as on audio clips.
+	[[nodiscard]] bool allowsClouds() const override { return true; }
+
 	using ActiveVoice = AudioEngine::VoicePool::pointer_type;
 
 	Sound();
@@ -289,6 +294,12 @@ public:
 	void wontBeRenderedForAWhile() override;
 	ModelStackWithAutoParam* getParamFromMIDIKnob(MIDIKnob& knob, ModelStackWithThreeMainThings* modelStack) final;
 	virtual ArpeggiatorBase* getArp() = 0;
+
+	/// MIDI FX for this Sound, or nullptr if it has none. Non-pure and defaulting to nullptr
+	/// unlike getArp(), so a Sound subclass that has no MIDI FX says nothing rather than being
+	/// forced to override. SoundInstrument and SoundDrum both override.
+	virtual deluge::modulation::midi_fx::MidiFxChain* getMidiFx() { return nullptr; }
+	virtual deluge::modulation::midi_fx::MidiFxSettings* getMidiFxSettings() { return nullptr; }
 	void possiblySetupDefaultExpressionPatching(ParamManager* paramManager);
 
 	int32_t getShiftAmountForSaturation() const { return (clippingAmount >= 2) ? (clippingAmount - 2) : 0; }
@@ -331,7 +342,44 @@ public:
 	void process_postarp_notes(ModelStackWithSoundFlags* modelStackWithSoundFlags, ArpeggiatorSettings* arpSettings,
 	                           ArpReturnInstruction instruction);
 
+	/// Fan the note-offs in an ArpReturnInstruction out to noteOffPostArpeggiator: glide note-offs
+	/// first, then plain ones, each stopping at the first ARP_NOTE_NONE. Returns true if any note
+	/// was switched off, which two of the three callers use to clear invertReversed.
+	///
+	/// The note-on half of this already had a shared home in process_postarp_notes; the note-offs
+	/// did not, and were repeated verbatim in Sound::noteOff, Sound::render and
+	/// SoundInstrument::doTickForwardForArp.
+	///
+	/// Note this is NOT the complete note-on seam for Sounds: Sound::noteOn switches notes on
+	/// inline rather than through process_postarp_notes, because it gates each one on
+	/// AudioEngine::allowedToStartVoice() and leaves the note PENDING when no voice is free. A MIDI
+	/// FX stage has to account for both paths.
+	/// Runs the MIDI FX chain over a freshly-filled instruction. Returns false if an effect
+	/// swallowed the event. Cheap no-op when there is no chain or it is empty.
+	bool runMidiFxOnNoteEvent(ArpReturnInstruction& instruction);
+
+	[[nodiscard]] bool dispatchArpNoteOffs(ModelStackWithSoundFlags* modelStackWithSoundFlags,
+	                                       ArpReturnInstruction& instruction);
+
 	virtual const char* getName() { return nullptr; }
+
+	/// SEAR RUNS ONCE PER SOUND, on the mixed voices (since 2026-10-05). Per voice it could only ever
+	/// reshape one oscillator at a time, and on hardware that read as "louder", not "dirty" — real
+	/// crunch comes from notes, unison and both oscillators grinding against each other, which only
+	/// happens after they are summed. See THE BITE STAGES in sear.hpp.
+	///
+	/// The drive is still LOCAL_SEAR, so files, menus, MIDI Follow and patch cables are unchanged.
+	/// Each Voice computes its own final LOCAL_SEAR as before (so envelopes, velocity and LFOs on it
+	/// still move it) and reports it here; the Sound uses the HIGHEST this block. Reset to 0 before
+	/// the voices render, so with no voice sounding Sear is bypassed.
+	q31_t searDriveThisBlock = 0;
+	/// Auto-level detectors and gain. One instance for both channels — L and R must get the same
+	/// gain or the image walks. Lives as long as the Sound, so only its first note is ever cold.
+	deluge::dsp::SearLevel searLevel;
+	/// Mid push / DC / de-emphasis memory, one per channel (stateful, so never shared).
+	std::array<deluge::dsp::SearChannel, 2> searChannels;
+	/// Tone tilt memory, one per channel.
+	std::array<q31_t, 2> searToneState;
 
 private:
 	uint32_t getGlobalLFOPhaseIncrement(LFO_ID lfoId, deluge::modulation::params::Global param);

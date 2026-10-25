@@ -20,6 +20,7 @@
 #include "io/midi/learned_midi.h"
 #include "model/instrument/instrument.h"
 #include "modulation/arpeggiator.h"
+#include "modulation/midi_fx/midi_fx_chain.h"
 #include "util/containers.h"
 
 class PostArpTriggerable;
@@ -85,7 +86,25 @@ public:
 	void offerBendRangeUpdate(ModelStack* modelStack, MIDICable& cable, int32_t channelOrZone, int32_t whichBendRange,
 	                          int32_t bendSemitones) override;
 
+	deluge::modulation::midi_fx::MidiFxSettings* getMidiFxSettings(InstrumentClip* clip = nullptr);
+
+	/// Hard stop for anything the MIDI FX chain has pending. Safe to call when there is none.
+	void flushMidiFx();
+
+	/// Sends the note-offs a MIDI FX flush produced.
+	///
+	/// Does nothing by default, and that is correct for a Sound: every path that calls flush has
+	/// already cut its voices by other means. It matters for outputs that go somewhere else - a
+	/// note this firmware generated and sent to an external synth is one nothing else knows about,
+	/// so if this does not release it, nothing will.
+	virtual void dispatchMidiFxFlushNoteOffs(ArpReturnInstruction& instruction) {}
+
 	Arpeggiator arpeggiator;
+
+	/// MIDI FX runs after the arpeggiator and, unlike it, regardless of ArpMode. Lives here
+	/// rather than on the clip for the same reason `arpeggiator` does: this is per-instrument
+	/// note state, while the *settings* are per-clip (`InstrumentClip::midiFxSettings`).
+	deluge::modulation::midi_fx::MidiFxChain midiFx;
 
 	struct EarlyNoteInfo {
 		uint8_t velocity;

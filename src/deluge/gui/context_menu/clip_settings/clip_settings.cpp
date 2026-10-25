@@ -24,6 +24,7 @@
 #include "gui/views/session_view.h"
 #include "hid/display/display.h"
 #include "model/clip/clip.h"
+#include "processing/audio_output.h"
 #include <cstddef>
 
 namespace deluge::gui::context_menu::clip_settings {
@@ -37,11 +38,13 @@ char const* ClipSettingsMenu::getTitle() {
 
 std::span<char const*> ClipSettingsMenu::getOptions() {
 	using enum l10n::String;
+	// Routing lives in the per-track AUX menu now, not here.
 	if (clip->type == ClipType::AUDIO) {
-		static const char* optionsls[] = {
-		    l10n::get(STRING_FOR_CLIP_MODE),
-		    l10n::get(STRING_FOR_CLIP_NAME),
-		};
+		// Track Default (Make/Clear) is withheld 2026-10-25. Restore the four-option version to bring it
+		// back; acceptCurrentOption still handles options 2/3.
+		static const char* optionsls[2];
+		optionsls[0] = l10n::get(STRING_FOR_CLIP_MODE);
+		optionsls[1] = l10n::get(STRING_FOR_CLIP_NAME);
 		return {optionsls, 2};
 	}
 	else {
@@ -78,10 +81,24 @@ bool ClipSettingsMenu::acceptCurrentOption() {
 			launchStyle.setupAndCheckAvailability();
 			openUI(&launchStyle);
 		}
-		else {
+		else if (option == 1) {
 			currentUIMode = UI_MODE_NONE;
 			renameClipUI.clip = clip;
 			openUI(&renameClipUI);
+		}
+		else if (clip->type == ClipType::AUDIO && clip->output && (option == 2 || option == 3)) {
+			auto* track = static_cast<AudioOutput*>(clip->output);
+			using enum l10n::String;
+			if (option == 2) {
+				display->displayPopup(l10n::get(track->setTrackDefaultFrom(&clip->paramManager)
+				                                    ? STRING_FOR_TRACK_DEFAULT_SET
+				                                    : STRING_FOR_TRACK_DEFAULT_FAILED));
+			}
+			else {
+				track->clearTrackDefault();
+				display->displayPopup(l10n::get(STRING_FOR_TRACK_DEFAULT_CLEARED));
+			}
+			return false; // exit UI
 		}
 		return true;
 	}

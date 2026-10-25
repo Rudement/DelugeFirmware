@@ -34,6 +34,7 @@
 #include "RZA1/usb/r_usb_basic/src/driver/inc/r_usb_typedef.h"
 #include "RZA1/usb/r_usb_basic/src/hw/inc/r_usb_bitdefine.h"
 #include "RZA1/usb/r_usb_basic/src/hw/inc/r_usb_reg_access.h"
+#include "deluge/drivers/usb/userdef/r_usb_paudio_config.h"
 
 /***********************************************************************************************************************
  Exported global variables (to be accessed by other files)
@@ -294,9 +295,10 @@ int usb_pstd_interrupt_handler(uint16_t* type, uint16_t* status)
         /* SOFR Clear */
 #if USB_CFG_USE_USBIP == USB_CFG_IP0
         USB200.INTSTS0 = (uint16_t)~USB_SOFR;
-#else             /* USB_CFG_USE_USBIP == USB_CFG_IP1 */
+#else  /* USB_CFG_USE_USBIP == USB_CFG_IP1 */
         USB201.INTSTS0 = (uint16_t)~USB_SOFR;
-#endif            /* USB_CFG_USE_USBIP == USB_CFG_IP1 */
+#endif /* USB_CFG_USE_USBIP == USB_CFG_IP1 */
+        usbAudioStreamStartOfFrame();
         return 1; // SOFR interrupts don't result in any action when processed. Rohan
         *type = USB_INT_SOFR;
     }

@@ -39,6 +39,18 @@ double getAverageRunTimeforCurrentTask() {
 	return taskManager.getAverageRunTimeForCurrentTask();
 }
 
+double getMaxRunTimeForTask(TaskID id) {
+	return taskManager.getMaxRunTimeForTask(id);
+}
+
+double getTotalRunTimeForTask(TaskID id) {
+	return taskManager.getTotalRunTimeForTask(id);
+}
+
+void resetTaskStats(void) {
+	taskManager.resetAllStats();
+}
+
 void setNextRunTimeforCurrentTask(double seconds) {
 	taskManager.setNextRunTimeforCurrentTask(seconds);
 }

@@ -54,6 +54,8 @@ public:
 	virtual void noteOnPostArp(int32_t noteCodePostArp, ArpNote* arpNote, int32_t noteIndex) { state_ = true; };
 	virtual void noteOffPostArp(int32_t noteCodePostArp) { state_ = false; };
 
+	void dispatchMidiFxFlushNoteOffs(ArpReturnInstruction& instruction) override;
+
 	void writeArpeggiatorToFile(Serializer& writer);
 
 protected:

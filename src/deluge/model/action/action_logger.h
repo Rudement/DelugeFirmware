@@ -36,6 +36,30 @@ class ActionLogger {
 public:
 	ActionLogger();
 
+	/// True while a sound-editor command that edits NOTES is running.
+	///
+	/// getNewAction() refuses anything raised while a UI sits over the root view, and rightly: almost
+	/// everything a menu does is a param change with its own undo path, and a stray Action from a menu
+	/// would be un-revertable because the view it was stamped with is not one you can navigate back to.
+	/// The note editor and the note row editor are already carved out of that rule, because they edit
+	/// notes on the grid while technically being the sound editor.
+	///
+	/// A one-shot menu command that writes notes - MIDI FX > Generate - is the same case without being
+	/// a whole editor, so it gets the same carve-out, held open only for the length of the one call
+	/// that asked for it. Use the scope guard below rather than setting this by hand, and stamp the
+	/// resulting Action with the ROOT view: the menu is the button that was pressed, not the place the
+	/// edit belongs to, and undo has to behave exactly as it does for any other note edit.
+	bool allowNoteEditFromMenu{false};
+
+	/// RAII for the flag above.
+	class MenuNoteEditScope {
+	public:
+		MenuNoteEditScope();
+		~MenuNoteEditScope();
+		MenuNoteEditScope(MenuNoteEditScope const&) = delete;
+		MenuNoteEditScope& operator=(MenuNoteEditScope const&) = delete;
+	};
+
 	// warning - super not thread safe
 	Action* getNewAction(ActionType newActionType,
 	                     ActionAddition addToExistingIfPossible = ActionAddition::NOT_ALLOWED);

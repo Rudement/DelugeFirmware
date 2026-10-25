@@ -48,9 +48,24 @@ public:
 	~ParamManager();
 
 	// Not including MPE params
-	inline bool containsAnyMainParamCollections() { return expressionParamSetOffset; }
+	// Rudement 2026-09-15: also require summaries[0] to actually be there. The offset alone has been seen set
+	// while the collection was already gone, which lets every guard written against this helper wave a hollow
+	// ParamManager straight on into getUnpatchedParamSet() and freeze with E410.
+	inline bool containsAnyMainParamCollections() { return expressionParamSetOffset && summaries[0].paramCollection; }
 
 	inline bool containsAnyParamCollectionsIncludingExpression() { return summaries[0].paramCollection; }
+
+	/// True only if this ParamManager was set up with patching (i.e. it belongs to a Sound) and therefore actually
+	/// has a patched param set and a patch cable set. setupWithPatching() sets expressionParamSetOffset to 3;
+	/// setupUnpatched() and setupMIDI() set it to 1, and a manager whose collections were stolen/forgotten sits at 0.
+	// Rudement 2026-09-15: the offset test alone was NOT enough. Three separate crash traces on the same day
+	// - MIDI Follow feedback via model_stack, the gold-knob path via Sound::getParamFromModEncoderDeeper, and
+	// Kit::setActiveClip -> Patcher::performInitialPatching - all had expressionParamSetOffset >= 3 with
+	// summaries[1] already NULL, passed their guard, and froze with E411 on the very next line. So test the
+	// collections this function's comment above already promises.
+	inline bool containsPatchedParamCollections() {
+		return expressionParamSetOffset >= 3 && summaries[1].paramCollection && summaries[2].paramCollection;
+	}
 
 	Error setupWithPatching();
 	Error setupUnpatched();

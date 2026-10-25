@@ -34,6 +34,7 @@
 #include "hid/buttons.h"
 #include "hid/display/display.h"
 #include "hid/display/oled.h"
+#include "hid/display/visualizer.h"
 #include "hid/led/indicator_leds.h"
 #include "hid/led/pad_leds.h"
 #include "hid/matrix/matrix_driver.h"
@@ -59,6 +60,8 @@
 #include "model/settings/runtime_feature_settings.h"
 #include "model/song/song.h"
 #include "model/sync.h"
+#include "modulation/morph.h"
+#include "modulation/temp_hold.h"
 #include "playback/clock_output_scheduler.h"
 #include "playback/mode/arrangement.h"
 #include "playback/mode/session.h"
@@ -1491,7 +1494,9 @@ void PlaybackHandler::doSongSwap(bool preservePlayPosition) {
 	// Swap stuff over
 	AudioEngine::killAllVoices(true);
 	midiFollow.clearStoredClips(); // need to clear clip pointers stored for previous song
+	morph.clear();                 // same reason: every delta points into the previous song
 	currentSong = preLoadedSong;
+	morph.adoptPending(); // the loaded song's saved morph slots, now that it is current
 	AudioEngine::mustUpdateReverbParamsBeforeNextRender = true;
 	preLoadedSong = nullptr;
 	loadSongUI.deletedPartsOfOldSong = false;
@@ -2526,10 +2531,27 @@ void PlaybackHandler::displayTempoBPM(float tempoBPM) {
 	DEF_STACK_STRING_BUF(text, 27);
 	if (display->haveOLED()) {
 		UI* currentUI = getCurrentUI();
+		bool isOLEDSessionView = currentUI == &sessionView || currentUI == &arrangerView;
+		bool visualizerActive = isOLEDSessionView && deluge::hid::display::Visualizer::isActive(view);
+
+		// Song and Arranger normally draw tempo directly into the main framebuffer. While the
+		// Visualizer is active that makes the tempo and graph overwrite one another. Route tempo
+		// through the popup layer when priority is Off so the graph yields cleanly; with priority On,
+		// keep the graph on screen and suppress the readout while still recording the new tempo.
+		if (visualizerActive) {
+			sessionView.lastDisplayedTempo = tempoBPM;
+			if (deluge::hid::display::Visualizer::hasPriority()) {
+				return;
+			}
+			text.append("Tempo: ");
+			getTempoStringForOLED(tempoBPM, text);
+			display->popupTextTemporary(text.c_str(), PopupType::TEMPO);
+			return;
+		}
+
 		// if we're currently in song or arranger view, we'll render tempo on the display instead of a popup
-		// except: if you're in arranger view and hodling a pad, show popup for tempo at the pad's position
-		if ((currentUI == &sessionView
-		     || (currentUI == &arrangerView && currentUIMode != UI_MODE_HOLDING_ARRANGEMENT_ROW))
+		// except: if you're in arranger view and holding a pad, show popup for tempo at the pad's position
+		if (isOLEDSessionView && !(currentUI == &arrangerView && currentUIMode == UI_MODE_HOLDING_ARRANGEMENT_ROW)
 		    && !deluge::hid::display::OLED::isPermanentPopupPresent()) {
 			sessionView.lastDisplayedTempo = tempoBPM;
 			getTempoStringForOLED(tempoBPM, text);
@@ -2921,6 +2943,11 @@ bool PlaybackHandler::tryGlobalMIDICommands(MIDICable& cable, int32_t channel, i
 				tryLoopCommand(command);
 				break;
 
+			case GlobalMIDICommand::LOOP_HOLD:
+				// Hold to Loop is withheld 2026-10-25: a Loop (hold) command learned by an earlier build does
+				// nothing. To bring it back, call loopHoldPress() here and re-list it in the MIDI commands menu.
+				break;
+
 			case GlobalMIDICommand::REDO:
 			case GlobalMIDICommand::UNDO:
 				if (actionLogger.allowedToDoReversion()) {
@@ -2944,6 +2971,27 @@ bool PlaybackHandler::tryGlobalMIDICommands(MIDICable& cable, int32_t channel, i
 			case GlobalMIDICommand::SHIFT:
 				Buttons::commandToggleShift(true);
 				indicator_leds::setLedState(indicator_leds::LED::SHIFT, Buttons::isShiftButtonPressed());
+				break;
+
+			case GlobalMIDICommand::MORPH_CAPTURE:
+				// Momentary, and like DICE with no note-off half: a capture is an instant, not a
+				// state you hold. Nothing in tryGlobalMIDICommandsOff answers for this one.
+				morph.capture();
+				break;
+
+			case GlobalMIDICommand::TEMP_HOLD:
+				// The held half of Temp Hold, for a footswitch. Unlike SHIFT above it, this engages
+				// only the hold: the SHIFT modifier itself stays off, so a pad press while the
+				// switch is down still does its ordinary job rather than its shifted one. That is
+				// the whole reason this is its own command instead of "learn a switch to SHIFT",
+				// which already works and already brings the rest of SHIFT with it.
+				deluge::modulation::temp_hold::tempHold.midiEngage(true);
+				break;
+
+			case GlobalMIDICommand::DICE:
+				// Momentary, and deliberately with no note-off half: a roll is an instant, not a
+				// state you hold. Nothing in tryGlobalMIDICommandsOff answers for this one.
+				currentSong->rollSpiceDice();
 				break;
 
 			// case GlobalMIDICommand::TAP:
@@ -2973,6 +3021,61 @@ void PlaybackHandler::tryLoopCommand(GlobalMIDICommand command) {
 	}
 }
 
+namespace {
+// Set by a hold-to-loop press that left a loop recording, counting in or about to start. Only then does the
+// release have anything of its own to end.
+bool loopHoldEngaged = false;
+
+/// Is a loop being made right now that a hold-to-loop release should end: counting in, recording tempoless,
+/// waiting to start as an overdub, or recording into a clip that has not already been told to stop.
+bool loopHoldHasSomethingToEnd() {
+	if (!playbackHandler.playbackState) {
+		return false;
+	}
+	if (playbackHandler.ticksLeftInCountIn) {
+		return true;
+	}
+	if (currentPlaybackMode != &session || playbackHandler.recording == RecordingMode::ARRANGEMENT) {
+		return false;
+	}
+	if (!playbackHandler.isEitherClockActive()) {
+		return true; // Tempoless recording: the first loop, whose length is the hold.
+	}
+	for (int32_t c = 0; c < currentSong->sessionClips.getNumElements(); c++) {
+		Clip* clip = currentSong->sessionClips.getClipAtIndex(c);
+		if (clip->isPendingOverdub) {
+			return true;
+		}
+		if (clip->armState == ArmState::OFF && clip->getCurrentlyRecordingLinearly()) {
+			return true;
+		}
+	}
+	return false;
+}
+} // namespace
+
+void PlaybackHandler::loopHoldPress() {
+	// A press while a loop is already being made is the stock second press: it ends that loop, and the release
+	// that follows has nothing of its own to end.
+	bool wasMakingALoop = loopHoldHasSomethingToEnd();
+	loopHoldEngaged = false;
+	tryLoopCommand(GlobalMIDICommand::LOOP);
+	if (!wasMakingALoop) {
+		loopHoldEngaged = loopHoldHasSomethingToEnd();
+	}
+}
+
+void PlaybackHandler::loopHoldRelease() {
+	if (!loopHoldEngaged) {
+		return;
+	}
+	loopHoldEngaged = false;
+	// Only ever ends things. If the loop already stopped some other way, a LOOP press here would start a new one.
+	if (loopHoldHasSomethingToEnd()) {
+		tryLoopCommand(GlobalMIDICommand::LOOP);
+	}
+}
+
 // Returns whether the message has been used up by a note-off command
 bool PlaybackHandler::tryGlobalMIDICommandsOff(MIDICable& cable, int32_t channel, int32_t note) {
 
@@ -2987,6 +3090,19 @@ bool PlaybackHandler::tryGlobalMIDICommandsOff(MIDICable& cable, int32_t channel
 	else if (midiEngine.globalMIDICommands[util::to_underlying(GlobalMIDICommand::FILL)].equalsNoteOrCC(&cable, channel,
 	                                                                                                    note)) {
 		currentSong->changeFillMode(false);
+		foundAnything = true;
+	}
+	else if (midiEngine.globalMIDICommands[util::to_underlying(GlobalMIDICommand::TEMP_HOLD)].equalsNoteOrCC(
+	             &cable, channel, note)) {
+		// The release half. Putting the values back is the whole point of the feature, so this has
+		// to answer every time - a footswitch whose release went missing would leave the hold open
+		// with nothing left to close it.
+		deluge::modulation::temp_hold::tempHold.midiEngage(false);
+		foundAnything = true;
+	}
+	else if (midiEngine.globalMIDICommands[util::to_underlying(GlobalMIDICommand::LOOP_HOLD)].equalsNoteOrCC(
+	             &cable, channel, note)) {
+		loopHoldRelease();
 		foundAnything = true;
 	}
 	else if (midiEngine.globalMIDICommands[util::to_underlying(GlobalMIDICommand::SHIFT)].equalsNoteOrCC(

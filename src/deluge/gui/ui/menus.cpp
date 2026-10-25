@@ -32,13 +32,16 @@
 #include "gui/menu_item/battery/level.h"
 #include "gui/menu_item/bend_range/main.h"
 #include "gui/menu_item/bend_range/per_finger.h"
+#include "gui/menu_item/clouds/mode.h"
 #include "gui/menu_item/colour.h"
+#include "gui/menu_item/cpu/stats.h"
 #include "gui/menu_item/cpu/voice_usage.h"
 #include "gui/menu_item/cv/cv2Mapping.h"
 #include "gui/menu_item/cv/selection.h"
 #include "gui/menu_item/cv/submenu.h"
 #include "gui/menu_item/cv/transpose.h"
 #include "gui/menu_item/cv/volts.h"
+#include "gui/menu_item/cv_output/routing.h"
 #include "gui/menu_item/defaults/accessibility_menu_highlighting.h"
 #include "gui/menu_item/defaults/bend_range.h"
 #include "gui/menu_item/defaults/favourites_layout.h"
@@ -60,6 +63,7 @@
 #include "gui/menu_item/delay/amount.h"
 #include "gui/menu_item/delay/amount_unpatched.h"
 #include "gui/menu_item/delay/analog.h"
+#include "gui/menu_item/delay/filter.h"
 #include "gui/menu_item/delay/ping_pong.h"
 #include "gui/menu_item/delay/sync.h"
 #include "gui/menu_item/dx/browse.h"
@@ -68,6 +72,8 @@
 #include "gui/menu_item/edit_name.h"
 #include "gui/menu_item/envelope/envelope_menu.h"
 #include "gui/menu_item/envelope/segment.h"
+#include "gui/menu_item/eq/eq_freq_param.h"
+#include "gui/menu_item/eq/eq_gain_param.h"
 #include "gui/menu_item/eq/eq_menu.h"
 #include "gui/menu_item/eq/eq_unpatched_param.h"
 #include "gui/menu_item/file_selector.h"
@@ -87,6 +93,7 @@
 #include "gui/menu_item/integer_range.h"
 #include "gui/menu_item/key_range.h"
 #include "gui/menu_item/keyboard/layout.h"
+#include "gui/menu_item/kit/split.h"
 #include "gui/menu_item/lfo/sync.h"
 #include "gui/menu_item/lfo/type.h"
 #include "gui/menu_item/master_transpose.h"
@@ -118,6 +125,20 @@
 #include "gui/menu_item/midi/sub.h"
 #include "gui/menu_item/midi/takeover.h"
 #include "gui/menu_item/midi/transpose.h"
+#include "gui/menu_item/midi_fx/delay.h"
+#include "gui/menu_item/midi_fx/gate_time.h"
+#include "gui/menu_item/midi_fx/generate.h"
+#include "gui/menu_item/midi_fx/groove.h"
+#include "gui/menu_item/midi_fx/harmonize.h"
+#include "gui/menu_item/midi_fx/loop_remix.h"
+#include "gui/menu_item/midi_fx/play_fx.h"
+#include "gui/menu_item/midi_fx/reset.h"
+#include "gui/menu_item/midi_fx/retrig.h"
+#include "gui/menu_item/midi_fx/spice.h"
+#include "gui/menu_item/midi_fx/spread.h"
+#include "gui/menu_item/midi_fx/stochastic.h"
+#include "gui/menu_item/midi_fx/strum.h"
+#include "gui/menu_item/midi_fx/velocity_offset.h"
 #include "gui/menu_item/mod_fx/depth_patched.h"
 #include "gui/menu_item/mod_fx/depth_unpatched.h"
 #include "gui/menu_item/mod_fx/feedback.h"
@@ -154,6 +175,7 @@
 #include "gui/menu_item/patched_param/integer_non_fm.h"
 #include "gui/menu_item/patched_param/pan.h"
 #include "gui/menu_item/performance_session_view/editing_mode.h"
+#include "gui/menu_item/plaits/engine_select.h"
 #include "gui/menu_item/randomizer/midi_cv/bass_probability.h"
 #include "gui/menu_item/randomizer/midi_cv/chord_polyphony.h"
 #include "gui/menu_item/randomizer/midi_cv/chord_probability.h"
@@ -181,6 +203,7 @@
 #include "gui/menu_item/reverb/sidechain/shape.h"
 #include "gui/menu_item/reverb/sidechain/volume.h"
 #include "gui/menu_item/reverb/width.h"
+#include "gui/menu_item/runtime_feature/gated.h"
 #include "gui/menu_item/runtime_feature/settings.h"
 #include "gui/menu_item/sample/browser_preview/mode.h"
 #include "gui/menu_item/sample/end.h"
@@ -224,6 +247,9 @@
 #include "gui/menu_item/unison/stereoSpread.h"
 #include "gui/menu_item/unpatched_param.h"
 #include "gui/menu_item/unpatched_param/pan.h"
+#include "gui/menu_item/unpatched_param_stepped.h"
+#include "gui/menu_item/unpatched_param_switch.h"
+#include "gui/menu_item/usb_audio/routing.h"
 #include "gui/menu_item/voice/polyphony.h"
 #include "gui/menu_item/voice/portamento.h"
 #include "gui/menu_item/voice/priority.h"
@@ -397,6 +423,342 @@ PLACE_SDRAM_BSS HorizontalMenuGroup arpMenuGroup{{&arpBasicMenu, &arpPatternMenu
 PLACE_SDRAM_BSS HorizontalMenuGroup arpMenuGroupKit{{&arpBasicMenuKit, &arpPatternMenu}};
 PLACE_SDRAM_BSS HorizontalMenuGroup arpMenuGroupMIDIOrCV{{&arpBasicMenuMIDIOrCV, &arpPatternMenu}};
 
+// MIDI FX
+//
+// NOTE the menu_item:: qualifier on the types below. There are two namespaces called midi_fx -
+// deluge::modulation::midi_fx (the effects) and deluge::gui::menu_item::midi_fx (their menus) -
+// and this file has `using namespace deluge::modulation` AND `using namespace gui::menu_item`,
+// so a bare `midi_fx::` is ambiguous here. GCC reports it as "reference to 'midi_fx' is
+// ambiguous" and then, far more confusingly, as a Submenu constructor with "no known conversion
+// for argument 2 from <brace-enclosed initializer list>" - because the declaration failed and
+// the identifiers below it no longer exist.
+//
+// Its own page group, sibling to the Arpeggiator rather than a submenu inside it. The feature is
+// arp-independent by design and burying it under the arp would say the opposite in the one place
+// a user actually looks. One HorizontalMenu per effect: a page shows four items at a time and the
+// note delay alone wants four, so a single shared page would cap the feature at one effect.
+//
+// Kits included since stage 5: settings are per-drum (Drum::midiFxSettings), so selecting a drum
+// row and opening MIDI FX edits that drum alone - which is the point when the effect is a repeat.
+// With no drum selected, soundEditor's currentMidiFxSettings is null and every item's isRelevant()
+// hides itself rather than editing nothing.
+menu_item::midi_fx::VelocityOffset midiFxVelocityOffsetMenu{STRING_FOR_MIDI_FX_VELOCITY_OFFSET,
+                                                            STRING_FOR_MIDI_FX_VELOCITY_MENU_TITLE};
+
+menu_item::midi_fx::GateTime midiFxGateTimeMenu{STRING_FOR_MIDI_FX_GATE_AMOUNT, STRING_FOR_MIDI_FX_GATE_MENU_TITLE};
+
+// One Reset per page, plus one for the lot on the submenu below. It reads as well as writes:
+// the value shows Default when that effect is untouched and Edited when it is not, so a pass
+// across the pages says which effects are actually doing something. Turning it to Default is
+// the way back from wherever four controls got you.
+menu_item::midi_fx::Reset midiFxVelocityResetMenu{STRING_FOR_MIDI_FX_RESET, STRING_FOR_MIDI_FX_VELOCITY_MENU_TITLE,
+                                                  menu_item::midi_fx::ResetTarget::VELOCITY};
+menu_item::midi_fx::Reset midiFxGateResetMenu{STRING_FOR_MIDI_FX_RESET, STRING_FOR_MIDI_FX_GATE_MENU_TITLE,
+                                              menu_item::midi_fx::ResetTarget::GATE};
+menu_item::midi_fx::Reset midiFxRetrigResetMenu{STRING_FOR_MIDI_FX_RESET, STRING_FOR_MIDI_FX_RETRIG_MENU_TITLE,
+                                                menu_item::midi_fx::ResetTarget::RETRIG};
+menu_item::midi_fx::Reset midiFxDelayResetMenu{STRING_FOR_MIDI_FX_RESET, STRING_FOR_MIDI_FX_DELAY_MENU_TITLE,
+                                               menu_item::midi_fx::ResetTarget::DELAY};
+menu_item::midi_fx::Reset midiFxSpiceResetMenu{STRING_FOR_MIDI_FX_RESET, STRING_FOR_MIDI_FX_SPICE_MENU_TITLE,
+                                               menu_item::midi_fx::ResetTarget::SPICE};
+menu_item::midi_fx::Reset midiFxStrumResetMenu{STRING_FOR_MIDI_FX_RESET, STRING_FOR_MIDI_FX_STRUM_MENU_TITLE,
+                                               menu_item::midi_fx::ResetTarget::STRUM};
+menu_item::midi_fx::Reset midiFxSpreadResetMenu{STRING_FOR_MIDI_FX_RESET, STRING_FOR_MIDI_FX_SPREAD_MENU_TITLE,
+                                                menu_item::midi_fx::ResetTarget::SPREAD};
+menu_item::midi_fx::Reset midiFxStochasticResetMenu{STRING_FOR_MIDI_FX_RESET, STRING_FOR_MIDI_FX_STOCHASTIC_MENU_TITLE,
+                                                    menu_item::midi_fx::ResetTarget::STOCHASTIC};
+menu_item::midi_fx::Reset midiFxLoopRemixResetMenu{STRING_FOR_MIDI_FX_RESET, STRING_FOR_MIDI_FX_LOOP_REMIX_MENU_TITLE,
+                                                   menu_item::midi_fx::ResetTarget::LOOP_REMIX};
+menu_item::midi_fx::Reset midiFxGrooveResetMenu{STRING_FOR_MIDI_FX_RESET, STRING_FOR_MIDI_FX_GROOVE_MENU_TITLE,
+                                                menu_item::midi_fx::ResetTarget::GROOVE};
+menu_item::midi_fx::Reset playFxResetMenu{STRING_FOR_MIDI_FX_RESET, STRING_FOR_PLAY_FX_MENU_TITLE,
+                                          menu_item::midi_fx::ResetTarget::PLAY_FX};
+// An action rather than a value: a Selection in a vertical submenu has nothing to turn, which is
+// why this one did nothing on hardware while the paged ones worked.
+menu_item::midi_fx::ResetAll midiFxResetAllMenu{STRING_FOR_MIDI_FX_RESET_ALL, STRING_FOR_MIDI_FX_MENU_TITLE};
+
+HorizontalMenu midiFxVelocityMenu{STRING_FOR_VELOCITY,
+                                  STRING_FOR_MIDI_FX_VELOCITY_MENU_TITLE,
+                                  {&midiFxVelocityOffsetMenu, &midiFxVelocityResetMenu},
+                                  HorizontalMenu::Layout::FIXED};
+
+menu_item::midi_fx::RetrigRepeats midiFxRetrigRepeatsMenu{STRING_FOR_MIDI_FX_RETRIG_REPEATS,
+                                                          STRING_FOR_MIDI_FX_RETRIG_MENU_TITLE};
+menu_item::midi_fx::RetrigSync midiFxRetrigSyncMenu{STRING_FOR_RATE, STRING_FOR_MIDI_FX_RETRIG_MENU_TITLE};
+menu_item::midi_fx::RetrigDecay midiFxRetrigDecayMenu{STRING_FOR_MIDI_FX_RETRIG_DECAY,
+                                                      STRING_FOR_MIDI_FX_RETRIG_MENU_TITLE};
+
+HorizontalMenu midiFxGateMenu{STRING_FOR_GATE,
+                              STRING_FOR_MIDI_FX_GATE_MENU_TITLE,
+                              {&midiFxGateTimeMenu, &midiFxGateResetMenu},
+                              HorizontalMenu::Layout::FIXED};
+
+// Four pages: Velocity, Gate Time, Repeat, Delay.
+//
+// The group also has to be in horizontalMenusChainForSound / ...ForMidiOrCv below, which is what
+// actually puts MIDI FX in the page strip you cycle through - the Submenu below only reaches it
+// by navigating in. Deliberately not in the Kit chain.
+// Three items, which is why a page per effect was the right call - a shared page shows four and
+// the note delay still to come wants four of its own.
+HorizontalMenu midiFxRetrigMenu{
+    STRING_FOR_MIDI_FX_RETRIG,
+    STRING_FOR_MIDI_FX_RETRIG_MENU_TITLE,
+    {&midiFxRetrigRepeatsMenu, &midiFxRetrigSyncMenu, &midiFxRetrigDecayMenu, &midiFxRetrigResetMenu},
+    HorizontalMenu::Layout::FIXED};
+
+menu_item::midi_fx::DelayLevel midiFxDelayLevelMenu{STRING_FOR_MIDI_FX_DELAY_LEVEL,
+                                                    STRING_FOR_MIDI_FX_DELAY_MENU_TITLE};
+menu_item::midi_fx::DelayRepeats midiFxDelayRepeatsMenu{STRING_FOR_MIDI_FX_DELAY_REPEATS,
+                                                        STRING_FOR_MIDI_FX_DELAY_MENU_TITLE};
+menu_item::midi_fx::DelaySync midiFxDelaySyncMenu{STRING_FOR_MIDI_FX_DELAY_TIME, STRING_FOR_MIDI_FX_DELAY_MENU_TITLE};
+menu_item::midi_fx::DelayFbVelocity midiFxDelayFbVelMenu{STRING_FOR_MIDI_FX_DELAY_FB_VEL,
+                                                         STRING_FOR_MIDI_FX_DELAY_MENU_TITLE};
+menu_item::midi_fx::DelayPitch midiFxDelayPitchMenu{STRING_FOR_MIDI_FX_DELAY_FB_NOTE,
+                                                    STRING_FOR_MIDI_FX_DELAY_MENU_TITLE};
+menu_item::midi_fx::DelayNoteRandom midiFxDelayFbRndMenu{STRING_FOR_MIDI_FX_DELAY_FB_RND,
+                                                         STRING_FOR_MIDI_FX_DELAY_MENU_TITLE};
+menu_item::midi_fx::DelayFbClock midiFxDelayFbClockMenu{STRING_FOR_MIDI_FX_DELAY_FB_CLOCK,
+                                                        STRING_FOR_MIDI_FX_DELAY_MENU_TITLE};
+
+// The RS7000 MIDI Delay, paged: Level, Time, Repeats (its Delay page) then FB Vel, FB Note, FB Rnd,
+// FB Clock (its Feedback page), with Reset last. Level leads because it is the knob reached for.
+HorizontalMenu midiFxDelayMenu{STRING_FOR_MIDI_FX_DELAY,
+                               STRING_FOR_MIDI_FX_DELAY_MENU_TITLE,
+                               {&midiFxDelayLevelMenu, &midiFxDelaySyncMenu, &midiFxDelayRepeatsMenu,
+                                &midiFxDelayFbVelMenu, &midiFxDelayPitchMenu, &midiFxDelayFbRndMenu,
+                                &midiFxDelayFbClockMenu, &midiFxDelayResetMenu},
+                               HorizontalMenu::Layout::FIXED};
+
+// Spice & Dice: MicroFreak-style gate variation. On this page group because it is a note effect
+// like the rest of them, and per-drum on a Kit like the rest of them - AFFECT ENTIRE spices the
+// whole kit at once, with each row still making its own decisions so it thins rather than stutters.
+//
+// Not an unpatched param, and that is the one thing given up here: Spice cannot go on a gold knob,
+// an automation lane or a MIDI CC. What it buys is MIDI and CV clips, which carry no param set of
+// their own - a spiced MIDI clip thins the pattern going out to external gear, which is half the
+// point of a gate effect on a Deluge.
+menu_item::midi_fx::SpiceAmount midiFxSpiceAmountMenu{STRING_FOR_MIDI_FX_SPICE_AMOUNT,
+                                                      STRING_FOR_MIDI_FX_SPICE_MENU_TITLE};
+menu_item::midi_fx::Dice midiFxSpiceDiceMenu{STRING_FOR_MIDI_FX_SPICE_DICE, STRING_FOR_MIDI_FX_SPICE_MENU_TITLE};
+
+HorizontalMenu midiFxSpiceMenu{STRING_FOR_MIDI_FX_SPICE,
+                               STRING_FOR_MIDI_FX_SPICE_MENU_TITLE,
+                               {&midiFxSpiceAmountMenu, &midiFxSpiceDiceMenu, &midiFxSpiceResetMenu},
+                               HorizontalMenu::Layout::FIXED};
+
+// Harmonize: the clip plays its written phrase as degrees of the chord track's chord.
+//
+// A plain Submenu rather than a HorizontalMenu page, because one of its two entries is a track
+// picker rather than a number - a column of names does not read as a value on either display. It
+// stays in this group because it is a note effect and this is where a user looks for those.
+//
+// Follow is per clip; Chord Track is song-wide and shown here because that is where you are when you
+// want to set it.
+menu_item::midi_fx::HarmonizeFollow midiFxHarmonizeFollowMenu{STRING_FOR_MIDI_FX_HARMONIZE_FOLLOW,
+                                                              STRING_FOR_MIDI_FX_HARMONIZE_MENU_TITLE};
+menu_item::midi_fx::ChordTrack midiFxChordTrackMenu{STRING_FOR_MIDI_FX_CHORD_TRACK,
+                                                    STRING_FOR_MIDI_FX_HARMONIZE_MENU_TITLE};
+
+Submenu midiFxHarmonizeMenu{
+    STRING_FOR_MIDI_FX_HARMONIZE,
+    STRING_FOR_MIDI_FX_HARMONIZE_MENU_TITLE,
+    {&midiFxHarmonizeFollowMenu, &midiFxChordTrackMenu},
+};
+
+// Generate: the sequencer writes a rhythm into the row you last auditioned.
+//
+// A plain Submenu rather than a HorizontalMenu page, and not because four items would not fit. Three
+// of its entries are settings and the fourth is a command, and a command needs a select press rather
+// than a turn - which is exactly the shape that made Reset all a vertical item while the paged Resets
+// stayed Selections. Putting Go on a horizontal page would give it nothing to turn.
+//
+// It is in this group because this is where a user looks for things that act on the notes, but it is
+// the odd one out and the header of modulation/midi_fx/generate.h says why: everything else here is a
+// read-time transform, and this one writes. Undo is the way back from it, not a knob.
+//
+// Density, Seed and Gate decide the rhythm; Range and Leap decide the line. Range 0 - the default -
+// keeps every note in the one row you auditioned, which is a rhythm at one pitch and is what a drum
+// row wants; a Kit is held there whatever the knob says.
+menu_item::midi_fx::GenerateDensity midiFxGenerateDensityMenu{STRING_FOR_MIDI_FX_GENERATE_DENSITY,
+                                                              STRING_FOR_MIDI_FX_GENERATE_MENU_TITLE};
+menu_item::midi_fx::GenerateRange midiFxGenerateRangeMenu{STRING_FOR_MIDI_FX_GENERATE_RANGE,
+                                                          STRING_FOR_MIDI_FX_GENERATE_MENU_TITLE};
+menu_item::midi_fx::GenerateLeap midiFxGenerateLeapMenu{STRING_FOR_MIDI_FX_GENERATE_LEAP,
+                                                        STRING_FOR_MIDI_FX_GENERATE_MENU_TITLE};
+menu_item::midi_fx::GenerateSeed midiFxGenerateSeedMenu{STRING_FOR_MIDI_FX_GENERATE_SEED,
+                                                        STRING_FOR_MIDI_FX_GENERATE_MENU_TITLE};
+menu_item::midi_fx::GenerateGate midiFxGenerateGateMenu{STRING_FOR_MIDI_FX_GENERATE_GATE,
+                                                        STRING_FOR_MIDI_FX_GENERATE_MENU_TITLE};
+menu_item::midi_fx::GenerateGo midiFxGenerateGoMenu{STRING_FOR_MIDI_FX_GENERATE_GO,
+                                                    STRING_FOR_MIDI_FX_GENERATE_MENU_TITLE};
+
+Submenu midiFxGenerateMenu{
+    STRING_FOR_MIDI_FX_GENERATE,
+    STRING_FOR_MIDI_FX_GENERATE_MENU_TITLE,
+    {&midiFxGenerateDensityMenu, &midiFxGenerateRangeMenu, &midiFxGenerateLeapMenu, &midiFxGenerateSeedMenu,
+     &midiFxGenerateGateMenu, &midiFxGenerateGoMenu},
+};
+
+// Strum: a chord lands as a sweep rather than as a block.
+//
+// Its own page, and clip-wide rather than per-drum even on a Kit - a flam is a property of the
+// group of drums hitting together, not of any one of them, so there is nothing per-drum to say and
+// no AFFECT ENTIRE handling to write. That is also why these three live on the InstrumentClip
+// rather than in MidiFxSettings; see the header note in menu_item/midi_fx/strum.h.
+//
+// Three controls and a Reset, which is exactly what a page shows.
+menu_item::midi_fx::StrumAmount midiFxStrumAmountMenu{STRING_FOR_MIDI_FX_STRUM_AMOUNT,
+                                                      STRING_FOR_MIDI_FX_STRUM_MENU_TITLE};
+menu_item::midi_fx::StrumDirection midiFxStrumDirectionMenu{STRING_FOR_MIDI_FX_STRUM_DIRECTION,
+                                                            STRING_FOR_MIDI_FX_STRUM_MENU_TITLE};
+menu_item::midi_fx::StrumContour midiFxStrumContourMenu{STRING_FOR_MIDI_FX_STRUM_CONTOUR,
+                                                        STRING_FOR_MIDI_FX_STRUM_MENU_TITLE};
+
+HorizontalMenu midiFxStrumMenu{
+    STRING_FOR_MIDI_FX_STRUM,
+    STRING_FOR_MIDI_FX_STRUM_MENU_TITLE,
+    {&midiFxStrumAmountMenu, &midiFxStrumDirectionMenu, &midiFxStrumContourMenu, &midiFxStrumResetMenu},
+    HorizontalMenu::Layout::FIXED};
+
+// Spread: the written part stops playing itself identically every bar.
+//
+// Its own page, clip-wide like Strum, and the only one in this group that hides itself on a Kit.
+// Both of the things it offers are already answered there: a kit row's velocity is randomisable
+// through the mod matrix by patching master volume to Random, and an octave means nothing on a row
+// that is a drum rather than a pitch. See the header note in menu_item/midi_fx/spread.h.
+//
+// Two spreads and a probability, which is not sloppiness - velocity and gate are continuous and an
+// octave is not. Three controls and a Reset, which is exactly what a page shows.
+menu_item::midi_fx::SpreadVelocity midiFxSpreadVelocityMenu{STRING_FOR_MIDI_FX_SPREAD_VELOCITY,
+                                                            STRING_FOR_MIDI_FX_SPREAD_MENU_TITLE};
+menu_item::midi_fx::SpreadGate midiFxSpreadGateMenu{STRING_FOR_MIDI_FX_SPREAD_GATE,
+                                                    STRING_FOR_MIDI_FX_SPREAD_MENU_TITLE};
+menu_item::midi_fx::SpreadOctave midiFxSpreadOctaveMenu{STRING_FOR_MIDI_FX_SPREAD_OCTAVE,
+                                                        STRING_FOR_MIDI_FX_SPREAD_MENU_TITLE};
+
+HorizontalMenu midiFxSpreadMenu{
+    STRING_FOR_MIDI_FX_SPREAD,
+    STRING_FOR_MIDI_FX_SPREAD_MENU_TITLE,
+    {&midiFxSpreadVelocityMenu, &midiFxSpreadGateMenu, &midiFxSpreadOctaveMenu, &midiFxSpreadResetMenu},
+    HorizontalMenu::Layout::FIXED};
+
+// Stochastic: the rhythm is locked and the pitch is drawn afresh. The pitch half of Spice, and the
+// second of the three OXI One generative modes.
+//
+// Its own page, clip-wide, and hidden on a Kit - the second page in this group to hide itself, and
+// for a sharper reason than Spread's. On a Kit the row IS the drum, so a wandering note code plays
+// a different drum rather than a different note. That is a real feature, and a separate one.
+//
+// Amount and Width are two questions, not one: how often a note moves, and how far it may go when
+// it does. Dice is Spice's number shown a second time rather than a number of its own, so one
+// control says which variation the whole group is playing.
+menu_item::midi_fx::StochasticAmount midiFxStochasticAmountMenu{STRING_FOR_MIDI_FX_STOCHASTIC_AMOUNT,
+                                                                STRING_FOR_MIDI_FX_STOCHASTIC_MENU_TITLE};
+menu_item::midi_fx::StochasticWidth midiFxStochasticWidthMenu{STRING_FOR_MIDI_FX_STOCHASTIC_WIDTH,
+                                                              STRING_FOR_MIDI_FX_STOCHASTIC_MENU_TITLE};
+menu_item::midi_fx::StochasticDice midiFxStochasticDiceMenu{STRING_FOR_MIDI_FX_STOCHASTIC_DICE,
+                                                            STRING_FOR_MIDI_FX_STOCHASTIC_MENU_TITLE};
+
+HorizontalMenu midiFxStochasticMenu{
+    STRING_FOR_MIDI_FX_STOCHASTIC,
+    STRING_FOR_MIDI_FX_STOCHASTIC_MENU_TITLE,
+    {&midiFxStochasticAmountMenu, &midiFxStochasticWidthMenu, &midiFxStochasticDiceMenu, &midiFxStochasticResetMenu},
+    HorizontalMenu::Layout::FIXED};
+
+// Loop Remix: the loop is chopped into slices and read out of order. The RS7000's Real Time Loop Remix.
+//
+// Its own page, between Generate and Play FX. Clip-wide like Play FX and Strum - a Deluge kit clip IS
+// the track, and giving each drum its own permutation would be mush rather than a remix - so the page
+// stays visible on a Kit with no drum selected. Family first because it is also the off switch. See
+// LOOP-REMIX-FEASIBILITY.md section 5 and the header note in menu_item/midi_fx/loop_remix.h.
+menu_item::midi_fx::LoopRemixType midiFxLoopRemixTypeMenu{STRING_FOR_MIDI_FX_LOOP_REMIX_TYPE,
+                                                          STRING_FOR_MIDI_FX_LOOP_REMIX_MENU_TITLE};
+menu_item::midi_fx::LoopRemixVariation midiFxLoopRemixVariationMenu{STRING_FOR_MIDI_FX_LOOP_REMIX_VARIATION,
+                                                                    STRING_FOR_MIDI_FX_LOOP_REMIX_MENU_TITLE};
+menu_item::midi_fx::LoopRemixLaunch midiFxLoopRemixLaunchMenu{STRING_FOR_MIDI_FX_LOOP_REMIX_LAUNCH,
+                                                              STRING_FOR_MIDI_FX_LOOP_REMIX_MENU_TITLE};
+menu_item::midi_fx::LoopRemixInterval midiFxLoopRemixIntervalMenu{STRING_FOR_MIDI_FX_LOOP_REMIX_INTERVAL,
+                                                                  STRING_FOR_MIDI_FX_LOOP_REMIX_MENU_TITLE};
+
+HorizontalMenu midiFxLoopRemixMenu{STRING_FOR_MIDI_FX_LOOP_REMIX,
+                                   STRING_FOR_MIDI_FX_LOOP_REMIX_MENU_TITLE,
+                                   {&midiFxLoopRemixLaunchMenu, &midiFxLoopRemixTypeMenu,
+                                    &midiFxLoopRemixVariationMenu, &midiFxLoopRemixIntervalMenu,
+                                    &midiFxLoopRemixResetMenu},
+                                   HorizontalMenu::Layout::FIXED};
+
+// Groove: the OXI One's groove engine crossed with Ableton's Groove Pool. A template of per-step timing and
+// velocity, scaled by Accent and Time, with Random humanising on top and Offset rotating it.
+//
+// Next to Play FX because it is the same kind of thing - it bends the clock a phrase is read through and
+// never touches a note - and lives where Loop Remix does: the Clip's, a drum's own on a Kit, every drum's
+// under AFFECT ENTIRE. Template takes two columns for its name, so the page runs onto a second screen.
+// See modulation/midi_fx/groove.h and GROOVE-FEASIBILITY.md.
+menu_item::midi_fx::GrooveTemplate midiFxGrooveTemplateMenu{STRING_FOR_MIDI_FX_GROOVE_TEMPLATE,
+                                                            STRING_FOR_MIDI_FX_GROOVE_MENU_TITLE};
+menu_item::midi_fx::GrooveAccent midiFxGrooveAccentMenu{STRING_FOR_MIDI_FX_GROOVE_ACCENT,
+                                                        STRING_FOR_MIDI_FX_GROOVE_MENU_TITLE};
+menu_item::midi_fx::GrooveTime midiFxGrooveTimeMenu{STRING_FOR_MIDI_FX_GROOVE_TIME, STRING_FOR_MIDI_FX_GROOVE_MENU_TITLE};
+menu_item::midi_fx::GrooveRandom midiFxGrooveRandomMenu{STRING_FOR_MIDI_FX_GROOVE_RANDOM,
+                                                        STRING_FOR_MIDI_FX_GROOVE_MENU_TITLE};
+menu_item::midi_fx::GrooveOffset midiFxGrooveOffsetMenu{STRING_FOR_MIDI_FX_GROOVE_OFFSET,
+                                                        STRING_FOR_MIDI_FX_GROOVE_MENU_TITLE};
+
+HorizontalMenu midiFxGrooveMenu{STRING_FOR_MIDI_FX_GROOVE,
+                                STRING_FOR_MIDI_FX_GROOVE_MENU_TITLE,
+                                {&midiFxGrooveTemplateMenu, &midiFxGrooveAccentMenu, &midiFxGrooveTimeMenu,
+                                 &midiFxGrooveRandomMenu, &midiFxGrooveOffsetMenu, &midiFxGrooveResetMenu},
+                                HorizontalMenu::Layout::FIXED};
+
+// Play FX: the two that act on the phrase rather than on notes. In the same group because that
+// is where a user will look for them, on their own page because they are a different kind of
+// thing - clip-wide, and on a Kit not per-drum like everything else here.
+menu_item::midi_fx::ClockShift playFxClockShiftMenu{STRING_FOR_PLAY_FX_CLOCK_SHIFT, STRING_FOR_PLAY_FX_MENU_TITLE};
+menu_item::midi_fx::BeatStretch playFxBeatStretchMenu{STRING_FOR_PLAY_FX_BEAT_STRETCH, STRING_FOR_PLAY_FX_MENU_TITLE};
+menu_item::midi_fx::Division playFxDivisionMenu{STRING_FOR_PLAY_FX_DIVISION, STRING_FOR_PLAY_FX_MENU_TITLE};
+
+HorizontalMenu playFxMenu{STRING_FOR_PLAY_FX,
+                          STRING_FOR_PLAY_FX_MENU_TITLE,
+                          {&playFxClockShiftMenu, &playFxBeatStretchMenu, &playFxDivisionMenu, &playFxResetMenu},
+                          HorizontalMenu::Layout::FIXED};
+
+HorizontalMenuGroup midiFxMenuGroup{{&midiFxVelocityMenu, &midiFxGateMenu, &midiFxRetrigMenu, &midiFxDelayMenu,
+                                     &midiFxStrumMenu, &midiFxSpreadMenu, &midiFxSpiceMenu, &midiFxStochasticMenu,
+                                     &midiFxLoopRemixMenu, &midiFxGrooveMenu, &playFxMenu}};
+
+// Spice sits directly above Stochastic because they share one Dice: Stochastic is the pitch half of
+// Spice, and turning one roll should be done with both in view. Stochastic stays directly above
+// Harmonize (signal path, see below), so Spice moved down rather than Stochastic up. Play FX stays
+// last because it is the odd one out - clip-wide rather than per-drum.
+//
+// No Enabled switch at the top any more. Every effect is neutral at its default and has a Reset, and
+// Reset all is at the bottom, so a per-sound on/off only duplicated "at default" - and hid edits you
+// could no longer hear. Whether MIDI FX is on the machine at all is Community Features > Rudement
+// upgrades > MIDI FX (menu_item/midi_fx/switched_on.h).
+Submenu midiFxMenu{
+    STRING_FOR_MIDI_FX,
+    {
+        &midiFxVelocityMenu,
+        &midiFxGateMenu,
+        &midiFxRetrigMenu,
+        &midiFxDelayMenu,
+        &midiFxStrumMenu,
+        &midiFxSpreadMenu,
+        // Next to Stochastic: the two share one Dice.
+        &midiFxSpiceMenu,
+        // Immediately before Harmonize because that is the order the two of them run in: the
+        // wander picks a degree and Harmonize puts it on a chord tone. Someone reading down this
+        // list is reading the signal path. See modulation/midi_fx/pitch_source.h.
+        &midiFxStochasticMenu,
+        &midiFxHarmonizeMenu,
+        &midiFxGenerateMenu,
+        &midiFxLoopRemixMenu,
+        &midiFxGrooveMenu,
+        &playFxMenu,
+        &midiFxResetAllMenu,
+    },
+};
+
 // Arp: MPE
 PLACE_SDRAM_BSS arpeggiator::ArpMpeVelocity arpMpeVelocityMenu{STRING_FOR_VELOCITY, STRING_FOR_VELOCITY};
 PLACE_SDRAM_BSS submenu::ArpMpeSubmenu arpMpeMenu{STRING_FOR_MPE, {&arpMpeVelocityMenu}};
@@ -492,12 +854,21 @@ PLACE_SDRAM_BSS submenu::ModFxHorizontalMenu modFXMenu{
 };
 
 // EQ -------------------------------------------------------------------------------------
-PLACE_SDRAM_BSS eq::EqUnpatchedParam bassMenu{STRING_FOR_BASS, params::UNPATCHED_BASS};
-PLACE_SDRAM_BSS eq::EqUnpatchedParam trebleMenu{STRING_FOR_TREBLE, params::UNPATCHED_TREBLE};
-PLACE_SDRAM_BSS eq::EqUnpatchedParam bassFreqMenu{STRING_FOR_BASS_FREQUENCY, STRING_FOR_BASS_FREQUENCY_SHORT,
-                                                  params::UNPATCHED_BASS_FREQ};
-PLACE_SDRAM_BSS eq::EqUnpatchedParam trebleFreqMenu{STRING_FOR_TREBLE_FREQUENCY, STRING_FOR_TREBLE_FREQUENCY_SHORT,
-                                                    params::UNPATCHED_TREBLE_FREQ};
+// The amount controls read out in dB and the frequency controls in Hz, rather than both showing a
+// bare 0-50. Which band each item belongs to is spelled out here so the mapping is visible where
+// the menu is built. See eq_gain_param.h and eq_freq_param.h.
+PLACE_SDRAM_BSS eq::EqGainParam bassMenu{STRING_FOR_BASS, params::UNPATCHED_BASS, eq::Band::BASS};
+PLACE_SDRAM_BSS eq::EqGainParam trebleMenu{STRING_FOR_TREBLE, params::UNPATCHED_TREBLE, eq::Band::TREBLE};
+PLACE_SDRAM_BSS eq::EqFreqParam bassFreqMenu{STRING_FOR_BASS_FREQUENCY, STRING_FOR_BASS_FREQUENCY_SHORT,
+                                             params::UNPATCHED_BASS_FREQ, eq::Band::BASS};
+PLACE_SDRAM_BSS eq::EqFreqParam trebleFreqMenu{STRING_FOR_TREBLE_FREQUENCY, STRING_FOR_TREBLE_FREQUENCY_SHORT,
+                                               params::UNPATCHED_TREBLE_FREQ, eq::Band::TREBLE};
+PLACE_SDRAM_BSS eq::EqGainParam lowMidMenu{STRING_FOR_LOW_MID, params::UNPATCHED_LOW_MID, eq::Band::LOW_MID};
+PLACE_SDRAM_BSS eq::EqFreqParam lowMidFreqMenu{STRING_FOR_LOW_MID_FREQUENCY, STRING_FOR_LOW_MID_FREQUENCY_SHORT,
+                                               params::UNPATCHED_LOW_MID_FREQ, eq::Band::LOW_MID};
+PLACE_SDRAM_BSS eq::EqGainParam highMidMenu{STRING_FOR_HIGH_MID, params::UNPATCHED_HIGH_MID, eq::Band::HIGH_MID};
+PLACE_SDRAM_BSS eq::EqFreqParam highMidFreqMenu{STRING_FOR_HIGH_MID_FREQUENCY, STRING_FOR_HIGH_MID_FREQUENCY_SHORT,
+                                                params::UNPATCHED_HIGH_MID_FREQ, eq::Band::HIGH_MID};
 
 PLACE_SDRAM_BSS eq::EqMenu eqMenu{
     STRING_FOR_EQ,
@@ -506,6 +877,123 @@ PLACE_SDRAM_BSS eq::EqMenu eqMenu{
         &trebleMenu,
         &bassFreqMenu,
         &trebleFreqMenu,
+        &lowMidMenu,
+        &lowMidFreqMenu,
+        &highMidMenu,
+        &highMidFreqMenu,
+    },
+};
+
+// Gristleizer -----------------------------------------------------------------------------
+// Ten shared unpatched params, so ONE set of menu items serves synths, kits, audio clips and
+// song FX alike — unlike Sear, which is per-voice and therefore cannot appear outside a synth.
+// The master switch first, then the rest ordered as the signal flows: LFO, then what the LFO
+// drives, then the output stage.
+//
+// A HorizontalMenu paginates by slot count, four per page, so ten single-slot items give three
+// pages (4/4/2) with no fixed-size array to overrun. (The 1.2.1 branch uses a plain vector-backed
+// Submenu here; either works, this matches how the rest of this branch renders param groups.)
+//
+// ON IS FIRST DELIBERATELY. It is the only control that can make the other nine inaudible, so it
+// is the one you must be able to find without paging. Moving it costs nothing functionally but
+// puts the switch two pages inside the effect it switches.
+
+// Community-feature gating. Switching one of these off in Settings -> Community Features hides its
+// menus; the DSP is untouched, so songs that already use the feature still play the same.
+namespace rf = deluge::gui::menu_item::runtime_feature;
+using GristleParam = rf::Gated<UnpatchedParam, RuntimeFeatureSettingType::EnableGristleizer>;
+using GristleSwitch = rf::Gated<UnpatchedParamSwitch, RuntimeFeatureSettingType::EnableGristleizer>;
+using GristleMenu = rf::Gated<HorizontalMenu, RuntimeFeatureSettingType::EnableGristleizer>;
+using CloudsParam = rf::Gated<UnpatchedParam, RuntimeFeatureSettingType::EnableCloudsFX>;
+using CloudsMenu = rf::Gated<HorizontalMenu, RuntimeFeatureSettingType::EnableCloudsFX>;
+using SearPatched = rf::Gated<patched_param::Integer, RuntimeFeatureSettingType::EnableSear>;
+using SearUnpatched = rf::Gated<UnpatchedParam, RuntimeFeatureSettingType::EnableSear>;
+
+GristleSwitch gristleOnMenu{STRING_FOR_ON, STRING_FOR_GRISTLE_ON, params::UNPATCHED_GRISTLE_ON};
+GristleParam gristleRateMenu{STRING_FOR_RATE, STRING_FOR_GRISTLE_RATE, params::UNPATCHED_GRISTLE_RATE,
+                             RenderingStyle::BAR};
+GristleParam gristleDepthMenu{STRING_FOR_DEPTH, STRING_FOR_GRISTLE_DEPTH, params::UNPATCHED_GRISTLE_DEPTH,
+                              RenderingStyle::BAR};
+GristleParam gristleShapeMenu{STRING_FOR_SHAPE, STRING_FOR_GRISTLE_SHAPE, params::UNPATCHED_GRISTLE_SHAPE,
+                              RenderingStyle::BAR};
+GristleParam gristleBiasMenu{STRING_FOR_BIAS, STRING_FOR_GRISTLE_BIAS, params::UNPATCHED_GRISTLE_BIAS,
+                             RenderingStyle::BAR};
+GristleParam gristleModeMenu{STRING_FOR_MODE, STRING_FOR_GRISTLE_MODE, params::UNPATCHED_GRISTLE_MODE,
+                             RenderingStyle::BAR};
+GristleParam gristleFreqMenu{STRING_FOR_FREQUENCY, STRING_FOR_GRISTLE_FREQ, params::UNPATCHED_GRISTLE_FREQ,
+                             RenderingStyle::BAR};
+GristleParam gristleResMenu{STRING_FOR_RESONANCE, STRING_FOR_GRISTLE_RES, params::UNPATCHED_GRISTLE_RES,
+                            RenderingStyle::BAR};
+GristleParam gristleDirtMenu{STRING_FOR_DIRT, STRING_FOR_GRISTLE_DIRT, params::UNPATCHED_GRISTLE_DIRT,
+                             RenderingStyle::BAR};
+GristleParam gristleLevelMenu{STRING_FOR_LEVEL, STRING_FOR_GRISTLE_LEVEL, params::UNPATCHED_GRISTLE_LEVEL,
+                              RenderingStyle::BAR};
+
+// The Slicer. Pattern, Variation and Sync are lists rather than knobs, so they use
+// UnpatchedParamStepped — a param underneath, names on the screen. Blend is an ordinary knob:
+// it is a level, and at zero it is the effect as it was before the Slicer existed.
+//
+// THE NAME ARRAYS ARE THE ORDER OF THE DSP'S OWN TABLES. kSlicePatterns and kSliceSyncTicks in
+// dsp/gristle.hpp, entry for entry. Re-order one without the other and the screen lies about
+// what is playing.
+using GristleStepped = rf::Gated<UnpatchedParamStepped, RuntimeFeatureSettingType::EnableGristleizer>;
+
+constexpr l10n::String gristlePatternNames[] = {
+    // Single: one rhythm on both lanes.
+    STRING_FOR_GRISTLE_PAT_FOUR,
+    STRING_FOR_GRISTLE_PAT_EIGHTHS,
+    STRING_FOR_GRISTLE_PAT_OFFBEAT,
+    STRING_FOR_GRISTLE_PAT_GALLOP,
+    STRING_FOR_GRISTLE_PAT_BURST,
+    STRING_FOR_GRISTLE_PAT_TRIPLET,
+    STRING_FOR_GRISTLE_PAT_SYNCOPATED,
+    STRING_FOR_GRISTLE_PAT_TREMOLO,
+    // Two-lane: a second rhythm on the filter, or on the dirt.
+    STRING_FOR_GRISTLE_PAT_INTERLOCK,
+    STRING_FOR_GRISTLE_PAT_CROSS,
+    STRING_FOR_GRISTLE_PAT_SWEEP,
+    STRING_FOR_GRISTLE_PAT_GRIND,
+};
+static_assert(std::size(gristlePatternNames) == deluge::dsp::gristle::kNumSlicePatterns,
+              "A pattern has no name, or a name has no pattern");
+
+constexpr l10n::String gristleSyncNames[] = {
+    STRING_FOR_GRISTLE_SYNC_32, STRING_FOR_GRISTLE_SYNC_16T, STRING_FOR_GRISTLE_SYNC_16, STRING_FOR_GRISTLE_SYNC_8T,
+    STRING_FOR_GRISTLE_SYNC_8,  STRING_FOR_GRISTLE_SYNC_4,   STRING_FOR_GRISTLE_SYNC_2,  STRING_FOR_GRISTLE_SYNC_BAR,
+};
+static_assert(std::size(gristleSyncNames) == deluge::dsp::gristle::kNumSliceSyncLevels,
+              "A sync level has no name, or a name has no sync level");
+
+GristleStepped gristlePatternMenu{STRING_FOR_PATTERN, STRING_FOR_GRISTLE_PATTERN, params::UNPATCHED_GRISTLE_PATTERN,
+                                  gristlePatternNames};
+// Variation is numbered, not named: eleven rhythms derived from one pattern have no names to
+// give them, and the number is what the performer steps through.
+GristleStepped gristleVariationMenu{STRING_FOR_VARIATION, STRING_FOR_GRISTLE_VARIATION,
+                                    params::UNPATCHED_GRISTLE_VARIATION, deluge::dsp::gristle::kNumSliceVariations};
+GristleStepped gristleSyncMenu{STRING_FOR_SYNC, STRING_FOR_GRISTLE_SYNC, params::UNPATCHED_GRISTLE_SYNC,
+                               gristleSyncNames};
+GristleParam gristleBlendMenu{STRING_FOR_BLEND, STRING_FOR_GRISTLE_BLEND, params::UNPATCHED_GRISTLE_BLEND,
+                              RenderingStyle::BAR};
+
+GristleMenu gristleMenu{
+    STRING_FOR_GRISTLE,
+    {
+        &gristleOnMenu,
+        &gristleRateMenu,
+        &gristleDepthMenu,
+        &gristleShapeMenu,
+        &gristleBiasMenu,
+        &gristleModeMenu,
+        &gristleFreqMenu,
+        &gristleResMenu,
+        &gristleDirtMenu,
+        &gristleLevelMenu,
+        // The Slicer's page. Last, because the nine above are the effect as it has always been
+        // and Blend at zero leaves them exactly that.
+        &gristlePatternMenu,
+        &gristleVariationMenu,
+        &gristleSyncMenu,
+        &gristleBlendMenu,
     },
 };
 
@@ -516,6 +1004,8 @@ PLACE_SDRAM_BSS patched_param::Integer delayRateMenu{STRING_FOR_RATE, STRING_FOR
 PLACE_SDRAM_BSS delay::PingPong delayPingPongMenu{STRING_FOR_PINGPONG, STRING_FOR_DELAY_PINGPONG};
 PLACE_SDRAM_BSS delay::Analog delayAnalogMenu{STRING_FOR_TYPE, STRING_FOR_DELAY_TYPE};
 PLACE_SDRAM_BSS delay::Sync delaySyncMenu{STRING_FOR_SYNC, STRING_FOR_DELAY_SYNC};
+PLACE_SDRAM_BSS delay::HPF delayHPFMenu{STRING_FOR_HPF};
+PLACE_SDRAM_BSS delay::LPF delayLPFMenu{STRING_FOR_LPF};
 
 PLACE_SDRAM_BSS HorizontalMenu delayMenu{
     STRING_FOR_DELAY,
@@ -525,6 +1015,8 @@ PLACE_SDRAM_BSS HorizontalMenu delayMenu{
         &delaySyncMenu,
         &delayRateMenu,
         &delayAnalogMenu,
+        &delayHPFMenu,
+        &delayLPFMenu,
     },
 };
 
@@ -636,6 +1128,9 @@ PLACE_SDRAM_BSS UnpatchedParam srrMenu{STRING_FOR_DECIMATION, params::UNPATCHED_
 PLACE_SDRAM_BSS UnpatchedParam bitcrushMenu{STRING_FOR_BITCRUSH, params::UNPATCHED_BITCRUSHING, RenderingStyle::BAR};
 PLACE_SDRAM_BSS patched_param::Integer foldMenu{STRING_FOR_WAVEFOLD, STRING_FOR_WAVEFOLD, params::LOCAL_FOLD,
                                                 RenderingStyle::BAR};
+// Sear: patched drive (per voice) plus its unpatched tilt tone control.
+PLACE_SDRAM_BSS SearPatched searMenu{STRING_FOR_SEAR, STRING_FOR_SEAR, params::LOCAL_SEAR, RenderingStyle::BAR};
+PLACE_SDRAM_BSS SearUnpatched searToneMenu{STRING_FOR_SEAR_TONE, params::UNPATCHED_SEAR_TONE, RenderingStyle::BAR};
 
 PLACE_SDRAM_BSS HorizontalMenu soundDistortionMenu{
     STRING_FOR_DISTORTION,
@@ -644,6 +1139,8 @@ PLACE_SDRAM_BSS HorizontalMenu soundDistortionMenu{
         &bitcrushMenu,
         &srrMenu,
         &foldMenu,
+        &searMenu,
+        &searToneMenu,
     },
 };
 
@@ -651,6 +1148,50 @@ PLACE_SDRAM_BSS HorizontalMenu soundDistortionMenu{
 PLACE_SDRAM_BSS midi::sound::OutputMidiChannel outputMidiChannelMenu{STRING_FOR_CHANNEL, STRING_FOR_CHANNEL};
 PLACE_SDRAM_BSS midi::sound::OutputMidiNoteForDrum outputMidiNoteForDrumMenu{STRING_FOR_NOTE, STRING_FOR_NOTE};
 PLACE_SDRAM_BSS Submenu outputMidiSubmenu{STRING_FOR_MIDI, {&outputMidiChannelMenu, &outputMidiNoteForDrumMenu}};
+
+// CV aux sends -------------------------------------------------------------------------
+
+// The per-Clip send amounts. Real params, so they are automatable, LEARN-able and
+// assignable to a gold knob, and they live wherever the Clip's other params do. Visible on
+// every model -- see cvSendMenusVisible(); whether the sockets can carry the audio is a
+// separate question from whether the params can be edited.
+//
+// The menu changes shape with SPLT, because the rig does. One stereo destination gets one
+// level and takes its placement from the clip's own pan; two mono destinations are two
+// separate aux buses and get a level each. Either way it is two knob-able controls, plus
+// MAIN, which is a toggle and never competes for a knob.
+PLACE_SDRAM_BSS cv_output::MainToggle cvMainMenu{STRING_FOR_CLIP_OUTPUT_MAIN, STRING_FOR_CLIP_OUTPUT_MAIN};
+PLACE_SDRAM_BSS cv_output::SendWhenSplit cvSendMenu{STRING_FOR_CV_SEND, STRING_FOR_CV_SEND, params::UNPATCHED_CV1_SEND};
+PLACE_SDRAM_BSS cv_output::SendWhenNotSplit cv1SendMenu{STRING_FOR_CV1_SEND, STRING_FOR_CV1_SEND,
+                                                        params::UNPATCHED_CV1_SEND};
+PLACE_SDRAM_BSS cv_output::SendWhenNotSplit cv2SendMenu{STRING_FOR_CV2_SEND, STRING_FOR_CV2_SEND,
+                                                        params::UNPATCHED_CV2_SEND};
+
+// Two instances over the same items, differing only in where they may show. auxSendsMenu
+// goes on the Kit-global and Audio Clip roots, where the params resolve to the track-wide
+// store the capture can actually isolate. auxSendsSoundMenu goes on the Sound root, which
+// doubles as the Drum editor, and hides itself there.
+PLACE_SDRAM_BSS cv_output::LevelSubmenu auxSendsMenu{
+    STRING_FOR_AUX,
+    STRING_FOR_AUX,
+    {
+        &cvSendMenu,
+        &cv1SendMenu,
+        &cv2SendMenu,
+        &cvMainMenu,
+    },
+};
+
+PLACE_SDRAM_BSS cv_output::SendsSubmenu auxSendsSoundMenu{
+    STRING_FOR_AUX,
+    STRING_FOR_AUX,
+    {
+        &cvSendMenu,
+        &cv1SendMenu,
+        &cv2SendMenu,
+        &cvMainMenu,
+    },
+};
 
 // MIDIInstrument menu ----------------------------------------------------------------------
 PLACE_SDRAM_BSS midi::device_definition::Linked midiDeviceLinkedMenu{
@@ -691,6 +1232,12 @@ PLACE_SDRAM_BSS UnpatchedParam globalLevelMenu{STRING_FOR_VOLUME_LEVEL, params::
 
 // Pitch
 PLACE_SDRAM_BSS UnpatchedParam globalPitchMenu{STRING_FOR_PITCH, params::UNPATCHED_PITCH_ADJUST};
+
+// Snapshot morph position. A plain unpatched param, which is what makes it learnable to a
+// gold knob (LEARN + turn a knob with this menu open), automatable, and saveable with the
+// song. It sits at the top level of the SONG menu rather than under FX: it is not an effect,
+// it is a performance control over everything.
+PLACE_SDRAM_BSS UnpatchedParam globalMorphMenu{STRING_FOR_SNAPSHOT_MORPH, params::UNPATCHED_MORPH, RenderingStyle::BAR};
 
 // Pan
 PLACE_SDRAM_BSS unpatched_param::Pan globalPanMenu{STRING_FOR_PAN, params::UNPATCHED_PAN};
@@ -759,6 +1306,10 @@ PLACE_SDRAM_BSS eq::EqMenu globalEQMenu{
         &trebleMenu,
         &bassFreqMenu,
         &trebleFreqMenu,
+        &lowMidMenu,
+        &lowMidFreqMenu,
+        &highMidMenu,
+        &highMidFreqMenu,
     },
 };
 
@@ -776,6 +1327,8 @@ PLACE_SDRAM_BSS HorizontalMenu globalDelayMenu{
         &delaySyncMenu,
         &globalDelayRateMenu,
         &delayAnalogMenu,
+        &delayHPFMenu,
+        &delayLPFMenu,
     },
 };
 
@@ -843,6 +1396,88 @@ PLACE_SDRAM_BSS HorizontalMenu globalDistortionMenu{
     },
 };
 
+// Clouds ----------------------------------------------------------------------
+// Nine parameters plus a mode and a freeze, which is why this is its own
+// submenu rather than another entry in the mod-FX type list: mod FX has four
+// param slots and Clouds needs more than twice that.
+PLACE_SDRAM_BSS clouds_fx::Mode cloudsModeMenu{STRING_FOR_CLOUDS_MODE, STRING_FOR_CLOUDS_MODE};
+PLACE_SDRAM_BSS clouds_fx::Freeze cloudsFreezeMenu{STRING_FOR_CLOUDS_FREEZE, STRING_FOR_CLOUDS_FREEZE};
+
+PLACE_SDRAM_BSS CloudsParam cloudsPositionMenu{STRING_FOR_CLOUDS_POSITION_SHORT, STRING_FOR_CLOUDS_POSITION,
+                                               params::UNPATCHED_CLOUDS_POSITION};
+PLACE_SDRAM_BSS CloudsParam cloudsSizeMenu{STRING_FOR_CLOUDS_SIZE_SHORT, STRING_FOR_CLOUDS_SIZE,
+                                           params::UNPATCHED_CLOUDS_SIZE};
+PLACE_SDRAM_BSS CloudsParam cloudsPitchMenu{STRING_FOR_CLOUDS_PITCH_SHORT, STRING_FOR_CLOUDS_PITCH,
+                                            params::UNPATCHED_CLOUDS_PITCH};
+PLACE_SDRAM_BSS CloudsParam cloudsDensityMenu{STRING_FOR_CLOUDS_DENSITY_SHORT, STRING_FOR_CLOUDS_DENSITY,
+                                              params::UNPATCHED_CLOUDS_DENSITY};
+PLACE_SDRAM_BSS CloudsParam cloudsTextureMenu{STRING_FOR_CLOUDS_TEXTURE_SHORT, STRING_FOR_CLOUDS_TEXTURE,
+                                              params::UNPATCHED_CLOUDS_TEXTURE};
+PLACE_SDRAM_BSS CloudsParam cloudsBlendMenu{STRING_FOR_CLOUDS_BLEND_SHORT, STRING_FOR_CLOUDS_BLEND,
+                                            params::UNPATCHED_CLOUDS_BLEND};
+PLACE_SDRAM_BSS CloudsParam cloudsSpreadMenu{STRING_FOR_CLOUDS_SPREAD_SHORT, STRING_FOR_CLOUDS_SPREAD,
+                                             params::UNPATCHED_CLOUDS_SPREAD};
+PLACE_SDRAM_BSS CloudsParam cloudsFeedbackMenu{STRING_FOR_CLOUDS_FEEDBACK_SHORT, STRING_FOR_CLOUDS_FEEDBACK,
+                                               params::UNPATCHED_CLOUDS_FEEDBACK};
+PLACE_SDRAM_BSS CloudsParam cloudsReverbMenu{STRING_FOR_CLOUDS_REVERB_SHORT, STRING_FOR_CLOUDS_REVERB,
+                                             params::UNPATCHED_CLOUDS_REVERB};
+
+PLACE_SDRAM_BSS CloudsMenu cloudsMenu{
+    STRING_FOR_CLOUDS,
+    {
+        &cloudsModeMenu,
+        &cloudsBlendMenu,
+        &cloudsPositionMenu,
+        &cloudsSizeMenu,
+        &cloudsPitchMenu,
+        &cloudsDensityMenu,
+        &cloudsTextureMenu,
+        &cloudsSpreadMenu,
+        &cloudsFeedbackMenu,
+        &cloudsReverbMenu,
+        &cloudsFreezeMenu,
+    },
+};
+
+// A synth's or kit row's Wisps. Same layout, but the params live in the Sound's own unpatched set,
+// at different IDs (UNPATCHED_SOUND_CLOUDS_*), so the param items are separate instances. Mode and
+// Freeze act on the current ModControllable and need no copy.
+PLACE_SDRAM_BSS CloudsParam cloudsSoundPositionMenu{STRING_FOR_CLOUDS_POSITION_SHORT, STRING_FOR_CLOUDS_POSITION,
+                                                    params::UNPATCHED_SOUND_CLOUDS_POSITION};
+PLACE_SDRAM_BSS CloudsParam cloudsSoundSizeMenu{STRING_FOR_CLOUDS_SIZE_SHORT, STRING_FOR_CLOUDS_SIZE,
+                                                params::UNPATCHED_SOUND_CLOUDS_SIZE};
+PLACE_SDRAM_BSS CloudsParam cloudsSoundPitchMenu{STRING_FOR_CLOUDS_PITCH_SHORT, STRING_FOR_CLOUDS_PITCH,
+                                                 params::UNPATCHED_SOUND_CLOUDS_PITCH};
+PLACE_SDRAM_BSS CloudsParam cloudsSoundDensityMenu{STRING_FOR_CLOUDS_DENSITY_SHORT, STRING_FOR_CLOUDS_DENSITY,
+                                                   params::UNPATCHED_SOUND_CLOUDS_DENSITY};
+PLACE_SDRAM_BSS CloudsParam cloudsSoundTextureMenu{STRING_FOR_CLOUDS_TEXTURE_SHORT, STRING_FOR_CLOUDS_TEXTURE,
+                                                   params::UNPATCHED_SOUND_CLOUDS_TEXTURE};
+PLACE_SDRAM_BSS CloudsParam cloudsSoundBlendMenu{STRING_FOR_CLOUDS_BLEND_SHORT, STRING_FOR_CLOUDS_BLEND,
+                                                 params::UNPATCHED_SOUND_CLOUDS_BLEND};
+PLACE_SDRAM_BSS CloudsParam cloudsSoundSpreadMenu{STRING_FOR_CLOUDS_SPREAD_SHORT, STRING_FOR_CLOUDS_SPREAD,
+                                                  params::UNPATCHED_SOUND_CLOUDS_SPREAD};
+PLACE_SDRAM_BSS CloudsParam cloudsSoundFeedbackMenu{STRING_FOR_CLOUDS_FEEDBACK_SHORT, STRING_FOR_CLOUDS_FEEDBACK,
+                                                    params::UNPATCHED_SOUND_CLOUDS_FEEDBACK};
+PLACE_SDRAM_BSS CloudsParam cloudsSoundReverbMenu{STRING_FOR_CLOUDS_REVERB_SHORT, STRING_FOR_CLOUDS_REVERB,
+                                                  params::UNPATCHED_SOUND_CLOUDS_REVERB};
+
+PLACE_SDRAM_BSS CloudsMenu cloudsSoundMenu{
+    STRING_FOR_CLOUDS,
+    {
+        &cloudsModeMenu,
+        &cloudsSoundBlendMenu,
+        &cloudsSoundPositionMenu,
+        &cloudsSoundSizeMenu,
+        &cloudsSoundPitchMenu,
+        &cloudsSoundDensityMenu,
+        &cloudsSoundTextureMenu,
+        &cloudsSoundSpreadMenu,
+        &cloudsSoundFeedbackMenu,
+        &cloudsSoundReverbMenu,
+        &cloudsFreezeMenu,
+    },
+};
+
 PLACE_SDRAM_BSS Submenu globalFXMenu{
     STRING_FOR_FX,
     {
@@ -852,6 +1487,9 @@ PLACE_SDRAM_BSS Submenu globalFXMenu{
         &stutterMenu,
         &globalModFXMenu,
         &globalDistortionMenu,
+        &gristleMenu,
+        // No Wisps here: this menu is the song's and a whole kit's, and Wisps is per synth, kit row
+        // or audio clip -- one engine on the master bus starved everything else.
     },
 };
 
@@ -924,6 +1562,8 @@ PLACE_SDRAM_BSS Submenu audioClipFXMenu{
         &stutterMenu,
         &globalModFXMenu,
         &audioClipDistortionMenu,
+        &gristleMenu,
+        &cloudsMenu,
     },
 };
 
@@ -1174,13 +1814,23 @@ PLACE_SDRAM_BSS midi::Command fillMidiCommand{STRING_FOR_FILL, GlobalMIDICommand
 PLACE_SDRAM_BSS midi::Command transposeMidiCommand{STRING_FOR_TRANSPOSE, GlobalMIDICommand::TRANSPOSE};
 PLACE_SDRAM_BSS midi::Command nextSongMidiCommand{STRING_FOR_SONG_LOAD_NEXT, GlobalMIDICommand::NEXT_SONG};
 PLACE_SDRAM_BSS midi::Command shiftMidiCommand{STRING_FOR_SHIFT, GlobalMIDICommand::SHIFT};
+// Rolls Spice & Dice across the whole song. Momentary - a roll is an instant, so there is nothing
+// to hold and nothing on the note-off.
+PLACE_SDRAM_BSS midi::Command diceMidiCommand{STRING_FOR_MIDI_FX_SPICE_DICE, GlobalMIDICommand::DICE};
+// The held half of Temp Hold, for a footswitch. Engages the hold only - not the SHIFT
+// modifier - so everything else on the panel keeps its unshifted job while the switch is down.
+PLACE_SDRAM_BSS midi::Command tempHoldMidiCommand{STRING_FOR_COMMUNITY_FEATURE_TEMP_HOLD, GlobalMIDICommand::TEMP_HOLD};
+PLACE_SDRAM_BSS midi::Command morphCaptureMidiCommand{STRING_FOR_MORPH_CAPTURE, GlobalMIDICommand::MORPH_CAPTURE};
+// Hold-to-loop: hold to record a loop, let go and it plays. The stock LOOP command above is untouched.
+PLACE_SDRAM_BSS midi::Command loopHoldMidiCommand{STRING_FOR_LOOP_HOLD, GlobalMIDICommand::LOOP_HOLD};
 
 PLACE_SDRAM_BSS Submenu midiCommandsMenu{
     STRING_FOR_COMMANDS,
     STRING_FOR_MIDI_COMMANDS,
     {&playMidiCommand, &playbackRestartMidiCommand, &recordMidiCommand, &tapMidiCommand, &undoMidiCommand,
-     &redoMidiCommand, &loopMidiCommand, &loopContinuousLayeringMidiCommand, &fillMidiCommand, &transposeMidiCommand,
-     &nextSongMidiCommand, &shiftMidiCommand},
+     &redoMidiCommand, &loopMidiCommand, /* &loopHoldMidiCommand withheld 2026-10-25 */ &loopContinuousLayeringMidiCommand, &fillMidiCommand,
+     &transposeMidiCommand, &nextSongMidiCommand, &shiftMidiCommand, &diceMidiCommand, &tempHoldMidiCommand,
+     &morphCaptureMidiCommand},
 };
 
 // MIDI device submenu - for after we've selected which device we want it for
@@ -1469,6 +2119,18 @@ PLACE_SDRAM_DATA std::array<MenuItem*, 3> dxMenuItems = {
 };
 PLACE_SDRAM_BSS menu_item::Submenu dxMenu{STRING_FOR_DX_1, dxMenuItems};
 
+// Plaits: model list, the three continuous controls, the low-pass gate and the
+// aux-output toggle -- everything in one place. Harmonics/Timbre/Morph are the
+// SAME params the oscillator menus edit -- a second door, not a copy.
+//
+// Order follows the module's own front panel: what the engine sounds like
+// first, then what the gate does to it, then which output you take.
+std::array<MenuItem*, 8> plaitsMenuItems = {
+    &plaitsEngineSelect, &plaitsHarmonicsMenu, &plaitsTimbreMenu,    &plaitsMorphMenu,
+    &plaitsLpgToggle,    &plaitsDecayMenu,     &plaitsLpgColourMenu, &plaitsAuxToggle,
+};
+menu_item::Submenu plaitsMenu{STRING_FOR_PLAITS, plaitsMenuItems};
+
 // Not FM
 PLACE_SDRAM_BSS MasterTranspose masterTransposeMenu{STRING_FOR_MASTER_TRANSPOSE, STRING_FOR_MASTER_TRAN_MENU_TITLE};
 
@@ -1501,7 +2163,9 @@ PLACE_SDRAM_BSS Submenu soundFXMenu{
         &stutterMenu,
         &modFXMenu,
         &soundDistortionMenu,
+        &gristleMenu,
         &noiseMenu,
+        &cloudsSoundMenu,
     },
 };
 
@@ -1515,6 +2179,53 @@ PLACE_SDRAM_BSS Submenu soundEditorRootDrumActionsMenu{
     {&drumNameEditMenu, &sample0RecorderMenu, &sample1RecorderMenu},
 };
 
+// USB audio routing, per track: eight mono channels, four stereo pairs, and whether the track stays in the main mix.
+PLACE_SDRAM_BSS usb_audio::ChannelToggle usbChannel1Menu{STRING_FOR_USB_CHANNEL_1, STRING_FOR_USB_CHANNEL_1,
+                                                         UsbRoute::CH1};
+PLACE_SDRAM_BSS usb_audio::ChannelToggle usbChannel2Menu{STRING_FOR_USB_CHANNEL_2, STRING_FOR_USB_CHANNEL_2,
+                                                         UsbRoute::CH2};
+PLACE_SDRAM_BSS usb_audio::ChannelToggle usbChannel3Menu{STRING_FOR_USB_CHANNEL_3, STRING_FOR_USB_CHANNEL_3,
+                                                         UsbRoute::CH3};
+PLACE_SDRAM_BSS usb_audio::ChannelToggle usbChannel4Menu{STRING_FOR_USB_CHANNEL_4, STRING_FOR_USB_CHANNEL_4,
+                                                         UsbRoute::CH4};
+PLACE_SDRAM_BSS usb_audio::ChannelToggle usbChannel5Menu{STRING_FOR_USB_CHANNEL_5, STRING_FOR_USB_CHANNEL_5,
+                                                         UsbRoute::CH5};
+PLACE_SDRAM_BSS usb_audio::ChannelToggle usbChannel6Menu{STRING_FOR_USB_CHANNEL_6, STRING_FOR_USB_CHANNEL_6,
+                                                         UsbRoute::CH6};
+PLACE_SDRAM_BSS usb_audio::ChannelToggle usbChannel7Menu{STRING_FOR_USB_CHANNEL_7, STRING_FOR_USB_CHANNEL_7,
+                                                         UsbRoute::CH7};
+PLACE_SDRAM_BSS usb_audio::ChannelToggle usbChannel8Menu{STRING_FOR_USB_CHANNEL_8, STRING_FOR_USB_CHANNEL_8,
+                                                         UsbRoute::CH8};
+PLACE_SDRAM_BSS usb_audio::ChannelToggle usbPair12Menu{STRING_FOR_USB_PAIR_12, STRING_FOR_USB_PAIR_12,
+                                                       UsbRoute::PAIR12};
+PLACE_SDRAM_BSS usb_audio::ChannelToggle usbPair34Menu{STRING_FOR_USB_PAIR_34, STRING_FOR_USB_PAIR_34,
+                                                       UsbRoute::PAIR34};
+PLACE_SDRAM_BSS usb_audio::ChannelToggle usbPair56Menu{STRING_FOR_USB_PAIR_56, STRING_FOR_USB_PAIR_56,
+                                                       UsbRoute::PAIR56};
+PLACE_SDRAM_BSS usb_audio::ChannelToggle usbPair78Menu{STRING_FOR_USB_PAIR_78, STRING_FOR_USB_PAIR_78,
+                                                       UsbRoute::PAIR78};
+PLACE_SDRAM_BSS usb_audio::MainToggle usbMainMenu{STRING_FOR_USB_MAIN, STRING_FOR_USB_MAIN};
+
+PLACE_SDRAM_BSS usb_audio::RoutingSubmenu usbRoutingMenu{
+    STRING_FOR_USB_ROUTING,
+    STRING_FOR_USB_ROUTING,
+    {
+        &usbChannel1Menu,
+        &usbChannel2Menu,
+        &usbChannel3Menu,
+        &usbChannel4Menu,
+        &usbChannel5Menu,
+        &usbChannel6Menu,
+        &usbChannel7Menu,
+        &usbChannel8Menu,
+        &usbPair12Menu,
+        &usbPair34Menu,
+        &usbPair56Menu,
+        &usbPair78Menu,
+        &usbMainMenu,
+    },
+};
+
 PLACE_SDRAM_BSS Submenu soundEditorRootMenu{
     STRING_FOR_SOUND,
     {
@@ -1522,6 +2233,7 @@ PLACE_SDRAM_BSS Submenu soundEditorRootMenu{
         &soundMasterMenu,
         &arpMenu,
         &randomizerMenu,
+        &midiFxMenu,
         &audioCompMenu,
         &soundFiltersMenu,
         &soundFXMenu,
@@ -1545,6 +2257,8 @@ PLACE_SDRAM_BSS Submenu soundEditorRootMenu{
         &patchCablesMenu,
         &sequenceDirectionMenu,
         &outputMidiSubmenu,
+        &auxSendsSoundMenu,
+        &usbRoutingMenu,
     },
 };
 
@@ -1555,6 +2269,7 @@ PLACE_SDRAM_BSS Submenu soundEditorRootMenuDrum{
         &soundMasterMenu,
         &arpMenu,
         &randomizerMenu,
+        &midiFxMenu,
         &audioCompMenu,
         &soundFiltersMenu,
         &soundFXMenu,
@@ -1701,6 +2416,7 @@ PLACE_SDRAM_BSS menu_item::Submenu soundEditorRootMenuMIDIOrCV{
         &midiProgramMenu,
         &arpMenuMIDIOrCV,
         &randomizerMenu,
+        &midiFxMenu,
         &bendMenu,
         &cv2SourceMenu,
         &mpeyToModWheelMenu,
@@ -1716,6 +2432,7 @@ PLACE_SDRAM_BSS menu_item::Submenu soundEditorRootMenuMidiDrum{
         &soundEditorRootDrumActionsMenu,
         &arpMenuMIDIOrCV,
         &randomizerMenu,
+        &midiFxMenu,
     },
 };
 PLACE_SDRAM_BSS menu_item::Submenu soundEditorRootMenuGateDrum{
@@ -1724,6 +2441,7 @@ PLACE_SDRAM_BSS menu_item::Submenu soundEditorRootMenuGateDrum{
         &soundEditorRootDrumActionsMenu,
         &arpMenuMIDIOrCV,
         &randomizerMenu,
+        &midiFxMenu,
     },
 };
 
@@ -1742,6 +2460,8 @@ PLACE_SDRAM_BSS menu_item::Submenu soundEditorRootMenuAudioClip{
         &audioClipSampleMenu,
         &audioClipAttackMenu,
         &priorityMenu,
+        &auxSendsMenu,
+        &usbRoutingMenu,
     },
 };
 
@@ -1830,6 +2550,7 @@ PLACE_SDRAM_BSS menu_item::Submenu soundEditorRootMenuSongView{
     STRING_FOR_SONG,
     {
         &songMasterMenu,
+        &globalMorphMenu,
         &globalFiltersMenu,
         &globalFXMenu,
         &swingIntervalMenu,
@@ -1841,10 +2562,22 @@ PLACE_SDRAM_BSS menu_item::Submenu soundEditorRootMenuSongView{
     },
 };
 
+// Splits a kit clip into one single-sound kit (and clip) per row that has notes. Destructive and not undoable,
+// so the action sits one level down - stepping into the submenu is the confirmation.
+PLACE_SDRAM_BSS menu_item::kit::SplitPerform splitKitPerformMenu{STRING_FOR_SPLIT_KIT};
+
+PLACE_SDRAM_BSS menu_item::kit::Split splitKitMenu{
+    STRING_FOR_SPLIT_KIT,
+    {
+        &splitKitPerformMenu,
+    },
+};
+
 PLACE_SDRAM_BSS menu_item::Submenu kitGlobalFXActionsMenu{
     STRING_FOR_ACTIONS,
     {
         &editNameMenu,
+        &splitKitMenu,
         &kitGlobalFXStemExportMenu,
     },
 };
@@ -1885,10 +2618,171 @@ PLACE_SDRAM_BSS menu_item::Submenu soundEditorRootMenuKitGlobalFX{
         &kitGlobalFXActionsMenu,
         &kitClipMasterMenu,
         &kitArpMenu,
+        // Next to the kit arp, which is exactly where its per-drum sibling sits on the drum roots.
+        // Missing here is why MIDI FX could not be reached with AFFECT ENTIRE at all: this is the
+        // root the sound editor opens in that mode, and no amount of making the items kit-aware
+        // helps if the menu they live in was never in the list.
+        &midiFxMenu,
         &audioCompMenu,
         &globalFiltersMenu,
         &globalFXMenu,
         &globalSidechainMenu,
+        // Kit-wide, the only level the capture can isolate. The per-Drum copies of the same
+        // shared params exist but are hidden -- see SendsSubmenu.
+        &auxSendsMenu,
+        &usbRoutingMenu,
+    },
+};
+
+// CV audio outputs ------------------------------------------------------------
+// Routing is no longer a menu of its own: the sends in AUX decide where a Clip's audio
+// goes, and MAIN sits beside them. targetClip survives only because the header still
+// exposes it.
+namespace deluge::gui::menu_item::cv_output {
+Clip* targetClip = nullptr;
+}
+
+// SETTINGS > AUX. The socket levels and the split are global, and deliberately not inside
+// SETTINGS > CV, which is about pitch voltages and would be confusing to mix with this.
+PLACE_SDRAM_BSS cv_output::Level cvOutputLevel1Menu{STRING_FOR_OUTPUT_LEVEL_CV1, STRING_FOR_OUTPUT_LEVEL_CV1, 0};
+PLACE_SDRAM_BSS cv_output::Level cvOutputLevel2Menu{STRING_FOR_OUTPUT_LEVEL_CV2, STRING_FOR_OUTPUT_LEVEL_CV2, 1};
+PLACE_SDRAM_BSS cv_output::SplitToggle cvStereoSplitMenu{STRING_FOR_CLIP_OUTPUT_STEREO_SPLIT,
+                                                         STRING_FOR_CLIP_OUTPUT_STEREO_SPLIT};
+
+// SETTINGS > AUX > STATS. Diagnostics for the shared-bus handover, read-only. Kept out of the
+// Community Features gate on purpose -- see cv_output::Stat.
+PLACE_SDRAM_BSS cv_output::Stat cvStatStartsMenu{STRING_FOR_AUX_STAT_STARTS, STRING_FOR_AUX_STAT_STARTS,
+                                                 deluge::processing::engines::CvStat::Starts};
+PLACE_SDRAM_BSS cv_output::Stat cvStatStopsMenu{STRING_FOR_AUX_STAT_STOPS, STRING_FOR_AUX_STAT_STOPS,
+                                                deluge::processing::engines::CvStat::Stops};
+PLACE_SDRAM_BSS cv_output::Stat cvStatYieldsMenu{STRING_FOR_AUX_STAT_YIELDS, STRING_FOR_AUX_STAT_YIELDS,
+                                                 deluge::processing::engines::CvStat::Yields};
+PLACE_SDRAM_BSS cv_output::Stat cvStatTakeBacksMenu{STRING_FOR_AUX_STAT_TAKEBACKS, STRING_FOR_AUX_STAT_TAKEBACKS,
+                                                    deluge::processing::engines::CvStat::TakeBacks};
+PLACE_SDRAM_BSS cv_output::Stat cvStatPumpWrittenMenu{STRING_FOR_AUX_STAT_WRITTEN, STRING_FOR_AUX_STAT_WRITTEN,
+                                                      deluge::processing::engines::CvStat::PumpWritten};
+PLACE_SDRAM_BSS cv_output::Stat cvStatPumpDroppedMenu{STRING_FOR_AUX_STAT_DROPPED, STRING_FOR_AUX_STAT_DROPPED,
+                                                      deluge::processing::engines::CvStat::PumpDropped};
+PLACE_SDRAM_BSS cv_output::Stat cvStatResyncsMenu{STRING_FOR_AUX_STAT_RESYNCS, STRING_FOR_AUX_STAT_RESYNCS,
+                                                  deluge::processing::engines::CvStat::Resyncs};
+PLACE_SDRAM_BSS cv_output::Stat cvStatDmaStallsMenu{STRING_FOR_AUX_STAT_STALLS, STRING_FOR_AUX_STAT_STALLS,
+                                                    deluge::processing::engines::CvStat::DmaStalls};
+PLACE_SDRAM_BSS cv_output::Stat cvStatYieldedNowMenu{STRING_FOR_AUX_STAT_YIELDED_NOW, STRING_FOR_AUX_STAT_YIELDED_NOW,
+                                                     deluge::processing::engines::CvStat::YieldedNow};
+PLACE_SDRAM_BSS cv_output::Stat cvStatAdvanceMenu{STRING_FOR_AUX_STAT_ADVANCE, STRING_FOR_AUX_STAT_ADVANCE,
+                                                  deluge::processing::engines::CvStat::AdvancePerWindowX10};
+PLACE_SDRAM_BSS cv_output::Stat cvStatEmitMenu{STRING_FOR_AUX_STAT_EMIT, STRING_FOR_AUX_STAT_EMIT,
+                                               deluge::processing::engines::CvStat::EmitPerWindowX10};
+PLACE_SDRAM_BSS cv_output::Stat cvStatSpiMenu{STRING_FOR_AUX_STAT_SPI, STRING_FOR_AUX_STAT_SPI,
+                                              deluge::processing::engines::CvStat::SpiStatusBits};
+PLACE_SDRAM_BSS cv_output::Stat cvStatLeadMenu{STRING_FOR_AUX_STAT_LEAD, STRING_FOR_AUX_STAT_LEAD,
+                                               deluge::processing::engines::CvStat::LeadNow};
+PLACE_SDRAM_BSS cv_output::Stat cvStatChanMenu{STRING_FOR_AUX_STAT_CHAN, STRING_FOR_AUX_STAT_CHAN,
+                                               deluge::processing::engines::CvStat::DmaChannelStatus};
+PLACE_SDRAM_BSS cv_output::Stat cvStatOledChanMenu{STRING_FOR_AUX_STAT_OLEDCHAN, STRING_FOR_AUX_STAT_OLEDCHAN,
+                                                   deluge::processing::engines::CvStat::OledChannelStatus};
+PLACE_SDRAM_BSS cv_output::Stat cvStatSpiLiveMenu{STRING_FOR_AUX_STAT_SPILIVE, STRING_FOR_AUX_STAT_SPILIVE,
+                                                  deluge::processing::engines::CvStat::SpiStatusLive};
+PLACE_SDRAM_BSS cv_output::Stat cvStatTendMenu{STRING_FOR_AUX_STAT_TEND, STRING_FOR_AUX_STAT_TEND,
+                                               deluge::processing::engines::CvStat::TendSeen};
+
+PLACE_SDRAM_BSS cv_output::StatsSubmenu auxStatsMenu{
+    STRING_FOR_AUX_STATS,
+    STRING_FOR_AUX_STATS,
+    {
+        &cvStatStartsMenu,
+        &cvStatStopsMenu,
+        &cvStatYieldsMenu,
+        &cvStatTakeBacksMenu,
+        &cvStatPumpWrittenMenu,
+        &cvStatPumpDroppedMenu,
+        &cvStatResyncsMenu,
+        &cvStatDmaStallsMenu,
+        &cvStatYieldedNowMenu,
+        &cvStatAdvanceMenu,
+        &cvStatEmitMenu,
+        &cvStatSpiMenu,
+        &cvStatLeadMenu,
+        &cvStatChanMenu,
+        &cvStatOledChanMenu,
+        &cvStatSpiLiveMenu,
+        &cvStatTendMenu,
+    },
+};
+
+PLACE_SDRAM_BSS cv_output::LevelSubmenu outputLevelMenu{
+    STRING_FOR_AUX,
+    STRING_FOR_AUX,
+    {
+        &cvOutputLevel1Menu,
+        &cvOutputLevel2Menu,
+        &cvStereoSplitMenu,
+        &auxStatsMenu,
+    },
+};
+
+// SETTINGS > CPU. What the audio engine costs on this machine, read-only, with a reset at the
+// bottom. Ordered so the two numbers you actually act on -- DSP against the cull threshold of 80,
+// and the cull counts -- bracket the rest. See cpu_stats.h for how to read the page.
+PLACE_SDRAM_BSS cpu::Stat cpuLoadMenu{STRING_FOR_CPU_LOAD, STRING_FOR_CPU_LOAD,
+                                      deluge::processing::engines::CpuStat::LoadPercentX10};
+PLACE_SDRAM_BSS cpu::Stat cpuDspMenu{STRING_FOR_CPU_DSP, STRING_FOR_CPU_DSP,
+                                     deluge::processing::engines::CpuStat::DspSamples};
+PLACE_SDRAM_BSS cpu::Stat cpuDspPeakMenu{STRING_FOR_CPU_DSP_PEAK, STRING_FOR_CPU_DSP_PEAK,
+                                         deluge::processing::engines::CpuStat::PeakDspSamples};
+PLACE_SDRAM_BSS cpu::Stat cpuWindowMenu{STRING_FOR_CPU_WINDOW, STRING_FOR_CPU_WINDOW,
+                                        deluge::processing::engines::CpuStat::WindowSamples};
+PLACE_SDRAM_BSS cpu::Stat cpuWindowPeakMenu{STRING_FOR_CPU_WINDOW_PEAK, STRING_FOR_CPU_WINDOW_PEAK,
+                                            deluge::processing::engines::CpuStat::PeakWindowSamples};
+PLACE_SDRAM_BSS cpu::Stat cpuDirenessMenu{STRING_FOR_CPU_DIRENESS, STRING_FOR_CPU_DIRENESS,
+                                          deluge::processing::engines::CpuStat::Direness};
+PLACE_SDRAM_BSS cpu::Stat cpuDirenessPeakMenu{STRING_FOR_CPU_DIRENESS_PEAK, STRING_FOR_CPU_DIRENESS_PEAK,
+                                              deluge::processing::engines::CpuStat::PeakDireness};
+PLACE_SDRAM_BSS cpu::Stat cpuVoicesMenu{STRING_FOR_CPU_VOICES, STRING_FOR_CPU_VOICES,
+                                        deluge::processing::engines::CpuStat::Voices};
+PLACE_SDRAM_BSS cpu::Stat cpuSoftCullsMenu{STRING_FOR_CPU_SOFT_CULLS, STRING_FOR_CPU_SOFT_CULLS,
+                                           deluge::processing::engines::CpuStat::SoftCulls};
+PLACE_SDRAM_BSS cpu::Stat cpuHardCullsMenu{STRING_FOR_CPU_HARD_CULLS, STRING_FOR_CPU_HARD_CULLS,
+                                           deluge::processing::engines::CpuStat::HardCulls};
+PLACE_SDRAM_BSS cpu::Stat cpuRendersMenu{STRING_FOR_CPU_RENDERS, STRING_FOR_CPU_RENDERS,
+                                         deluge::processing::engines::CpuStat::Renders};
+PLACE_SDRAM_BSS cpu::Reset cpuResetMenu{STRING_FOR_CPU_RESET, STRING_FOR_CPU_RESET};
+
+PLACE_SDRAM_BSS cpu::StatsSubmenu cpuStatsMenu{
+    STRING_FOR_CPU_STATS,
+    STRING_FOR_CPU_STATS,
+    {
+        &cpuDspMenu,
+        &cpuDspPeakMenu,
+        &cpuLoadMenu,
+        &cpuWindowMenu,
+        &cpuWindowPeakMenu,
+        &cpuDirenessMenu,
+        &cpuDirenessPeakMenu,
+        &cpuVoicesMenu,
+        &cpuSoftCullsMenu,
+        &cpuHardCullsMenu,
+        &cpuRendersMenu,
+        &cpuResetMenu,
+    },
+};
+
+// USB audio, per machine: which returning pair joins the song, its level, and the delay compensation.
+PLACE_SDRAM_BSS usb_audio::OutLevel usbAudioOutLevelMenu{STRING_FOR_USB_OUT_LEVEL, STRING_FOR_USB_OUT_LEVEL};
+PLACE_SDRAM_BSS usb_audio::ReturnPair usbAudioReturnMenu{STRING_FOR_USB_RETURN, STRING_FOR_USB_RETURN};
+PLACE_SDRAM_BSS usb_audio::ReturnLevel usbAudioReturnLevelMenu{STRING_FOR_USB_RETURN_LEVEL,
+                                                               STRING_FOR_USB_RETURN_LEVEL};
+PLACE_SDRAM_BSS usb_audio::Compensation usbAudioCompensationMenu{STRING_FOR_USB_COMPENSATION,
+                                                                 STRING_FOR_USB_COMPENSATION};
+
+PLACE_SDRAM_BSS Submenu usbAudioSettingsMenu{
+    STRING_FOR_USB_AUDIO,
+    STRING_FOR_USB_AUDIO,
+    {
+        &usbAudioOutLevelMenu,
+        &usbAudioReturnMenu,
+        &usbAudioReturnLevelMenu,
+        &usbAudioCompensationMenu,
     },
 };
 
@@ -1899,6 +2793,8 @@ PLACE_SDRAM_BSS Submenu settingsRootMenu{
         &settingsActionsSubmenu,
         &cvSelectionMenu,
         &gateSelectionMenu,
+        &outputLevelMenu,
+        &usbAudioSettingsMenu,
         &triggerClockMenu,
         &midiMenu,
         &defaultsSubmenu,
@@ -1907,6 +2803,7 @@ PLACE_SDRAM_BSS Submenu settingsRootMenu{
         &flashStatusMenu,
         &recordSubmenu,
         &runtimeFeatureSettingsMenu,
+        &cpuStatsMenu,
         &batteryLevelMenu,
         &voiceUsageMenu,
         &firmwareVersionMenu,
@@ -1925,7 +2822,7 @@ PLACE_SDRAM_DATA MenuItem* paramShortcutsForSounds[][kDisplayHeight] = {
     {&modulator0Volume,		&modulator0TransposeMenu,	comingSoonMenu,                 comingSoonMenu,                 &modulator0PhaseMenu,	&modulator0FeedbackMenu,	comingSoonMenu,					&sequenceDirectionMenu             },
     {&modulator1Volume,		&modulator1TransposeMenu,	comingSoonMenu,                 comingSoonMenu,                 &modulator1PhaseMenu,	&modulator1FeedbackMenu,	&modulatorDestMenu,				&stutterRateMenu                   },
     {&volumeMenu,			&masterTransposeMenu,		&vibratoMenu,                   &panMenu,                       &synthModeMenu,			&srrMenu,					&bitcrushMenu,					&clippingMenu                      },
-    {&portaMenu,				&polyphonyMenu,				&priorityMenu,                  &unisonDetuneMenu,              &numUnisonMenu,			&threshold,					nullptr,						&foldMenu                          },
+    {&portaMenu,				&polyphonyMenu,				&priorityMenu,                  &unisonDetuneMenu,              &numUnisonMenu,			&threshold,					&searMenu,						&foldMenu                          },
     {&env1ReleaseMenu,		&env1SustainMenu,			&env1DecayMenu,                 &env1AttackMenu,                &lpfMorphMenu,			&lpfModeMenu,				&lpfResMenu,					&lpfFreqMenu                       },
     {&env2ReleaseMenu,		&env2SustainMenu,			&env2DecayMenu,                 &env2AttackMenu,                &hpfMorphMenu,			&hpfModeMenu,				&hpfResMenu,					&hpfFreqMenu                       },
     {&sidechainReleaseMenu,	&sidechainSyncMenu,			&sidechainVolumeShortcutMenu,   &sidechainAttackMenu,           &sidechainShapeMenu,	&sidechainSendMenu,			&bassMenu,						&bassFreqMenu                      },
@@ -2018,7 +2915,8 @@ PLACE_SDRAM_BSS deluge::vector<HorizontalMenu*> horizontalMenusChainForSound = {
 	&filtersMenuGroup, &eqMenu, &modFXMenu,
 	&reverbMenuGroup, &delayMenu, &soundDistortionMenu,
 	&sidechainMenu, &audioCompMenu, &stutterMenu,
-	&arpMenuGroup, &randomizerMenu
+	&arpMenuGroup, &randomizerMenu, &midiFxMenuGroup,
+	&cloudsSoundMenu
 };
 
 PLACE_SDRAM_BSS deluge::vector<HorizontalMenu*> horizontalMenusChainForKit = {
@@ -2026,7 +2924,7 @@ PLACE_SDRAM_BSS deluge::vector<HorizontalMenu*> horizontalMenusChainForKit = {
 	&globalFiltersMenuGroup, &globalEQMenu, &globalModFXMenu,
 	&globalReverbMenuGroup, &globalDelayMenu, &globalDistortionMenu,
 	&globalSidechainMenu, &audioCompMenu, &stutterMenu,
-	&arpMenuGroupKit, &randomizerMenu
+	&arpMenuGroupKit, &randomizerMenu, &midiFxMenuGroup
 };
 
 PLACE_SDRAM_BSS deluge::vector<HorizontalMenu*> horizontalMenusChainForSong = {
@@ -2040,11 +2938,12 @@ PLACE_SDRAM_BSS deluge::vector<HorizontalMenu*> horizontalMenusChainForAudioClip
 	&audioClipMasterMenu, &audioClipSampleMenu,
 	&globalFiltersMenuGroup, &eqMenu, &globalModFXMenu,
 	&globalReverbMenuGroup, &globalDelayMenu, &audioClipDistortionMenu,
-	&globalSidechainMenu, &audioCompMenu, &stutterMenu
+	&globalSidechainMenu, &audioCompMenu, &stutterMenu,
+	&cloudsMenu
 };
 
 PLACE_SDRAM_BSS deluge::vector<HorizontalMenu*> horizontalMenusChainForMidiOrCv = {
-	&arpMenuGroupMIDIOrCV, &randomizerMenu
+	&arpMenuGroupMIDIOrCV, &randomizerMenu, &midiFxMenuGroup
 };
 
 PLACE_SDRAM_DATA filter::FilterContainer lpfContainer{{&lpfFreqMenu, &lpfResMenu}, &lpfMorphMenu};

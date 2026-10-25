@@ -109,7 +109,9 @@ static void usb_pstd_interrupt(uint16_t type, uint16_t status)
             break;
 
         case USB_INT_BRDY: // BRDY (receive finished arriving) for non-0 pipe
+            // Each handler takes only its own pipes' bits.
             usb_pstd_brdy_pipe_process_rohan_midi(status);
+            usb_pstd_brdy_pipe_process_paudio(status);
             break;
 
         case USB_INT_BEMP0: // BEMP (send finished) for pipe0
@@ -118,6 +120,7 @@ static void usb_pstd_interrupt(uint16_t type, uint16_t status)
 
         case USB_INT_BEMP: // BEMP (send finished) for non-0 pipe
             usb_pstd_bemp_pipe_process_rohan_midi(status);
+            usb_pstd_bemp_pipe_process_paudio(status);
             break;
 
         // NRDY interrupts don't need processing (I filter them out during the interrupt) unless we use ISO endpoints.

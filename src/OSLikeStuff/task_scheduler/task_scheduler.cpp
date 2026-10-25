@@ -202,6 +202,23 @@ Time TaskManager::getAverageRunTimeForTask(TaskID id) const {
 	return task->durationStats.average;
 }
 
+Time TaskManager::getMaxRunTimeForTask(TaskID id) const {
+	// Same guard, and for the same reason, as getAverageRunTimeForTask above: callers can ask
+	// before the task is registered.
+	if (id < 0 || id >= kMaxTasks) [[unlikely]] {
+		return Time{0};
+	}
+	return std::max(carriedMax_[id], list[id].durationStats.max);
+}
+
+Time TaskManager::getTotalRunTimeForTask(TaskID id) const {
+	if (id < 0 || id >= kMaxTasks) [[unlikely]] {
+		return Time{0};
+	}
+	Time total = carriedTotal_[id]; // Time's operator+ is not const
+	return total + list[id].totalTime;
+}
+
 void TaskManager::setNextRunTimeforCurrentTask(Time seconds) {
 	auto currentTask = &list[currentID];
 	currentTask->schedule.maxInterval = seconds;
@@ -410,6 +427,14 @@ void TaskManager::resetStats() {
 	overhead = 0;
 }
 
+void TaskManager::resetAllStats() {
+	resetStats();
+	for (int32_t i = 0; i < kMaxTasks; i++) {
+		carriedMax_[i] = Time{0};
+		carriedTotal_[i] = Time{0};
+	}
+}
+
 void TaskManager::printStats() {
 	D_PRINTLN("Dumping task manager stats: (min/ average/ max)");
 	for (auto task : list) {
@@ -444,6 +469,12 @@ void TaskManager::printStats() {
 	D_PRINTLN("Working time: %5.2f, Overhead: %5.2f. Total running time: %5.2f seconds",
 	          double(cpuTime * 100) / double(totalTime), double(overhead * 100) / double(totalTime),
 	          double(runningTime));
+	for (int32_t i = 0; i < kMaxTasks; i++) {
+		if (list[i].handle) {
+			carriedMax_[i] = std::max(carriedMax_[i], list[i].durationStats.max);
+			carriedTotal_[i] = carriedTotal_[i] + list[i].totalTime;
+		}
+	}
 	resetStats();
 }
 Time getTimerValueSeconds(int timerNo) {

@@ -227,6 +227,13 @@ public:
 
 	String name;
 
+	/// The track whose chord the Harmonize clips follow, by name. Empty means no chord track.
+	///
+	/// A name rather than an index or a pointer: an index breaks the moment a track above it is
+	/// deleted, and a pointer dangles when that track goes. Resolved in
+	/// `chord_source::resolveChordTrack` on every read, which is cheap next to a sequencer tick.
+	String harmonizeChordTrack;
+
 	bool affectEntire;
 
 	SessionLayoutType sessionLayout = FlashStorage::defaultSessionLayout;
@@ -271,6 +278,15 @@ public:
 	void setInputTickScaleClip(Clip* clip);
 	inline bool isFillModeActive() { return fillModeActive; }
 	void changeFillMode(bool on);
+
+	/// Rolls Spice & Dice: picks a new variation and hands it to everything in the song that is
+	/// spiced.
+	///
+	/// Song-wide on purpose. This is the footswitch gesture, and a footswitch has no way to say
+	/// which track it meant. Anything sitting at Spice 0 is left alone, so what actually changes is
+	/// whatever you have spiced - which is the same set either way, without having to aim.
+	void rollSpiceDice();
+
 	void loadNextSong();
 	void setClipLength(Clip* clip, uint32_t newLength, Action* action, bool mayReSyncClip = true);
 	void doubleClipLength(InstrumentClip* clip, Action* action = nullptr);

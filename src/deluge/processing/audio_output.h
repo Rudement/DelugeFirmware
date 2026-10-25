@@ -22,6 +22,7 @@
 #include "model/global_effectable/global_effectable_for_clip.h"
 #include "model/output.h"
 #include "modulation/envelope.h"
+#include "modulation/params/param_manager.h"
 #include "util/container/enum_to_string_map.hpp"
 
 class ModelStackWithTimelineCounter;
@@ -36,6 +37,9 @@ char const* aoModeToString(AudioOutputMode mode);
 
 class AudioOutput final : public Output, public GlobalEffectableForClip {
 public:
+	/// Wisps runs on audio clips (and on synths and kit rows), not on Song or kit-wide FX.
+	[[nodiscard]] bool allowsClouds() const override { return true; }
+
 	AudioOutput();
 	~AudioOutput() override;
 	void cloneFrom(ModControllableAudio* other) override;
@@ -87,6 +91,18 @@ public:
 	char const* getXMLTag() override { return "audioTrack"; }
 
 	Envelope envelope;
+
+	/// Track default (Rudement). Parameter values that every new recording on this track starts from: when an empty
+	/// clip on the track begins recording, its parameters are set to these. Taken from a clip with "Make track
+	/// default" in the clip settings menu and saved with the song. Empty (no collections) means no default.
+	ParamManagerForTimeline trackDefault;
+	bool hasTrackDefault() { return trackDefault.containsAnyMainParamCollections(); }
+	/// Replaces the default with the current values of `source` (a clip on this track). Automation is not taken.
+	bool setTrackDefaultFrom(ParamManager* source);
+	void clearTrackDefault() { trackDefault.destructAndForgetParamCollections(); }
+	/// Sets every unautomated parameter of `target` to the default's value. Writes values in place rather than
+	/// swapping collections, so it is safe on a clip that is already rendering.
+	void applyTrackDefaultTo(ParamManager* target);
 
 	int32_t amplitudeLastTime;
 

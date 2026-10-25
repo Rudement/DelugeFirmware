@@ -24,6 +24,7 @@
 #include "hid/display/display.h"
 #include "hid/display/oled.h"
 #include "hid/display/screensaver.h"
+#include "hid/display/visualizer.h"
 #include "hid/hid_sysex.h"
 #include "io/debug/log.h"
 #include "io/midi/sysex.h"
@@ -44,6 +45,7 @@ extern "C" {
 #include "RZA1/uart/sio_char.h"
 #include "drivers/oled/oled.h"
 #include "gui/fonts/fonts.h"
+#include "processing/engines/cv_audio_stream_c_interface.h"
 extern void v7_dma_flush_range(uint32_t start, uint32_t end);
 }
 
@@ -622,6 +624,17 @@ findNextStringSplitPoint:
 }
 
 void OLED::drawPermanentPopupLookingText(char const* text) {
+	// With Visualizer Priority on the display holds the screen, so this is not drawn at all.
+	// Drawing it underneath would only put the two painters back into the race this exists to
+	// avoid.
+	if (Visualizer::hasPriority() && Visualizer::isDisplaying()) {
+		return;
+	}
+
+	// This writes into the main image rather than the popup layer, so the Visualizer has no
+	// other way to know it is there. Told, it stands down rather than redrawing over it.
+	Visualizer::noteOverlayText();
+
 	TextLineBreakdown textLineBreakdown;
 	textLineBreakdown.maxCharsPerLine = 19;
 
@@ -657,6 +670,12 @@ void OLED::drawPermanentPopupLookingText(char const* text) {
 }
 
 void OLED::popupText(char const* text, bool persistent, PopupType type) {
+	// With Visualizer Priority on, popups are not shown while the display is up: parameter
+	// names and values, tempo, key changes, all of it. The action still happens, it just does
+	// not land on top of what you are watching.
+	if (Visualizer::hasPriority() && Visualizer::isDisplaying()) {
+		return;
+	}
 
 	TextLineBreakdown textLineBreakdown;
 	textLineBreakdown.maxCharsPerLine = 19;
@@ -796,6 +815,12 @@ void OLED::removeWorkingAnimation() {
 }
 
 void OLED::displayNotification(std::string_view param_title, std::optional<std::string_view> param_value) {
+	// Gold-knob readouts use the notification layer rather than popupText(). Keep them from
+	// covering the graph when Visualizer Priority gives the Visualizer exclusive use of the OLED.
+	if (Visualizer::hasPriority() && Visualizer::isDisplaying()) {
+		return;
+	}
+
 	DEF_STACK_STRING_BUF(titleBuf, 25);
 	titleBuf.append(param_title);
 
@@ -1244,6 +1269,12 @@ checkTimeTilTimeout:
 }
 
 void OLED::freezeWithError(char const* text) {
+	// Everything below drives the shared SPI bus synchronously, with interrupts no longer to
+	// be relied on. Take it off the AUX send stream first: nothing is going to come back and
+	// hand it over politely from here. The sockets hold their last voltage, which is the least
+	// of the situation's problems.
+	cvStreamYieldBegin();
+
 	OLED::clearMainImage();
 	int32_t yPixel = OLED_MAIN_TOPMOST_PIXEL;
 	main.drawString("Error:", 0, yPixel, kTextSpacingX, kTextSizeYUpdated, 0, OLED_MAIN_WIDTH_PIXELS);

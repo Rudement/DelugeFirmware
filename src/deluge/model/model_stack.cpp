@@ -229,7 +229,12 @@ void copyModelStack(void* newMemory, void const* oldMemory, int32_t size) {
 
 ModelStackWithAutoParam* ModelStackWithThreeMainThings::getUnpatchedAutoParamFromId(int32_t newParamId) {
 	ModelStackWithAutoParam* modelStackWithParam = nullptr;
-	if (paramManager && paramManager->containsAnyParamCollectionsIncludingExpression()) {
+	// The unpatched set is summaries[0] only for a manager that was actually set up -- setupUnpatched(),
+	// setupMIDI() or setupWithPatching(). In one whose collections were stolen or never built,
+	// expressionParamSetOffset sits at 0 and summaries[0] is the expression set instead, so the
+	// includes-expression test would hand back an ExpressionParamSet dressed up as unpatched params.
+	// Same shape as the patched guard below; MIDI Follow reaches both with whatever clip it has locked.
+	if (paramManager && paramManager->containsAnyMainParamCollections()) {
 		ParamCollectionSummary* summary = paramManager->getUnpatchedParamSetSummary();
 
 		ModelStackWithParamId* modelStackWithParamId =
@@ -242,7 +247,8 @@ ModelStackWithAutoParam* ModelStackWithThreeMainThings::getUnpatchedAutoParamFro
 
 ModelStackWithAutoParam* ModelStackWithThreeMainThings::getPatchedAutoParamFromId(int32_t newParamId) {
 	ModelStackWithAutoParam* modelStackWithParam = nullptr;
-	if (paramManager && paramManager->containsAnyParamCollectionsIncludingExpression()) {
+	if (paramManager && paramManager->containsAnyParamCollectionsIncludingExpression()
+	    && paramManager->containsPatchedParamCollections()) {
 		ParamCollectionSummary* summary = paramManager->getPatchedParamSetSummary();
 
 		ModelStackWithParamId* modelStackWithParamId =
@@ -255,7 +261,8 @@ ModelStackWithAutoParam* ModelStackWithThreeMainThings::getPatchedAutoParamFromI
 
 ModelStackWithAutoParam* ModelStackWithThreeMainThings::getPatchCableAutoParamFromId(int32_t newParamId) {
 	ModelStackWithAutoParam* modelStackWithParam = nullptr;
-	if (paramManager && paramManager->containsAnyParamCollectionsIncludingExpression()) {
+	if (paramManager && paramManager->containsAnyParamCollectionsIncludingExpression()
+	    && paramManager->containsPatchedParamCollections()) {
 		ParamCollectionSummary* summary = paramManager->getPatchCableSetSummary();
 
 		ModelStackWithParamId* modelStackWithParamId =

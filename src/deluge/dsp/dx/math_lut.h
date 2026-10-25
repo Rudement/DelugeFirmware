@@ -3,6 +3,12 @@
 
 #include "engine.h"
 
+
+// Fixed-width integer types used below. Added defensively: deluge_dsp is a
+// unity build, so a header that relies on a neighbour in its chunk having
+// included this first compiles only by luck, and stops compiling as soon as
+// anything changes the chunk.
+#include <stdint.h>
 // Use twice as much RAM for the LUT but avoid a little computation
 #define SIN_DELTA
 

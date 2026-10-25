@@ -28,6 +28,8 @@
 #include "gui/menu_item/multi_range.h"
 #include "gui/ui/audio_recorder.h"
 #include "gui/ui/browser/sample_browser.h"
+#include "gui/ui/keyboard/chord_service.h"
+#include "gui/ui/keyboard/chords.h"
 #include "gui/ui/keyboard/keyboard_screen.h"
 #include "gui/ui/load/load_instrument_preset_ui.h"
 #include "gui/ui/menus.h"
@@ -73,6 +75,7 @@
 #include "model/settings/runtime_feature_settings.h"
 #include "model/song/song.h"
 #include "modulation/automation/auto_param.h"
+#include "modulation/midi_fx/generate.h"
 #include "modulation/params/param_manager.h"
 #include "modulation/params/param_node.h"
 #include "modulation/params/param_set.h"
@@ -163,6 +166,15 @@ void InstrumentClipView::focusRegained() {
 	// The Session button release that would normally clear this can be missed if the view changed while it was held.
 	sessionMacroSidebarActive = false;
 
+	// Reset any in-progress harmonic-brush placement gesture on (re)entering the view, stopping its
+	// audible preview first so an interrupted gesture can't leave a note stuck on.
+	if (chordBrushStartX >= 0) {
+		auditionChordPreview(false);
+	}
+	chordBrushStartX = -1;
+	chordBrushStartY = -1;
+	chordBrushEndX = -1;
+
 	InstrumentClipMinder::focusRegained();
 
 	setLedStates();
@@ -250,6 +262,15 @@ ActionResult InstrumentClipView::buttonAction(deluge::hid::Button b, bool on, bo
 	using namespace deluge::hid::button;
 
 	maybeStartShortcutOverview(b, on);
+	// LEARN + click the select encoder while a harmonic-chord brush is armed to clear it, returning
+	// to normal single-note editing. It takes the held button for the same reason stamping does: a
+	// bare click has its own job in this view, and an armed chord must not take it away for as long
+	// as it happens to be armed. Leaving the clip view still clears the brush too.
+	if (b == SELECT_ENC && on && ui::keyboard::ChordService::hasPending()
+	    && Buttons::isButtonPressed(deluge::hid::button::LEARN)) {
+		ui::keyboard::ChordService::clearPending();
+		return ActionResult::DEALT_WITH;
+	}
 
 	// Scale mode button
 	if (b == SCALE_MODE && currentUIMode != UI_MODE_HOLDING_LOAD_BUTTON) {
@@ -1774,6 +1795,19 @@ void InstrumentClipView::selectEncoderAction(int8_t offset) {
 
 	exitedShortcutOverview = true;
 	uiNeedsRendering(this);
+	// Harmonic Brush: while holding a placement pad, the select encoder re-voices the armed chord by
+	// ear — clockwise moves the lowest note up an octave, counterclockwise the highest down — then
+	// re-auditions. The transformed payload is what gets placed on release.
+	if (chordBrushStartX >= 0 && ui::keyboard::ChordService::hasPending()
+	    && runtimeFeatureSettings.get(RuntimeFeatureSettingType::ChordBrush) == RuntimeFeatureStateToggle::On) {
+		auditionChordPreview(false);                      // stop the current voicing
+		ui::keyboard::ChordService::voicingCycle(offset); // transform the armed payload in place
+		auditionChordPreview(true);                       // sound the new voicing
+		display->displayPopup(deluge::l10n::get(offset > 0 ? deluge::l10n::String::STRING_FOR_VOICING_UP
+		                                                   : deluge::l10n::String::STRING_FOR_VOICING_DOWN));
+		return;
+	}
+
 	// User may be trying to edit noteCode...
 	if (currentUIMode == UI_MODE_AUDITIONING) {
 		if (Buttons::isButtonPressed(deluge::hid::button::SELECT_ENC)) {
@@ -1853,6 +1887,13 @@ const uint32_t editPadActionUIModes[] = {UI_MODE_NOTES_PRESSED, UI_MODE_HOLDING_
 
 const uint32_t mutePadActionUIModes[] = {UI_MODE_AUDITIONING, UI_MODE_STUTTERING, 0};
 
+// The harmonic brush is driven with LEARN held, and holding LEARN puts the Deluge into MIDI-learn
+// mode. So the brush must be allowed in UI_MODE_MIDI_LEARN as well as the ordinary edit-pad modes -
+// gating it on editPadActionUIModes alone meant the stamp could never fire, because by the time the
+// pad went down the mode had already changed under it.
+const uint32_t chordBrushActionUIModes[] = {UI_MODE_MIDI_LEARN, UI_MODE_NOTES_PRESSED,
+                                            UI_MODE_HOLDING_HORIZONTAL_ENCODER_BUTTON, 0};
+
 const uint32_t auditionPadActionUIModes[] = {UI_MODE_AUDITIONING,
                                              UI_MODE_ADDING_DRUM_NOTEROW,
                                              UI_MODE_HORIZONTAL_SCROLL,
@@ -1882,6 +1923,79 @@ ActionResult InstrumentClipView::padAction(int32_t x, int32_t y, int32_t velocit
 	if (x < kDisplayWidth) {
 		if (sdRoutineLock) {
 			return ActionResult::REMIND_ME_OUTSIDE_CARD_ROUTINE;
+		}
+
+		// Harmonic brush: with a chord armed, LEARN + a main-grid pad stamps it. LEARN + tap a column
+		// = one-step chord; keep holding and press an end column = chord stretched to span both. The
+		// chord keeps its own pitches; only the column(s) matter. We place once per gesture with the
+		// resolved length, so all notes stay aligned.
+		//
+		// Holding LEARN is what lets the brush and ordinary editing share the grid. The chord stays
+		// armed after a stamp so it can go down on several steps, and with no held button that meant
+		// every press belonged to the brush - including the press you make to delete a note you just
+		// stamped. LEARN is the Deluge's copy button (LEARN + horizontal encoder copies notes, plus
+		// SHIFT pastes), so "hold LEARN and tap" reads as pasting the chord you captured. Only
+		// STARTING a gesture needs it; once anchored, further presses extend the span and the release
+		// commits, so LEARN can be let go mid-gesture.
+		if (runtimeFeatureSettings.get(RuntimeFeatureSettingType::ChordBrush) == RuntimeFeatureStateToggle::On
+		    && ui::keyboard::ChordService::hasPending() && getCurrentInstrumentClip() != nullptr
+		    && getCurrentInstrumentClip()->output != nullptr
+		    && getCurrentInstrumentClip()->output->type != OutputType::KIT) {
+			InstrumentClip* clip = getCurrentInstrumentClip();
+			// Claim a pad event ONLY when it actually drives the gesture. Consuming everything while a
+			// chord happens to be armed makes the whole piano roll stop responding, which reads as a
+			// hang - and a chord is easy to arm by accident (select-encoder click while holding notes).
+			if (velocity) { // press
+				bool startingGesture = (chordBrushStartX < 0) && Buttons::isButtonPressed(deluge::hid::button::LEARN);
+				bool continuingGesture = (chordBrushStartX >= 0);
+				if (isUIModeWithinRange(chordBrushActionUIModes) && (startingGesture || continuingGesture)) {
+					if (chordBrushStartX < 0) {
+						// Anchor the gesture; the chord is placed on release of this pad.
+						chordBrushStartX = x;
+						chordBrushStartY = y;
+						chordBrushEndX = -1;
+						auditionChordPreview(true); // sound the chord while you position/size it
+					}
+					else if (x != chordBrushStartX) {
+						// Track the end column while the start is held. Updates on every press, so the
+						// length can be extended OR shortened (last press wins).
+						chordBrushEndX = x;
+					}
+					return ActionResult::DEALT_WITH;
+				}
+				// No LEARN and no gesture under way: this press is ordinary note editing. Fall through.
+			}
+			else if (chordBrushStartX >= 0) {
+				// Releases only matter while a gesture is actually in progress. A stray release with
+				// no anchor down is not ours to swallow.
+				// Release of the start pad commits the chord, using the final end column for length.
+				if (x == chordBrushStartX && y == chordBrushStartY) {
+					auditionChordPreview(false); // stop the preview before writing the notes
+					int32_t pos;
+					int32_t length;
+					if (chordBrushEndX >= 0) {
+						int32_t lo = std::min(chordBrushStartX, chordBrushEndX);
+						int32_t hi = std::max(chordBrushStartX, chordBrushEndX);
+						pos = getPosFromSquare(lo);
+						length = getPosFromSquare(hi + 1) - pos;
+					}
+					else {
+						// Tapped a single column => one-step chord.
+						pos = getPosFromSquare(chordBrushStartX);
+						length = getSquareWidth(chordBrushStartX, clip->loopLength);
+					}
+					length = std::min(length, clip->loopLength - pos);
+					if (length > 0 && ui::keyboard::ChordService::placePendingAt(pos, length)) {
+						scrollToShowPendingChord(); // the chord's pitches may be nowhere near the current scroll
+						recalculateColours();       // placement can have created new note rows
+						uiNeedsRendering(this);
+					}
+					chordBrushStartX = -1;
+					chordBrushStartY = -1;
+					chordBrushEndX = -1;
+				}
+				return ActionResult::DEALT_WITH;
+			}
 		}
 
 		// Perhaps the user wants to enter the SoundEditor via a shortcut. They can do this by holding an audition pad
@@ -3459,6 +3573,20 @@ multiplePresses:
 		}
 	}
 
+	// Repaint the edited pads so a changed probability / iterance shows in the note's colour straight away.
+	// (The note editor already does this above; the normal grid, holding a note and turning select, did not.)
+	if (!inNoteEditor) {
+		uint32_t rowsToRefresh = 0;
+		for (int32_t i = 0; i < kEditPadPressBufferSize; i++) {
+			if (editPadPresses[i].isActive) {
+				rowsToRefresh |= 1 << editPadPresses[i].yDisplay;
+			}
+		}
+		if (rowsToRefresh) {
+			uiNeedsRendering(this, rowsToRefresh, 0);
+		}
+	}
+
 	if (!inNoteEditor && parameterValue != -1) {
 		if (changeType == CORRESPONDING_NOTES_SET_PROBABILITY) {
 			displayProbability(parameterValue, prevBase);
@@ -4946,6 +5074,77 @@ void InstrumentClipView::sendAuditionNote(bool on, uint8_t yDisplay, uint8_t vel
 	}
 }
 
+void InstrumentClipView::auditionChordPreview(bool on) {
+	static_assert(sizeof(InstrumentClipView::chordPreviewNotes) / sizeof(int16_t)
+	                  >= ui::keyboard::kMaxPendingChordNotes,
+	              "chordPreviewNotes must hold a whole pending chord");
+	Instrument* instrument = getCurrentInstrument();
+	if (instrument == nullptr || instrument->type == OutputType::KIT) {
+		return; // melodic only
+	}
+	char modelStackMemory[MODEL_STACK_MAX_SIZE];
+	ModelStack* modelStack = setupModelStackWithSong(modelStackMemory, currentSong);
+
+	// Always end exactly what we started, from our own record. The armed chord is not a reliable
+	// source at note-off time: clearing it (select-encoder click, or leaving the view) or re-voicing
+	// it changes what getPendingNotes returns, and the notes we actually started then never get
+	// their note-off - which is the audition sticking on.
+	for (uint8_t i = 0; i < chordPreviewCount; i++) {
+		static_cast<MelodicInstrument*>(instrument)->endAuditioningForNote(modelStack, chordPreviewNotes[i]);
+	}
+	chordPreviewCount = 0;
+
+	if (!on) {
+		return;
+	}
+	int16_t notes[ui::keyboard::kMaxPendingChordNotes];
+	uint8_t velocity = 64;
+	uint8_t count = ui::keyboard::ChordService::getPendingNotes(notes, ui::keyboard::kMaxPendingChordNotes, &velocity);
+	for (uint8_t i = 0; i < count; i++) {
+		static_cast<MelodicInstrument*>(instrument)
+		    ->beginAuditioningForNote(modelStack, notes[i], velocity, zeroMPEValues, MIDI_CHANNEL_NONE, 0);
+		chordPreviewNotes[chordPreviewCount++] = notes[i];
+	}
+}
+
+void InstrumentClipView::scrollToShowPendingChord() {
+	InstrumentClip* clip = getCurrentInstrumentClip();
+	if (clip == nullptr || currentSong == nullptr) {
+		return;
+	}
+	int16_t notes[ui::keyboard::kMaxPendingChordNotes];
+	uint8_t count = ui::keyboard::ChordService::getPendingNotes(notes, ui::keyboard::kMaxPendingChordNotes, nullptr);
+	if (count == 0) {
+		return;
+	}
+	int32_t lo = 2147483647;
+	int32_t hi = -2147483647;
+	for (uint8_t i = 0; i < count; i++) {
+		int32_t v = clip->getYVisualFromYNote(notes[i], currentSong);
+		lo = std::min(lo, v);
+		hi = std::max(hi, v);
+	}
+	if (lo >= clip->yScroll && hi < clip->yScroll + kDisplayHeight) {
+		return; // already on screen - don't move the user's view for nothing
+	}
+	// Centre the chord's span when it fits; otherwise show it from its lowest note up.
+	int32_t span = std::min<int32_t>(hi - lo, kDisplayHeight - 1);
+	int32_t desired = lo - (kDisplayHeight - 1 - span) / 2;
+	if (desired < 0) {
+		desired = 0;
+	}
+	int32_t delta = desired - clip->yScroll;
+	if (delta == 0) {
+		return;
+	}
+	char modelStackMemory[MODEL_STACK_MAX_SIZE];
+	ModelStackWithTimelineCounter* modelStack = currentSong->setupModelStackWithCurrentClip(modelStackMemory);
+	// Go through the normal scroller so the limits, the audition state and the redraw are all handled
+	// the way the vertical encoder handles them. If it refuses (chord at the very edge of the note
+	// range) we simply leave the view where it is.
+	scrollVertical(delta, false, false, modelStack);
+}
+
 uint8_t InstrumentClipView::getVelocityForAudition(uint8_t yDisplay, uint32_t* sampleSyncLength) {
 	int32_t numInstances = 0;
 	uint32_t sum = 0;
@@ -5843,6 +6042,11 @@ void InstrumentClipView::drawNoteCode(uint8_t yDisplay) {
 	}
 
 	if (getCurrentOutputType() != OutputType::KIT) {
+		// If several notes are held at the same step, show the CHORD name (Roman + absolute) instead of
+		// a single note — the live chord inspector.
+		if (drawHeldChordName()) {
+			return;
+		}
 		drawActualNoteCode(getCurrentInstrumentClip()->getYNoteFromYDisplay(yDisplay, currentSong));
 	}
 	else {
@@ -5852,6 +6056,40 @@ void InstrumentClipView::drawNoteCode(uint8_t yDisplay) {
 			drawDrumName(thisKit->selectedDrum);
 		}
 	}
+}
+
+// Live chord inspector: if 2+ audition pads are held (a chord), name it (Roman + absolute, spelled to
+// the song's key) and show it. Read-only — reads which rows are auditioned, never edits notes.
+bool InstrumentClipView::drawHeldChordName() {
+	InstrumentClip* clip = getCurrentInstrumentClip();
+	uint8_t notes[16];
+	int32_t count = 0;
+	for (int32_t y = 0; y < kDisplayHeight && count < 16; y++) {
+		if (auditionPadIsPressed[y]) {
+			int32_t note = clip->getYNoteFromYDisplay(y, currentSong);
+			if (note >= 0 && note < 128) {
+				notes[count++] = (uint8_t)note;
+			}
+		}
+	}
+	if (count < 2) {
+		return false;
+	}
+	char absName[40];
+	char roman[16];
+	if (!ui::keyboard::describeChordInKey(notes, count, currentSong->key.rootNote % 12, currentSong->key.modeNotes,
+	                                      absName, roman)) {
+		return false;
+	}
+	char full[64];
+	if (roman[0] != '\0') {
+		sprintf(full, "%s  %s", roman, absName);
+	}
+	else {
+		sprintf(full, "%s", absName);
+	}
+	display->setScrollingText(full);
+	return true;
 }
 
 void InstrumentClipView::drawDrumName(Drum* drum, bool justPopUp) {
@@ -7885,6 +8123,431 @@ displayNewNumNotes:
 		// this could be called from automation view velocity editor
 		// or the note row editor
 		uiNeedsRendering(getRootUI(), 1 << yDisplay, 0);
+	}
+}
+
+// MIDI FX > Generate: write a random rhythm into the row you last auditioned.
+//
+// The one thing in the MIDI FX group that edits the clip rather than transforming it at read time.
+// Everything else there - Velocity, Gate, Delay, Repeat, Spice, Strum, Harmonize - leaves the
+// NoteVector alone and gives your phrase back when you turn it off. This replaces it, so it goes
+// through the action log and undo is the way back. That is the point of a generator: what it wrote
+// is now yours to edit.
+//
+// Modelled on editNumEuclideanEvents above, and deliberately: the pre-allocation, the note defaults,
+// the MPE ordering and the note-array steal are that function's, and the two ought to keep writing
+// into a row the same way.
+//
+// No partial-undo bookkeeping, unlike Euclid. That exists because Euclid is swept with an encoder
+// inside one held audition; this is a one-shot from a menu, so each press is its own closed action
+// and one undo takes back exactly one generation.
+bool InstrumentClipView::commandGenerateNotes() {
+	InstrumentClip* clip = getCurrentInstrumentClip();
+	if (clip == nullptr) {
+		return false;
+	}
+
+	// Only from the clip view, which is where the idea of a target row comes from at all.
+	if (getRootUI() != &instrumentClipView) {
+		return false;
+	}
+
+	if (clip->generateDensity == deluge::modulation::midi_fx::generate::kDensityMin) {
+		// Density at zero would empty the row. Refused rather than obeyed: clearing a row is what
+		// CLEAR is for, and a command that silently deletes your notes because a knob was left at
+		// the bottom is not one anybody reaches for twice.
+		return false;
+	}
+
+	char modelStackMemory[MODEL_STACK_MAX_SIZE];
+	ModelStackWithTimelineCounter* modelStack = currentSong->setupModelStackWithCurrentClip(modelStackMemory);
+
+	ModelStackWithNoteRow* modelStackWithNoteRow;
+	int32_t yDisplay = lastAuditionedYDisplay;
+
+	if (clip->output != nullptr && clip->output->type == OutputType::KIT) {
+		// **On a Kit the target is the selected drum**, not the last auditioned screen row.
+		//
+		// `lastAuditionedYDisplay` is what the Euclidean gesture uses, and it works there because that
+		// gesture runs *while the audition pad is held*. This one runs from a menu, minutes later, and
+		// by then the index can name a screen row that has no drum on it - the kit was scrolled, or
+		// nothing has been auditioned since the song loaded. On a synth that costs nothing, because
+		// the row gets created; on a Kit `createNoteRowForYDisplay` deliberately refuses to invent
+		// drums, so the command found no row and quietly did nothing. That was the whole of "it
+		// doesn't work on drums".
+		//
+		// The selected drum is also the right answer rather than merely a working one: it is the row
+		// the rest of the MIDI FX page is already scoped to, and the one lit on the pads.
+		modelStackWithNoteRow = clip->getNoteRowForSelectedDrum(modelStack);
+		if (modelStackWithNoteRow->getNoteRowAllowNull() == nullptr) {
+			// No drum selected. `getNoteRowForSelectedDrum` leaves its noteRowId uninitialised on that
+			// path, so nothing below may read it.
+			return false;
+		}
+		// For Kits the note row id IS the row index, so this is where that drum sits on screen. It can
+		// land outside the display if the kit is scrolled, which the render at the end already handles
+		// by repainting everything instead of one row.
+		yDisplay = modelStackWithNoteRow->noteRowId - clip->yScroll;
+	}
+	else {
+		modelStackWithNoteRow = getOrCreateNoteRowForYDisplay(modelStack, lastAuditionedYDisplay);
+	}
+
+	if (modelStackWithNoteRow->getNoteRowAllowNull() == nullptr) {
+		return false;
+	}
+
+	generateNotesIntoRow(modelStackWithNoteRow, yDisplay);
+	return true;
+}
+
+namespace {
+
+/// Semitones above the key's root for a scale degree, wrapping by octave in both directions.
+///
+/// Degrees rather than semitones is what keeps a generated line in key by construction instead of by
+/// correction, and it is what makes the line follow the song when the scale changes underneath it.
+int32_t generateSemitoneForDegree(MusicalKey const& key, int32_t degree) {
+	const int32_t scaleSize = key.modeNotes.count();
+	if (scaleSize <= 0) {
+		// No scale worth the name. One degree is one semitone, which is at least predictable.
+		return degree;
+	}
+	int32_t octave = degree / scaleSize;
+	int32_t index = degree - (octave * scaleSize);
+	if (index < 0) {
+		// Truncating division rounds towards zero, so a negative degree lands an octave high.
+		index += scaleSize;
+		octave -= 1;
+	}
+	return (octave * 12) + key.modeNotes[(uint8_t)index];
+}
+
+} // namespace
+
+void InstrumentClipView::generateNotesIntoRow(ModelStackWithNoteRow* modelStack, int32_t yDisplay) {
+
+	NoteRow* baseRow = modelStack->getNoteRowAllowNull();
+	if (baseRow == nullptr) {
+		return;
+	}
+
+	InstrumentClip* clip = (InstrumentClip*)modelStack->getTimelineCounter();
+
+	// Clip-wide, not per-drum - see the note on these fields in model/clip/instrument_clip.h.
+	const uint8_t density = clip->generateDensity;
+	const uint8_t seed = clip->generateSeed;
+	const uint8_t leap = clip->generateLeap;
+	const int32_t gatePercent = clip->generateGatePercent;
+	if (density == deluge::modulation::midi_fx::generate::kDensityMin) {
+		return;
+	}
+
+	// On a Kit a row is a drum rather than a pitch, so a line climbing through rows would walk across
+	// the kit instead of up a scale. Held at 0, which is the one-row behaviour and the right answer
+	// for a drum part.
+	const bool melodic = (clip->output != nullptr && clip->output->type != OutputType::KIT);
+	const uint8_t range = melodic ? clip->generateRange : deluge::modulation::midi_fx::generate::kRangeMin;
+
+	const int32_t effectiveLength = modelStack->getLoopLength();
+	const uint32_t squareWidth = getSquareWidth(0, kMaxSequenceLength);
+	if (effectiveLength <= 0 || squareWidth == 0) {
+		return;
+	}
+
+	// The step grid is the one you are looking at, same as Euclid's. Because the roll is keyed on
+	// tick position rather than step index, zooming in offers new candidate steps between the ones
+	// already there rather than reshuffling the pattern.
+	const int32_t numStepsAvailable = (int32_t)((uint32_t)(effectiveLength - 1) / squareWidth) + 1;
+
+	// The rhythm is one rhythm for the whole line, so it stays keyed on the row you auditioned even
+	// when the notes land in other rows. That separation is the point: Range and Leap move the tune
+	// while the groove stays exactly where it was.
+	const int32_t rhythmRowId = modelStack->noteRowId;
+
+	// Everything the new notes inherit, read now. Creating a note row can move the NoteRowVector, so
+	// `baseRow` and `modelStack` must not be touched again once the first row is created below.
+	const int32_t baseNoteCode = baseRow->getNoteCode();
+	const uint8_t defaultProbability = baseRow->getDefaultProbability();
+	const Iterance defaultIterance = baseRow->getDefaultIterance();
+	const uint8_t defaultFill = baseRow->getDefaultFill(modelStack);
+	const uint8_t defaultVelocity = ((Instrument*)clip->output)->defaultVelocity;
+
+	// Two passes over the same hash rather than a bitmap. The roll is a pure function of
+	// (seed, row, position), so recomputing it is a handful of cycles and needs no storage - which
+	// matters here, because the step count follows the zoom and can run to thousands.
+	int32_t totalNotes = 0;
+	int32_t quietestRoll = 100;
+	int32_t quietestStep = 0;
+	for (int32_t step = 0; step < numStepsAvailable; step++) {
+		const int32_t notePos = step * (int32_t)squareWidth;
+		if (deluge::modulation::midi_fx::generate::placesStep(density, seed, rhythmRowId, notePos)) {
+			totalNotes++;
+		}
+		else {
+			const int32_t roll = deluge::modulation::midi_fx::generate::stepRoll(seed, rhythmRowId, notePos);
+			if (roll < quietestRoll) {
+				quietestRoll = roll;
+				quietestStep = step;
+			}
+		}
+	}
+
+	// A density above zero that happens to place nothing reads as the feature being broken rather
+	// than as an unlucky roll, so the nearest near-miss is promoted. Still deterministic, so the
+	// seed goes on naming the pattern.
+	const bool promoteQuietest = (totalNotes == 0);
+
+	const MusicalKey& key = currentSong->key;
+	const int32_t baseDegree = key.degreeOf(baseNoteCode);
+	const int32_t baseSemitone = (baseDegree >= 0) ? generateSemitoneForDegree(key, baseDegree) : 0;
+
+	// **This is why undo did nothing at first.** `getNewAction` refuses outright while any UI sits over
+	// the root view, and the sound editor - which is where this command is pressed - is exactly that.
+	// It returned null, `recordNoteArrayChangeDefinitely` was skipped, and the old notes went into a
+	// local NoteVector that was freed at the end of the loop. Nothing to revert, and nothing kept.
+	//
+	// The scope opens the same carve-out the note editor and note row editor already have, for the
+	// length of this one call.
+	Action* action;
+	{
+		ActionLogger::MenuNoteEditScope menuNoteEdit;
+		action = actionLogger.getNewAction(ActionType::NOTE_EDIT);
+	}
+	if (action != nullptr) {
+		// Stamped as a clip-view edit, because that is what it is: the menu is the button that was
+		// pressed, the notes belong to the clip underneath. Left stamped as the sound editor, undo would
+		// refuse whenever a UI mode was active, and otherwise try to navigate back into a menu.
+		action->view = getRootUI();
+		action->currentClip = getCurrentClip();
+	}
+
+	// Its own model stack, because the one passed in carries the base row and that row may move.
+	char clipStackMemory[MODEL_STACK_MAX_SIZE];
+	ModelStackWithTimelineCounter* clipStack = currentSong->setupModelStackWithCurrentClip(clipStackMemory);
+
+	int32_t notesWritten = 0;
+	int32_t rowsWritten = 0;
+	bool rowsCreated = false;
+
+	// One pass per degree of the range, each walking the whole grid. Quadratic-looking and genuinely
+	// cheap - twenty-five degrees of a thousand steps is fifty thousand hashes on a menu press - and
+	// it holds no per-note state at all, which is what lets every walk reproduce the same line.
+	for (int32_t degree = 0; degree <= (int32_t)range; degree++) {
+
+		int32_t noteCode;
+		if (range == deluge::modulation::midi_fx::generate::kRangeMin) {
+			noteCode = baseNoteCode;
+		}
+		else if (baseDegree >= 0) {
+			noteCode = baseNoteCode + generateSemitoneForDegree(key, baseDegree + degree) - baseSemitone;
+		}
+		else {
+			// The row you auditioned is not in the song's key - an out-of-scale row, or a clip with no
+			// scale. Chromatic, rather than refusing: a line an octave of semitones wide is a strange
+			// melody but it is a melody, where dropping every note would just look broken.
+			noteCode = baseNoteCode + degree;
+		}
+		// Only meaningful when the note code is going to be used to find a row. At Range 0 it is not,
+		// and on a Kit a row's `y` is not a note code at all - a kit row whose `y` happened to sit
+		// outside 0..127 would otherwise skip the only degree there is and generate nothing.
+		if (range != deluge::modulation::midi_fx::generate::kRangeMin && (noteCode < 0 || noteCode > 127)) {
+			continue;
+		}
+
+		// How many notes of the line land on this degree.
+		int32_t count = 0;
+		{
+			int32_t walkDegree = 0;
+			int32_t noteIndex = 0;
+			for (int32_t step = 0; step < numStepsAvailable; step++) {
+				const int32_t notePos = step * (int32_t)squareWidth;
+				const bool fires =
+				    promoteQuietest
+				        ? (step == quietestStep)
+				        : deluge::modulation::midi_fx::generate::placesStep(density, seed, rhythmRowId, notePos);
+				if (!fires) {
+					continue;
+				}
+				if (noteIndex > 0) {
+					walkDegree =
+					    deluge::modulation::midi_fx::generate::nextDegree(walkDegree, range, leap, seed, noteIndex);
+				}
+				if (walkDegree == degree) {
+					count++;
+				}
+				noteIndex++;
+			}
+		}
+
+		// A degree the line never visits still has its row cleared, if that row exists. Otherwise
+		// generating twice layers the second line over the first, and the seed stops meaning what it
+		// says.
+		ModelStackWithNoteRow* rowStack;
+		if (range == deluge::modulation::midi_fx::generate::kRangeMin) {
+			// Range 0 writes into the row it was handed and looks nothing up.
+			//
+			// **This is what has to happen on a Kit**, and it is not an optimisation. Addressing a row
+			// by note code is a melodic idea: on a melodic clip a row's `y` IS its pitch, but on a Kit a
+			// row is a drum and its `y` means nothing of the sort. So getOrCreateNoteRowForYNote matches
+			// no drum, then dutifully inserts a new row at that `y` - a row bound to no drum, which
+			// makes no sound and shows no notes. That is exactly what "it doesn't generate anything in a
+			// kit" looked like, and it was the melody rewrite that introduced it: the single-row version
+			// before it wrote straight into the row it was given.
+			//
+			// Nothing is created on this path, so the model stack passed in stays valid.
+			rowStack = modelStack;
+		}
+		else if (count > 0) {
+			rowStack = clip->getOrCreateNoteRowForYNote(noteCode, clipStack, action, nullptr);
+			if (rowStack->getNoteRowAllowNull() == nullptr) {
+				// Out of RAM. What has already been written stands, and is one undo away.
+				display->displayError(Error::INSUFFICIENT_RAM);
+				break;
+			}
+			rowsCreated = true;
+		}
+		else {
+			rowStack = clip->getNoteRowForYNote(noteCode, clipStack);
+			NoteRow* existing = rowStack->getNoteRowAllowNull();
+			if (existing == nullptr || existing->notes.getNumElements() == 0) {
+				continue;
+			}
+		}
+
+		NoteRow* row = rowStack->getNoteRowAllowNull();
+
+		// New NoteVector, pre-allocated so nothing can fail halfway through - the ActionLogger is
+		// about to steal the old data.
+		NoteVector newNotes;
+		if (count > 0) {
+			Error error = newNotes.insertAtIndex(0, count);
+			if (error != Error::NONE) {
+				display->displayError(error);
+				break;
+			}
+		}
+
+		int32_t n = 0;
+		{
+			int32_t walkDegree = 0;
+			int32_t noteIndex = 0;
+			for (int32_t step = 0; step < numStepsAvailable && n < count; step++) {
+				const int32_t notePos = step * (int32_t)squareWidth;
+				const bool fires =
+				    promoteQuietest
+				        ? (step == quietestStep)
+				        : deluge::modulation::midi_fx::generate::placesStep(density, seed, rhythmRowId, notePos);
+				if (!fires) {
+					continue;
+				}
+				if (noteIndex > 0) {
+					walkDegree =
+					    deluge::modulation::midi_fx::generate::nextDegree(walkDegree, range, leap, seed, noteIndex);
+				}
+				noteIndex++;
+				if (walkDegree != degree) {
+					continue;
+				}
+
+				Note* note = newNotes.getElement(n);
+				note->pos = notePos;
+				note->length = (int32_t)squareWidth; // Fixed up below, once the next note's position is known
+				note->probability = defaultProbability;
+				note->velocity = defaultVelocity;
+				note->lift = kDefaultLiftValue;
+				note->iterance = defaultIterance;
+				note->fill = defaultFill;
+				n++;
+			}
+		}
+
+		// Lengths last, because a gate over 100% has to know where the next note starts. Two
+		// overlapping notes in one row is not a state a NoteVector is allowed to be in. Notes in
+		// *different* rows may overlap, and at a wide range and a long gate they will - which is what
+		// makes a high Gate sound like a held line rather than a stutter.
+		for (int32_t i = 0; i < count; i++) {
+			Note* note = newNotes.getElement(i);
+			const int32_t maxLength =
+			    ((i + 1) < count) ? (newNotes.getElement(i + 1)->pos - note->pos) : (effectiveLength - note->pos);
+			int32_t length = (int32_t)((uint32_t)squareWidth * (uint32_t)gatePercent / 100u);
+			if (length > maxLength) {
+				length = maxLength;
+			}
+			if (length < 1) {
+				length = 1;
+			}
+			note->length = length;
+		}
+
+		// MPE data first, so that it sits further down the Consequence list than the note-array
+		// change below - the same ordering editNumEuclideanEvents depends on.
+		ParamCollectionSummary* mpeParamsSummary = row->paramManager.getExpressionParamSetSummary();
+		ExpressionParamSet* mpeParams = (ExpressionParamSet*)mpeParamsSummary->paramCollection;
+		if (mpeParams) {
+			ModelStackWithParamCollection* modelStackWithParamCollection =
+			    rowStack->addOtherTwoThingsAutomaticallyGivenNoteRow()->addParamCollection(mpeParams, mpeParamsSummary);
+			mpeParams->deleteAllAutomation(action, modelStackWithParamCollection);
+		}
+
+		// Record the change, stealing the old note data
+		if (action) {
+			action->recordNoteArrayChangeDefinitely(clip, rowStack->noteRowId, &row->notes, true);
+		}
+
+		// Swap the new temporary note data into the permanent place
+		row->notes.swapStateWith(&newNotes);
+
+#if ENABLE_SEQUENTIALITY_TESTS
+		row->notes.testSequentiality("E379");
+#endif
+
+		notesWritten += count;
+		if (count > 0) {
+			rowsWritten++;
+		}
+	}
+
+	// Play it
+	clip->expectEvent();
+
+	// Tell the user about it in text
+	if (display->haveOLED()) {
+		char buffer[40];
+		strcpy(buffer, "Generated: ");
+		char* pos = strchr(buffer, 0);
+		intToString(notesWritten, pos);
+		pos = strchr(buffer, 0);
+		if (range > deluge::modulation::midi_fx::generate::kRangeMin) {
+			strcpy(pos, " over ");
+			pos = strchr(buffer, 0);
+			intToString(rowsWritten, pos);
+			pos = strchr(buffer, 0);
+			strcpy(pos, " rows");
+		}
+		else {
+			strcpy(pos, " of ");
+			pos = strchr(buffer, 0);
+			intToString(numStepsAvailable, pos);
+		}
+		display->popupTextTemporary(buffer);
+	}
+	else {
+		char buffer[12];
+		intToString(notesWritten, buffer);
+		display->displayPopup(buffer, 0, true);
+	}
+
+	// Render it. One row when the line stayed in one row, the lot when it did not - and the colours
+	// have to be recalculated in that case, because rows may have been created.
+	if (range == deluge::modulation::midi_fx::generate::kRangeMin && yDisplay >= 0 && yDisplay < kDisplayHeight) {
+		uiNeedsRendering(getRootUI(), 1 << yDisplay, 0);
+	}
+	else {
+		if (rowsCreated) {
+			recalculateColours();
+		}
+		uiNeedsRendering(getRootUI());
 	}
 }
 

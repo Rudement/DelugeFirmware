@@ -28,6 +28,7 @@ class Voice;
 class VoiceSample;
 class LivePitchShifter;
 class DxVoice;
+class PlaitsVoice;
 
 class VoiceUnisonPartSource {
 public:
@@ -48,4 +49,5 @@ public:
 	VoiceSample* voiceSample = nullptr;
 	LivePitchShifter* livePitchShifter = nullptr;
 	gsl::owner<DxVoice*> dxVoice = nullptr;
+	PlaitsVoice* plaitsVoice = nullptr;
 };

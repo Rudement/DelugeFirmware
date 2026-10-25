@@ -60,6 +60,16 @@ ActionLogger::ActionLogger() {
 	firstAction[AFTER] = nullptr;
 }
 
+// Not nested, and not re-entrant on purpose: one menu command runs at a time, and a flag that could
+// be left standing by a command that returned early is exactly the bug this guard exists to prevent.
+ActionLogger::MenuNoteEditScope::MenuNoteEditScope() {
+	actionLogger.allowNoteEditFromMenu = true;
+}
+
+ActionLogger::MenuNoteEditScope::~MenuNoteEditScope() {
+	actionLogger.allowNoteEditFromMenu = false;
+}
+
 void ActionLogger::deleteLastActionIfEmpty() {
 	if (firstAction[BEFORE]) {
 
@@ -93,9 +103,11 @@ Action* ActionLogger::getNewAction(ActionType newActionType, ActionAddition addT
 	// If not on a View, not allowed!
 	// Exception for sound editor note editor UI which can edit notes on the grid
 	// Exception for sound editor note row editor UI which can edit note rows on the grid
+	// Exception for a sound editor menu command that writes notes - see allowNoteEditFromMenu
 	// Exception for loadPatternUI which does edit note rows on the grid
 	if ((getCurrentUI() != getRootUI())
-	    && (!(getCurrentUI() == &soundEditor && (soundEditor.inNoteEditor() || soundEditor.inNoteRowEditor())))
+	    && (!(getCurrentUI() == &soundEditor
+	          && (soundEditor.inNoteEditor() || soundEditor.inNoteRowEditor() || allowNoteEditFromMenu)))
 	    && (getCurrentUI() != &loadPatternUI)) {
 		return nullptr;
 	}

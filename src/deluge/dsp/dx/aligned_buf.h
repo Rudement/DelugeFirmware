@@ -21,6 +21,11 @@
 #pragma once
 
 #include <stddef.h>
+// intptr_t, used by get() below. This was missing: it only ever compiled
+// because deluge_dsp is a unity build and some earlier file in the same chunk
+// happened to include it first, which made this file's correctness depend on
+// unity chunk composition. Anything that reshuffles the chunk breaks it.
+#include <stdint.h>
 
 template <typename T, size_t size, size_t alignment = 16>
 class AlignedBuf {

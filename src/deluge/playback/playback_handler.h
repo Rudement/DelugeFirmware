@@ -242,6 +242,12 @@ public:
 
 	void tryLoopCommand(GlobalMIDICommand command);
 
+	/// Hold-to-loop (GlobalMIDICommand::LOOP_HOLD). The press is the stock LOOP press. The release can only end or
+	/// cancel what that press started, never start anything, so a release after the loop has already stopped some
+	/// other way does nothing.
+	void loopHoldPress();
+	void loopHoldRelease();
+
 	float calculateBPMForDisplay();
 
 private:

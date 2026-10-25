@@ -63,6 +63,12 @@ public:
 	                                              MIDICharacteristic whichCharacteristic) override;
 
 	ArpeggiatorBase* getArp() override { return &arpeggiator; }
+
+	/// Kits are in scope from stage 5. These two lines are the entire switch: Sound::render,
+	/// Sound::noteOn and Sound::noteOff already run the MIDI FX seams and were simply skipping
+	/// them while these returned null.
+	deluge::modulation::midi_fx::MidiFxChain* getMidiFx() override { return &midiFx; }
+	deluge::modulation::midi_fx::MidiFxSettings* getMidiFxSettings() override { return &midiFxSettings; }
 	ArpeggiatorSettings* getArpSettings(InstrumentClip* clip = nullptr) override { return &arpSettings; }
 	void resetTimeEnteredState();
 	const char* getName() override { return drumName.c_str(); }

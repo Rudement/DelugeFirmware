@@ -37,9 +37,27 @@ def excludes_from_file(ignore_file):
 
 
 def exclude(files, excludes):
+    # The patterns in .clang-format-ignore are repo-relative and written with "/". The file list
+    # arrives here as ABSOLUTE paths (see main(): git root / "src"), and on Windows with "\\"
+    # separators - so fnmatch was comparing "C:\\Users\\...\\src\\deluge\\dsp\\plaits\\x.h"
+    # against "src/deluge/dsp/plaits/**" and matching nothing, ever. The ignore file has been
+    # silently doing nothing since it was written; one `dbt format` reformatted 182 vendored files.
+    #
+    # Both sides are now made repo-relative and forward-slashed before they meet.
+    root = util.get_git_root().absolute()
+
+    def repo_relative(path):
+        candidate = Path(path).absolute()
+        try:
+            candidate = candidate.relative_to(root)
+        except ValueError:
+            pass  # outside the repo: compare it as given rather than guessing
+        return str(candidate).replace(os.sep, "/")
+
     fpaths = [f for f in files]
     for pattern in excludes:
-        fpaths = [x for x in fpaths if not fnmatch.fnmatch(x, pattern)]
+        norm_pattern = pattern.replace(os.sep, "/")
+        fpaths = [x for x in fpaths if not fnmatch.fnmatch(repo_relative(x), norm_pattern)]
     return fpaths
 
 

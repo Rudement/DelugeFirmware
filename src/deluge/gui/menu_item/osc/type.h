@@ -20,15 +20,20 @@
 #include "gui/menu_item/selection.h"
 #include "gui/menu_item/submenu.h"
 #include "gui/ui/sound_editor.h"
+#include "model/settings/runtime_feature_settings.h"
 #include "model/song/song.h"
+#include "modulation/params/param.h"
+#include "modulation/params/param_set.h"
 #include "processing/engines/audio_engine.h"
 #include "processing/sound/sound.h"
 #include "processing/source.h"
 #include "util/comparison.h"
 
+#include <algorithm>
 #include <hid/display/oled.h>
 
 extern gui::menu_item::Submenu dxMenu;
+extern gui::menu_item::Submenu plaitsMenu;
 
 namespace deluge::gui::menu_item::osc {
 class Type final : public Selection, public FormattedTitle {
@@ -37,21 +42,62 @@ public:
 	    : Selection(name), FormattedTitle(title_format_str, source_id + 1), sourceId_{source_id} {};
 	void beginSession(MenuItem* navigatedBackwardFrom) override { Selection::beginSession(navigatedBackwardFrom); }
 
-	bool mayUseDx() const { return !soundEditor.editingKit() && sourceId_ == 0; }
+	/// DX7 and Plaits are both source-0-only and unavailable in kits.
+	bool mayUseSourceZeroOnlyTypes() const { return !soundEditor.editingKit() && sourceId_ == 0; }
+	bool mayUseDx() const { return mayUseSourceZeroOnlyTypes(); }
+	bool mayUsePlaits() const {
+		return mayUseSourceZeroOnlyTypes()
+		       && runtimeFeatureSettings.isOn(RuntimeFeatureSettingType::EnablePlaitsEngine);
+	}
+
+	/// The OscTypes currently on offer, in the order getOptions() lists them.
+	///
+	/// This used to be a fixed +/-2 index shift that assumed DX7 and PLAITS were hidden together, and
+	/// said so in a comment warning you not to add a third. Plaits can now be switched off on its own
+	/// from Community Features, so the mapping is looked up instead of computed. Add a type in both
+	/// this list and getOptions(), in the same position, and nothing else needs touching.
+	deluge::vector<OscType> offeredTypes() const {
+		deluge::vector<OscType> types = {OscType::SINE,       OscType::TRIANGLE, OscType::SQUARE,
+		                                 OscType::ANALOG_SQUARE, OscType::SAW,   OscType::ANALOG_SAW_2,
+		                                 OscType::WAVETABLE};
+		if (soundEditor.currentSound->getSynthMode() == SynthMode::RINGMOD) {
+			return types;
+		}
+		types.emplace_back(OscType::SAMPLE);
+		if (mayUseDx()) {
+			types.emplace_back(OscType::DX7);
+		}
+		if (mayUsePlaits()) {
+			types.emplace_back(OscType::PLAITS);
+		}
+		if (AudioEngine::micPluggedIn || AudioEngine::lineInPluggedIn) {
+			types.emplace_back(OscType::INPUT_L);
+			types.emplace_back(OscType::INPUT_R);
+			types.emplace_back(OscType::INPUT_STEREO);
+		}
+		else {
+			types.emplace_back(OscType::INPUT_STEREO);
+		}
+		return types;
+	}
 
 	void readCurrentValue() override {
-		int32_t rawVal = static_cast<int32_t>(soundEditor.currentSound->sources[sourceId_].oscType);
-		if (!mayUseDx() && rawVal > static_cast<int32_t>(OscType::DX7)) {
-			rawVal -= 1;
-		}
-		setValue(rawVal);
+		const OscType current = soundEditor.currentSound->sources[sourceId_].oscType;
+		const auto types = offeredTypes();
+		const auto it = std::ranges::find(types, current);
+		// A type that is no longer offered (Plaits switched off under a song already using it) has no row
+		// to sit on. Show the first entry rather than an out-of-range index; the sound itself is untouched
+		// unless the user actually picks something.
+		setValue(it == types.end() ? 0 : static_cast<int32_t>(std::distance(types.begin(), it)));
 	}
 	void writeCurrentValue() override {
 		OscType oldValue = soundEditor.currentSound->sources[sourceId_].oscType;
-		auto newValue = getValue<OscType>();
-		if (!mayUseDx() && static_cast<int32_t>(newValue) >= static_cast<int32_t>(OscType::DX7)) {
-			newValue = static_cast<OscType>(static_cast<int32_t>(newValue) + 1);
+		const auto types = offeredTypes();
+		const int32_t index = getValue();
+		if (index < 0 || index >= static_cast<int32_t>(types.size())) {
+			return;
 		}
+		OscType newValue = types[index];
 
 		const auto needs_unassignment = {
 		    OscType::INPUT_L,
@@ -59,6 +105,7 @@ public:
 		    OscType::INPUT_STEREO,
 		    OscType::SAMPLE,
 		    OscType::DX7,
+		    OscType::PLAITS,
 
 		    // Haven't actually really determined if this needs to be here - maybe not?
 		    OscType::WAVETABLE,
@@ -69,6 +116,10 @@ public:
 		}
 
 		soundEditor.currentSound->sources[sourceId_].setOscType(newValue);
+
+		if (newValue == OscType::PLAITS && oldValue != OscType::PLAITS) {
+			startPlaitsAtNoon();
+		}
 
 		if (oldValue == OscType::SQUARE || newValue == OscType::SQUARE) {
 			soundEditor.currentSound->setupPatchingForAllParamManagers(currentSong);
@@ -100,6 +151,10 @@ public:
 			options.emplace_back(l10n::getView(STRING_FOR_DX7));
 		}
 
+		if (mayUsePlaits()) {
+			options.emplace_back(l10n::getView(STRING_FOR_PLAITS));
+		}
+
 		if (AudioEngine::micPluggedIn || AudioEngine::lineInPluggedIn) {
 			options.emplace_back(l10n::getView(STRING_FOR_INPUT_LEFT));
 			options.emplace_back(l10n::getView(STRING_FOR_INPUT_RIGHT));
@@ -118,10 +173,14 @@ public:
 	}
 
 	MenuItem* selectButtonPress() override {
-		if (soundEditor.currentSound->sources[sourceId_].oscType != OscType::DX7) {
-			return nullptr;
+		const OscType oscType = soundEditor.currentSound->sources[sourceId_].oscType;
+		if (oscType == OscType::DX7) {
+			return &dxMenu;
 		}
-		return &dxMenu;
+		if (oscType == OscType::PLAITS) {
+			return &plaitsMenu;
+		}
+		return nullptr;
 	}
 
 	[[nodiscard]] bool showColumnLabel() const override { return false; }
@@ -176,6 +235,30 @@ public:
 	}
 
 private:
+	/// A fresh Plaits starts with Harmonics and Morph at noon, like the module.
+	/// They borrow the two pulse-width params, whose Deluge default (0) would
+	/// otherwise mean fully counter-clockwise. Only a param still at that
+	/// default and not automated is touched, so a sound that was Plaits before,
+	/// or has been set by hand, keeps its values. Morph is left alone when OSC 2
+	/// is a square, because there it is also OSC 2's pulse width. (Timbre needs
+	/// nothing: wave index's default already maps to noon.)
+	void startPlaitsAtNoon() {
+		namespace params = deluge::modulation::params;
+		constexpr int32_t kNoon = 1 << 30; // half-precision menu value 25
+		auto* paramSet = soundEditor.currentParamManager->getPatchedParamSet();
+		auto setIfDefault = [&](int32_t p) {
+			AutoParam& param = paramSet->params[p];
+			if (!param.isAutomated() && param.getCurrentValue() == 0) {
+				param.setCurrentValueBasicForSetup(kNoon);
+			}
+		};
+		setIfDefault(params::LOCAL_OSC_A_PHASE_WIDTH);
+		const OscType osc2 = soundEditor.currentSound->sources[1].oscType;
+		if (osc2 != OscType::SQUARE && osc2 != OscType::ANALOG_SQUARE) {
+			setIfDefault(params::LOCAL_OSC_B_PHASE_WIDTH);
+		}
+	}
+
 	uint8_t sourceId_;
 };
 

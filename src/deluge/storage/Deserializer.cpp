@@ -240,14 +240,27 @@ char const* XMLDeserializer::readNextTagOrAttributeName() {
 	switch (xmlArea) {
 
 	default:
-#if ALPHA_OR_BETA_VERSION
-		// Can happen with invalid files, though I'm implementing error checks whenever a user alerts me to a scenario.
-		// Fraser got this, Nov 2021.
-		FREEZE_WITH_ERROR("E365");
-#endif
-		// PAST_ATTRIBUTE_NAME / PAST_EQUALS_SIGN: the caller read an attribute name but never consumed its value.
-		// IN_ATTRIBUTE_NAME: the file ended part-way through an attribute name.
-		// Either way, an attribute has no children: skip its value if there is one, and report no more contents.
+		// The parser is in a state none of the cases below handles. Upstream has known this can
+		// happen with an invalid file since Nov 2021 and raised E365 here, which stops the
+		// instrument dead - the whole session lost over one unreadable object, in the middle of
+		// playing. Scrolling a song reads files as rows come into view, so it lands at the worst
+		// possible moment.
+		//
+		// Two things were wrong with the old arm. The freeze is out of proportion to the fault:
+		// this function already has a graceful answer for "nothing more to read" - the file-ended
+		// path returns the empty string, the caller stops, and the object simply fails to load.
+		// That is the right shape for a file we cannot parse. And the `break` fell out of the
+		// switch with `toReturn` never assigned, so the `if (*toReturn)` below dereferenced
+		// whatever happened to be on the stack - which is also why the non-alpha build, where
+		// this arm is `__builtin_unreachable()`, had no defined behaviour at all here.
+		//
+		// Deliberately no popup. displayPopup() from a file read is the shape that overran the
+		// OLED frame queue in the FULL freeze (claude/oled-queue-full-freeze.md), and this can be
+		// reached once per tag. The debug line is enough to find it on a build that is listening.
+		D_PRINTLN("E365: XML parser in unhandled state, abandoning read");
+		// From upstream (beta a616dd8): PAST_ATTRIBUTE_NAME / PAST_EQUALS_SIGN means the caller read an
+		// attribute name but never consumed its value; IN_ATTRIBUTE_NAME means the file ended part-way
+		// through one. An attribute has no children: skip its value if there is one, report no more contents.
 		if (xmlArea == PAST_ATTRIBUTE_NAME || xmlArea == PAST_EQUALS_SIGN) {
 			readAttributeValue();
 		}

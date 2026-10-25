@@ -27,6 +27,8 @@
 #include "dsp/reverb/freeverb/allpass.hpp"
 #include "dsp/reverb/freeverb/comb.hpp"
 #include "dsp/reverb/freeverb/tuning.h"
+#include "dsp/reverb/fx_engine.hpp"
+#include <algorithm>
 #include <cstdint>
 #include <span>
 
@@ -70,6 +72,20 @@ public:
 
 	[[nodiscard]] constexpr float getWidth() const override { return width; }
 
+	void setHPF(float value) override {
+		hpf_value_ = value;
+		hpf_cutoff_ = calcFilterCutoff<FilterType::HighPass>(value);
+	}
+
+	[[nodiscard]] float getHPF() const override { return hpf_value_; }
+
+	void setLPF(float value) override {
+		lpf_value_ = value;
+		lpf_cutoff_ = calcFilterCutoff<FilterType::LowPass>(value);
+	}
+
+	[[nodiscard]] float getLPF() const override { return lpf_value_; }
+
 	[[gnu::always_inline]] void ProcessOne(int32_t input, StereoSample& output_sample) {
 		int32_t out_l = 0;
 		int32_t out_r = 0;
@@ -89,6 +105,18 @@ public:
 		// Calculate output
 		out_l = (out_l + multiply_32x32_rshift32_rounded(out_r, wet2)) << 1;
 		out_r = (out_r + multiply_32x32_rshift32_rounded(out_l, wet2)) << 1;
+
+		constexpr float kQ31Min = -2147483648.f;
+		constexpr float kQ31Max = 2147483520.f;
+		float filtered_l = static_cast<float>(out_l);
+		filtered_l -= dsp::OnePole(hpf_state_l_, filtered_l, hpf_cutoff_);
+		filtered_l = dsp::OnePole(lpf_state_l_, filtered_l, lpf_cutoff_);
+		out_l = static_cast<int32_t>(std::clamp(filtered_l, kQ31Min, kQ31Max));
+
+		float filtered_r = static_cast<float>(out_r);
+		filtered_r -= dsp::OnePole(hpf_state_r_, filtered_r, hpf_cutoff_);
+		filtered_r = dsp::OnePole(lpf_state_r_, filtered_r, lpf_cutoff_);
+		out_r = static_cast<int32_t>(std::clamp(filtered_r, kQ31Min, kQ31Max));
 
 		// Mix output
 		output_sample.l += multiply_32x32_rshift32_rounded(out_l, this->getPanLeft());
@@ -161,5 +189,13 @@ private:
 	std::array<int32_t, allpasstuningR4> bufallpassR4;
 
 	int32_t reverb_send_post_lpf_ = 0;
+	float hpf_value_ = 0.f;
+	float lpf_value_ = 1.f;
+	float hpf_cutoff_ = calcFilterCutoff<FilterType::HighPass>(hpf_value_);
+	float lpf_cutoff_ = calcFilterCutoff<FilterType::LowPass>(lpf_value_);
+	float hpf_state_l_ = 0.f;
+	float hpf_state_r_ = 0.f;
+	float lpf_state_l_ = 0.f;
+	float lpf_state_r_ = 0.f;
 };
 } // namespace deluge::dsp::reverb

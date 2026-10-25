@@ -32,6 +32,18 @@ public:
 		}
 	}
 
+	/// Mirror of containsAutomation() for the interpolation record. Added because the unpatched
+	/// shared param block now runs past 32 for Sounds as well as GlobalEffectables, so reading
+	/// only word 0 silently misses every param from slot 32 upward.
+	inline bool containsInterpolation() {
+		if constexpr (kMaxNumUnsignedIntegerstoRepAllParams > 2) {
+			return (whichParamsAreInterpolating[0] | whichParamsAreInterpolating[1] | whichParamsAreInterpolating[2]);
+		}
+		else {
+			return (whichParamsAreInterpolating[0] | whichParamsAreInterpolating[1]);
+		}
+	}
+
 	inline void resetInterpolationRecord(int32_t topUintToRepParams) {
 		for (int32_t i = topUintToRepParams; i >= 0; i--) {
 			whichParamsAreInterpolating[i] = 0;

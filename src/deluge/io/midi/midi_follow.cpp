@@ -17,6 +17,7 @@
 
 #include "io/midi/midi_follow.h"
 #include "definitions_cxx.hpp"
+#include "extern.h"
 #include "gui/l10n/l10n.h"
 #include "gui/views/arranger_view.h"
 #include "gui/views/automation_view.h"
@@ -35,6 +36,7 @@
 #include "model/instrument/kit.h"
 #include "model/instrument/melodic_instrument.h"
 #include "model/note/note_row.h"
+#include "model/settings/runtime_feature_settings.h"
 #include "model/song/song.h"
 #include "modulation/params/param.h"
 #include "modulation/params/param_set.h"
@@ -204,6 +206,13 @@ void MidiFollow::initDefaultMappings() {
 	soundParamToCC[params::LOCAL_OSC_B_VOLUME] = 26;
 	ccToSoundParam[27] = params::UNPATCHED_START + params::UNPATCHED_COMPRESSOR_THRESHOLD;
 	soundParamToCC[params::UNPATCHED_START + params::UNPATCHED_COMPRESSOR_THRESHOLD] = 27;
+
+	// Sear. CC 22 and 31 are claimed by neither the Deluge's default map nor the MIDI
+	// spec — checked against both before choosing.
+	ccToSoundParam[22] = params::LOCAL_SEAR;
+	soundParamToCC[params::LOCAL_SEAR] = 22;
+	ccToSoundParam[31] = params::UNPATCHED_START + params::UNPATCHED_SEAR_TONE;
+	soundParamToCC[params::UNPATCHED_START + params::UNPATCHED_SEAR_TONE] = 31;
 	ccToSoundParam[28] = params::LOCAL_OSC_B_PHASE_WIDTH;
 	soundParamToCC[params::LOCAL_OSC_B_PHASE_WIDTH] = 28;
 	ccToSoundParam[29] = params::LOCAL_CARRIER_1_FEEDBACK;
@@ -301,6 +310,70 @@ void MidiFollow::initDefaultMappings() {
 	soundParamToCC[params::UNPATCHED_START + params::UNPATCHED_BASS] = 86;
 	ccToSoundParam[87] = params::UNPATCHED_START + params::UNPATCHED_TREBLE;
 	soundParamToCC[params::UNPATCHED_START + params::UNPATCHED_TREBLE] = 87;
+	ccToSoundParam[88] = params::UNPATCHED_START + params::UNPATCHED_LOW_MID;
+	soundParamToCC[params::UNPATCHED_START + params::UNPATCHED_LOW_MID] = 88;
+	// The four-band EQ's three extra controls. NOT 111/112 as on the 1.2.1 branch: upstream took
+	// 102-113 for the Env3/Env4/LFO3/LFO4 params after 1.2.1 shipped, so that whole block is gone.
+	//
+	// Low-Mid Freq also had to move OFF CC 89. MIDI_CC_MUTE is 89, and on a per-track follow
+	// channel midiCCReceivedForSpecificTrack() intercepts it as "toggle clip mute" and returns
+	// before any param lookup happens — so the knob worked on channels A/B/C and silently muted
+	// clips everywhere else.
+	//
+	// 33/34/35 are the LSB halves of the 14-bit pairs for mod wheel / breath / CC 3. The Deluge is
+	// 7-bit only and never sends or consumes them, so they are free in practice. Deliberately NOT
+	// 32 (Bank Select LSB, which DAWs really do send alongside program changes) and not 38 (Data
+	// Entry LSB, which rides along with the RPN traffic MPE uses).
+	ccToSoundParam[33] = params::UNPATCHED_START + params::UNPATCHED_LOW_MID_FREQ;
+	soundParamToCC[params::UNPATCHED_START + params::UNPATCHED_LOW_MID_FREQ] = 33;
+	ccToSoundParam[34] = params::UNPATCHED_START + params::UNPATCHED_HIGH_MID;
+	soundParamToCC[params::UNPATCHED_START + params::UNPATCHED_HIGH_MID] = 34;
+	ccToSoundParam[35] = params::UNPATCHED_START + params::UNPATCHED_HIGH_MID_FREQ;
+	soundParamToCC[params::UNPATCHED_START + params::UNPATCHED_HIGH_MID_FREQ] = 35;
+
+	// The Gristleizer. NOT the 102-110 the 1.2.1 branch uses: upstream claimed 102-113 for the
+	// Env3/Env4/LFO3/LFO4 params after 1.2.1 shipped, so none of that block is available here.
+	//
+	// 114-119 are undefined in the MIDI spec and free in this map. 92, 94 and 95 are the legacy
+	// tremolo / detune / phaser depth controllers, which nothing in this decade transmits. The
+	// remaining free numbers were deliberately passed over: 64-69 are pedals and switches a
+	// keyboard really does send, 96-101 carry the data-entry and NRPN/RPN traffic MPE relies on,
+	// and 120-127 are channel mode messages that midi_engine.cpp never routes to a param at all
+	// (it gates on `data1 < 120`).
+	// 89 and 90 are the only two numbers left in the effects block (91-95 are already spoken for
+	// by reverb, mod-fx and the rest of the Gristleizer), which is where a bypass belongs.
+	ccToSoundParam[89] = params::UNPATCHED_START + params::UNPATCHED_GRISTLE_ON;
+	soundParamToCC[params::UNPATCHED_START + params::UNPATCHED_GRISTLE_ON] = 89;
+	ccToSoundParam[114] = params::UNPATCHED_START + params::UNPATCHED_GRISTLE_RATE;
+	soundParamToCC[params::UNPATCHED_START + params::UNPATCHED_GRISTLE_RATE] = 114;
+	ccToSoundParam[115] = params::UNPATCHED_START + params::UNPATCHED_GRISTLE_DEPTH;
+	soundParamToCC[params::UNPATCHED_START + params::UNPATCHED_GRISTLE_DEPTH] = 115;
+	ccToSoundParam[116] = params::UNPATCHED_START + params::UNPATCHED_GRISTLE_SHAPE;
+	soundParamToCC[params::UNPATCHED_START + params::UNPATCHED_GRISTLE_SHAPE] = 116;
+	ccToSoundParam[117] = params::UNPATCHED_START + params::UNPATCHED_GRISTLE_BIAS;
+	soundParamToCC[params::UNPATCHED_START + params::UNPATCHED_GRISTLE_BIAS] = 117;
+	ccToSoundParam[118] = params::UNPATCHED_START + params::UNPATCHED_GRISTLE_MODE;
+	soundParamToCC[params::UNPATCHED_START + params::UNPATCHED_GRISTLE_MODE] = 118;
+	ccToSoundParam[119] = params::UNPATCHED_START + params::UNPATCHED_GRISTLE_FREQ;
+	soundParamToCC[params::UNPATCHED_START + params::UNPATCHED_GRISTLE_FREQ] = 119;
+	ccToSoundParam[92] = params::UNPATCHED_START + params::UNPATCHED_GRISTLE_RES;
+	soundParamToCC[params::UNPATCHED_START + params::UNPATCHED_GRISTLE_RES] = 92;
+	ccToSoundParam[94] = params::UNPATCHED_START + params::UNPATCHED_GRISTLE_LEVEL;
+	soundParamToCC[params::UNPATCHED_START + params::UNPATCHED_GRISTLE_LEVEL] = 94;
+	ccToSoundParam[95] = params::UNPATCHED_START + params::UNPATCHED_GRISTLE_DIRT;
+	soundParamToCC[params::UNPATCHED_START + params::UNPATCHED_GRISTLE_DIRT] = 95;
+	// The Slicer. Four numbers nobody else had claimed: 9 and 90 are undefined in the MIDI
+	// spec, 2 and 8 are defined but never used by this firmware. Chosen over the 96-101 block
+	// on purpose — that is data entry and NRPN, and a controller sweeping one of those can make
+	// a receiver do something it was not asked to.
+	ccToSoundParam[90] = params::UNPATCHED_START + params::UNPATCHED_GRISTLE_PATTERN;
+	soundParamToCC[params::UNPATCHED_START + params::UNPATCHED_GRISTLE_PATTERN] = 90;
+	ccToSoundParam[9] = params::UNPATCHED_START + params::UNPATCHED_GRISTLE_VARIATION;
+	soundParamToCC[params::UNPATCHED_START + params::UNPATCHED_GRISTLE_VARIATION] = 9;
+	ccToSoundParam[8] = params::UNPATCHED_START + params::UNPATCHED_GRISTLE_SYNC;
+	soundParamToCC[params::UNPATCHED_START + params::UNPATCHED_GRISTLE_SYNC] = 8;
+	ccToSoundParam[2] = params::UNPATCHED_START + params::UNPATCHED_GRISTLE_BLEND;
+	soundParamToCC[params::UNPATCHED_START + params::UNPATCHED_GRISTLE_BLEND] = 2;
 	ccToSoundParam[91] = params::GLOBAL_REVERB_AMOUNT;
 	soundParamToCC[params::GLOBAL_REVERB_AMOUNT] = 91;
 	ccToSoundParam[93] = params::GLOBAL_MOD_FX_DEPTH;
@@ -373,14 +446,67 @@ void MidiFollow::initDefaultMappings() {
 	globalParamToCC[params::UNPATCHED_HPF_RES] = 82;
 	ccToGlobalParam[83] = params::UNPATCHED_HPF_MORPH;
 	globalParamToCC[params::UNPATCHED_HPF_MORPH] = 83;
+	// The reverse entries below must echo the CC on the line above them. They previously read
+	// 74/81/71/82 — the LPF and HPF numbers — because this block was copied from the filter block
+	// above and only the forward half was updated. The forward map decided which CC moved the
+	// param, so Bass and Treble responded correctly and the bug was inaudible from the controller;
+	// it showed up only in the other direction, where the Deluge transmitted EQ feedback on the
+	// filter CCs. On a bidirectional surface that lights up the wrong knob and, worse, feeds LPF
+	// and HPF positions back from EQ moves.
 	ccToGlobalParam[84] = params::UNPATCHED_BASS_FREQ;
-	globalParamToCC[params::UNPATCHED_BASS_FREQ] = 74;
+	globalParamToCC[params::UNPATCHED_BASS_FREQ] = 84;
 	ccToGlobalParam[85] = params::UNPATCHED_TREBLE_FREQ;
-	globalParamToCC[params::UNPATCHED_TREBLE_FREQ] = 81;
+	globalParamToCC[params::UNPATCHED_TREBLE_FREQ] = 85;
 	ccToGlobalParam[86] = params::UNPATCHED_BASS;
-	globalParamToCC[params::UNPATCHED_BASS] = 71;
+	globalParamToCC[params::UNPATCHED_BASS] = 86;
 	ccToGlobalParam[87] = params::UNPATCHED_TREBLE;
-	globalParamToCC[params::UNPATCHED_TREBLE] = 82;
+	globalParamToCC[params::UNPATCHED_TREBLE] = 87;
+	ccToGlobalParam[88] = params::UNPATCHED_LOW_MID;
+	globalParamToCC[params::UNPATCHED_LOW_MID] = 88;
+	// Morph. CC 102 is undefined in the MIDI spec and free in this map (on a synth it is Env3 attack,
+	// which song context never reaches). It used to be 90, but the Gristleator Slicer's Pattern below
+	// also takes 90 in this map and was overwriting it, so Morph had no working default CC.
+	ccToGlobalParam[102] = params::UNPATCHED_MORPH;
+	globalParamToCC[params::UNPATCHED_MORPH] = 102;
+	// See the comment on the sound-param side above for why these are 33/34/35 and not 89/111/112.
+	ccToGlobalParam[33] = params::UNPATCHED_LOW_MID_FREQ;
+	globalParamToCC[params::UNPATCHED_LOW_MID_FREQ] = 33;
+	ccToGlobalParam[34] = params::UNPATCHED_HIGH_MID;
+	globalParamToCC[params::UNPATCHED_HIGH_MID] = 34;
+	ccToGlobalParam[35] = params::UNPATCHED_HIGH_MID_FREQ;
+	globalParamToCC[params::UNPATCHED_HIGH_MID_FREQ] = 35;
+
+	// See the comment on the sound-param side above for why these numbers.
+	ccToGlobalParam[89] = params::UNPATCHED_GRISTLE_ON;
+	globalParamToCC[params::UNPATCHED_GRISTLE_ON] = 89;
+	ccToGlobalParam[114] = params::UNPATCHED_GRISTLE_RATE;
+	globalParamToCC[params::UNPATCHED_GRISTLE_RATE] = 114;
+	ccToGlobalParam[115] = params::UNPATCHED_GRISTLE_DEPTH;
+	globalParamToCC[params::UNPATCHED_GRISTLE_DEPTH] = 115;
+	ccToGlobalParam[116] = params::UNPATCHED_GRISTLE_SHAPE;
+	globalParamToCC[params::UNPATCHED_GRISTLE_SHAPE] = 116;
+	ccToGlobalParam[117] = params::UNPATCHED_GRISTLE_BIAS;
+	globalParamToCC[params::UNPATCHED_GRISTLE_BIAS] = 117;
+	ccToGlobalParam[118] = params::UNPATCHED_GRISTLE_MODE;
+	globalParamToCC[params::UNPATCHED_GRISTLE_MODE] = 118;
+	ccToGlobalParam[119] = params::UNPATCHED_GRISTLE_FREQ;
+	globalParamToCC[params::UNPATCHED_GRISTLE_FREQ] = 119;
+	ccToGlobalParam[92] = params::UNPATCHED_GRISTLE_RES;
+	globalParamToCC[params::UNPATCHED_GRISTLE_RES] = 92;
+	ccToGlobalParam[94] = params::UNPATCHED_GRISTLE_LEVEL;
+	globalParamToCC[params::UNPATCHED_GRISTLE_LEVEL] = 94;
+	ccToGlobalParam[95] = params::UNPATCHED_GRISTLE_DIRT;
+	globalParamToCC[params::UNPATCHED_GRISTLE_DIRT] = 95;
+	// The Slicer, same four numbers as the sound map above so one controller template drives
+	// both a synth track and the song FX.
+	ccToGlobalParam[90] = params::UNPATCHED_GRISTLE_PATTERN;
+	globalParamToCC[params::UNPATCHED_GRISTLE_PATTERN] = 90;
+	ccToGlobalParam[9] = params::UNPATCHED_GRISTLE_VARIATION;
+	globalParamToCC[params::UNPATCHED_GRISTLE_VARIATION] = 9;
+	ccToGlobalParam[8] = params::UNPATCHED_GRISTLE_SYNC;
+	globalParamToCC[params::UNPATCHED_GRISTLE_SYNC] = 8;
+	ccToGlobalParam[2] = params::UNPATCHED_GRISTLE_BLEND;
+	globalParamToCC[params::UNPATCHED_GRISTLE_BLEND] = 2;
 	ccToGlobalParam[91] = params::UNPATCHED_REVERB_SEND_AMOUNT;
 	globalParamToCC[params::UNPATCHED_REVERB_SEND_AMOUNT] = 91;
 	ccToGlobalParam[93] = params::UNPATCHED_MOD_FX_DEPTH;
@@ -419,6 +545,9 @@ Clip* MidiFollow::getSelectedOrActiveClip() {
 /// if you're in a clip, this will return that clip
 Clip* MidiFollow::getSelectedClip() {
 	Clip* clip = nullptr;
+	// True when the clip below came from something the player is physically holding right now,
+	// which outranks a standing grid-hold lock for as long as it is held.
+	bool heldGesture = false;
 
 	RootUI* rootUI = getRootUI();
 	UIType uiType = UIType::NONE;
@@ -428,22 +557,32 @@ Clip* MidiFollow::getSelectedClip() {
 
 	switch (uiType) {
 	case UIType::SESSION:
-		// if you're in session view, check if you're pressing a clip to control that clip
-		clip = sessionView.getClipForLayout();
+		// Grid Launch mode: gated by hold time, see getGridSelectedClip(). Rows layout has no
+		// such gesture defined, so it keeps the original instant-on-touch behaviour -- and so does
+		// the grid with the Grid Follow Lock switch Off.
+		if (currentSong->sessionLayout == SessionLayoutType::SessionLayoutTypeGrid && isGridLockEnabled()) {
+			clip = getGridSelectedClip();
+		}
+		else {
+			clip = sessionView.getClipForLayout();
+		}
 		break;
 	case UIType::ARRANGER:
 		clip = arrangerView.getClipForSelection();
+		heldGesture = (clip != nullptr);
 		break;
 	case UIType::PERFORMANCE:
 		// if you're in the arranger performance view, check if you're holding audition pad
 		if (currentSong->lastClipInstanceEnteredStartPos != -1) {
 			clip = arrangerView.getClipForSelection();
+			heldGesture = (clip != nullptr);
 		}
 		break;
 	case UIType::AUTOMATION:
 		// if you're in the arranger automation view, check if you're holding audition pad
 		if (automationView.onArrangerView) {
 			clip = arrangerView.getClipForSelection();
+			heldGesture = (clip != nullptr);
 			break;
 		}
 		[[fallthrough]]; // you're in automation clip view
@@ -451,13 +590,120 @@ Clip* MidiFollow::getSelectedClip() {
 		clip = getCurrentClip();
 	}
 
+	// A grid-hold lock is meant to outlast Session view. Without this, opening any other track's
+	// clip view hands Follow straight back to whatever is on screen -- so the locked clip and the
+	// track being edited both look like they are being controlled, which is the opposite of what
+	// the lock is for. In Session grid view the lock is already the answer above, and holding a
+	// pad there is how you re-target or release it; a pad or audition pad being physically held
+	// somewhere else still wins, since that is a deliberate momentary selection.
+	if (uiType != UIType::SESSION && !heldGesture) {
+		Clip* locked = getValidatedGridSelectedClip();
+		if (locked) {
+			clip = locked;
+		}
+	}
+
 	return clip;
+}
+
+/// How long a grid pad can be held before it stops counting as the MIDI Follow lock gesture.
+/// Two seconds is well past any hold that means "lock this one", and comfortably short of a hold
+/// that means "leave the pad down while I read the track name off the display".
+constexpr int32_t kGridFollowLockMaxHold = kSampleRate * 2;
+
+/// The lock gesture is a window, not just a floor. Below Hold Time is an ordinary launch tap and
+/// never touched the lock; above kGridFollowLockMaxHold is a look at the name, which now doesn't
+/// either. Both ends are checked in the same place so the read-time path and the release handler
+/// can never disagree about whether a given press was the gesture.
+bool MidiFollow::isGridLockEnabled() {
+	return runtimeFeatureSettings.isOn(RuntimeFeatureSettingType::MidiFollowGridLock);
+}
+
+bool MidiFollow::isGridLockGesture(uint32_t pressTime) {
+	if (!isGridLockEnabled()) {
+		return false;
+	}
+	int32_t held = (int32_t)(AudioEngine::audioSampleTimer - pressTime);
+	return (held >= FlashStorage::holdTime) && (held < kGridFollowLockMaxHold);
+}
+
+/// gridSelectedClip is a bare pointer kept for as long as the lock lasts, so it has to be checked
+/// against the Song before anything is done with it. clearStoredClips() and removeClip() cover the
+/// routes that announce themselves, but a Clip can stop being usable without either being called --
+/// deleted through a path that doesn't reach removeClip(), or belonging to a Song that went away.
+/// A pointer that no longer appears in the Song is dropped here rather than followed: following it
+/// is how a param lookup ends up on a ParamManager whose collections have been taken away, which is
+/// what E411 catches.
+Clip* MidiFollow::getValidatedGridSelectedClip() {
+	if (!gridSelectedClip) {
+		return nullptr;
+	}
+	// Switched off while a lock was standing: the menu toggle drops it too, this is the backstop.
+	if (!isGridLockEnabled()) {
+		gridSelectedClip = nullptr;
+		return nullptr;
+	}
+	if (!currentSong
+	    || (currentSong->sessionClips.getIndexForClip(gridSelectedClip) == -1
+	        && currentSong->arrangementOnlyClips.getIndexForClip(gridSelectedClip) == -1)) {
+		gridSelectedClip = nullptr;
+		return nullptr;
+	}
+	if (!gridSelectedClip->output) {
+		gridSelectedClip = nullptr;
+		return nullptr;
+	}
+	return gridSelectedClip;
+}
+
+/// Session view, Grid layout, Launch mode only -- Edit mode dispatches through a different
+/// handler entirely and is untouched by any of this.
+///
+/// Grid taps launch clips constantly during a live set, and every one of them used to become
+/// Follow's new target for however long the pad stayed down, gold-knob style. A live launch is
+/// usually only down for a moment, but "a moment" is still long enough to catch a CC in transit
+/// -- a control meant for the synth being built would land on the drum kit that was just
+/// launched instead, and there was no way to launch a clip without briefly stealing the target.
+///
+/// A pad has to be held past Settings > Defaults > Hold Time -- the same threshold Shift,
+/// button taps and Performance View's FX pad latch already use -- and released again before
+/// kGridFollowLockMaxHold, before it can claim the selection; once claimed it is kept in
+/// gridSelectedClip rather than re-read from whatever pad happens to be down. An ordinary
+/// tap-to-launch never reaches the bottom of that window and a pad held down to read the track's
+/// name off the display goes out the top of it, so neither disturbs Follow's target.
+///
+/// The release handler owns the lock transition. Until release confirms a valid gesture, MIDI
+/// Follow keeps answering with the existing lock (or the ordinary active clip when no lock exists).
+/// This keeps the control target synchronized with the pulsing lock indicator: crossing Hold Time
+/// by itself cannot silently move a controller to a pad whose pulse has not yet been confirmed.
+Clip* MidiFollow::getGridSelectedClip() {
+	return getValidatedGridSelectedClip();
+}
+
+void MidiFollow::gridClipHeldForSelection(Clip* clip) {
+	gridSelectedClip = clip;
 }
 
 /// returns activeClip for the selected output
 /// special case for note and performance data where you want to let notes,
 /// midi modulation sources (e.g. mod wheel), and MPE through to the active clip
 Clip* MidiFollow::getActiveClip(ModelStack* modelStack) {
+	// In Session grid view a Follow lock decides where notes and performance data go, exactly as
+	// it already decides where CCs go (see getSelectedClip()). Without this, a launch tap on
+	// another pad made that pad the current clip and the keys followed it, while the CCs and the
+	// pulse stayed on the locked clip. The lock is claimed or released only by the hold gesture,
+	// never by what is current. If the locked track has no active clip, the locked clip itself
+	// takes the notes.
+	RootUI* rootUI = getRootUI();
+	if (rootUI && rootUI->getUIType() == UIType::SESSION
+	    && currentSong->sessionLayout == SessionLayoutType::SessionLayoutTypeGrid) {
+		Clip* locked = getValidatedGridSelectedClip();
+		if (locked != nullptr && locked->type == ClipType::INSTRUMENT) {
+			Clip* lockedActive = locked->output->getActiveClip();
+			return lockedActive != nullptr ? lockedActive : locked;
+		}
+	}
+
 	// If you have an output for which no clip is active,
 	// when auditioning a clip for that output,
 	// the active clip for that output should be set to the current clip.
@@ -630,6 +876,11 @@ MidiFollow::getModelStackWithParamForAudioClip(ModelStackWithTimelineCounter* mo
 	return modelStackWithParam;
 }
 
+/// Minimum gap between "can't control this" popups, in samples. At CC rate an unthrottled popup
+/// per message overruns the OLED frame queue; half a second is slow enough for the display and
+/// fast enough that the message still tracks what the player is doing.
+constexpr uint32_t kParamControlErrorPopupInterval = (kSampleRate / 1000) * 500;
+
 void MidiFollow::displayParamControlError(int32_t soundParamId, int32_t globalParamId) {
 	params::Kind paramKind = params::Kind::NONE;
 	int32_t paramID = PARAM_ID_NONE;
@@ -648,6 +899,20 @@ void MidiFollow::displayParamControlError(int32_t soundParamId, int32_t globalPa
 	}
 
 	if (paramID != PARAM_ID_NONE) {
+		// A knob turn is a continuous stream of CCs, and every one that fails to resolve used to raise
+		// its own popup. Each popup marks the display changed, which queues a full frame for DMA, and
+		// the frame queue overflows long before the OLED can drain it -- that is FREEZE_WITH_ERROR("FULL")
+		// in enqueueOLEDFrame(). Nothing is lost by showing the message once and letting it stand: the
+		// player is told what cannot be controlled, and the next distinct failure still gets through.
+		static uint32_t lastErrorPopupTime = 0;
+		static bool haveShownErrorPopup = false;
+		uint32_t now = AudioEngine::audioSampleTimer;
+		if (haveShownErrorPopup && (uint32_t)(now - lastErrorPopupTime) < kParamControlErrorPopupInterval) {
+			return;
+		}
+		lastErrorPopupTime = now;
+		haveShownErrorPopup = true;
+
 		if (display->haveOLED()) {
 			DEF_STACK_STRING_BUF(popupMsg, 40);
 
@@ -718,6 +983,7 @@ void MidiFollow::clearStoredClips() {
 	for (int32_t i = 0; i <= 127; i++) {
 		clipForLastNoteReceived[i] = nullptr;
 	}
+	gridSelectedClip = nullptr;
 }
 
 /// removes a specific clip pointer from the clipForLastNoteReceived array
@@ -728,6 +994,9 @@ void MidiFollow::removeClip(Clip* clip) {
 		if (clipForLastNoteReceived[i] == clip) {
 			clipForLastNoteReceived[i] = nullptr;
 		}
+	}
+	if (gridSelectedClip == clip) {
+		gridSelectedClip = nullptr;
 	}
 }
 
@@ -901,6 +1170,67 @@ void MidiFollow::midiCCReceived(MIDICable& cable, uint8_t channel, uint8_t ccNum
 	}
 }
 
+namespace {
+/// Which params the card's MIDIFollow.XML actually named, filled while reading it. Indexed like
+/// soundParamToCC / globalParamToCC; 256 covers any uint8_t param id.
+std::array<bool, 256> soundParamInFile{};
+std::array<bool, 256> globalParamInFile{};
+} // namespace
+
+namespace {
+/// Morph's sweep is a SONG parameter, but MIDI Follow always resolves a clip (in Song view, the
+/// active clip of the track under the cursor) and only ever reaches that clip's params, so the
+/// default Morph CC could never reach Morph. In the song-level views - Song, Arranger and
+/// Performance - the Morph CC goes straight to the song's Morph param instead. In a clip view it
+/// stays that clip's CC (on a synth, CC 102 is Env 3 attack).
+bool morphCCGoesToSong() {
+	RootUI* rootUI = getRootUI();
+	if (!rootUI || !currentSong) {
+		return false;
+	}
+	switch (rootUI->getUIType()) {
+	case UIType::SESSION:
+	case UIType::ARRANGER:
+	case UIType::PERFORMANCE:
+		return true;
+	case UIType::AUTOMATION:
+		return automationView.onArrangerView;
+	default:
+		return false;
+	}
+}
+
+/// Moves the song's Morph param from an incoming CC, the same way a learned param is moved:
+/// takeover mode applies, and the popup shows when MIDI Follow's display-param option is on.
+/// Morph::apply() reads this param every tick, so setting it is all a sweep needs.
+void receivedMorphCC(MIDICable& cable, int32_t ccNumber, int32_t ccValue) {
+	Song* song = currentSong;
+	char modelStackMemory[MODEL_STACK_MAX_SIZE];
+	ModelStack* modelStack = setupModelStackWithSong(modelStackMemory, song);
+	ModelStackWithThreeMainThings* three = modelStack->addTimelineCounter(song)->addOtherTwoThingsButNoNoteRow(
+	    &song->globalEffectable, &song->paramManager);
+	if (!three) {
+		return;
+	}
+	ModelStackWithAutoParam* withParam = three->getUnpatchedAutoParamFromId(params::UNPATCHED_MORPH);
+	if (!withParam || !withParam->autoParam) {
+		return;
+	}
+	int32_t knobPos =
+	    withParam->paramCollection->paramValueToKnobPos(withParam->autoParam->getCurrentValue(), withParam);
+	int32_t newKnobPos = MidiTakeover::calculateKnobPos(cable, knobPos, ccValue, nullptr, true, ccNumber, false);
+	if (newKnobPos == knobPos) {
+		return;
+	}
+	int32_t newValue = withParam->paramCollection->knobPosToParamValue(newKnobPos, withParam);
+	withParam->autoParam->setValuePossiblyForRegion(newValue, withParam, 0, 0);
+	if (midiEngine.midiFollowDisplayParam) {
+		view.displayModEncoderValuePopup(params::Kind::UNPATCHED_GLOBAL, params::UNPATCHED_MORPH, newKnobPos);
+	}
+	view.setKnobIndicatorLevels();
+}
+} // namespace
+
 /// determines whether a midi cc received is midi follow relevant
 /// and should be routed to the active context for further processing
 Output* MidiFollow::midiCCReceivedForSelectedOrActiveClip(MIDICable& cable, uint8_t channel, uint8_t ccNumber,
@@ -910,6 +1240,13 @@ Output* MidiFollow::midiCCReceivedForSelectedOrActiveClip(MIDICable& cable, uint
 
 	MIDIMatchType match = checkMidiFollowMatch(cable, channel);
 	if (match != MIDIMatchType::NO_MATCH) {
+		// Morph's CC drives the song's Morph sweep in the song-level views, not the active clip.
+		if ((match == MIDIMatchType::MPE_MASTER || match == MIDIMatchType::CHANNEL)
+		    && ccToGlobalParam[ccNumber] == params::UNPATCHED_MORPH && morphCCGoesToSong()) {
+			receivedMorphCC(cable, ccNumber, ccValue);
+			return nullptr;
+		}
+
 		// obtain clip for active context (for params that's only for the active mod controllable stack)
 		Clip* clip = getSelectedOrActiveClip();
 
@@ -1844,6 +2181,16 @@ void MidiFollow::readDefaultsFromFile() {
 		return;
 	}
 
+	// Keep the built-in defaults to hand: a param this file does not mention - because the file
+	// was written by an older build, before that param existed - gets its default CC back below,
+	// as long as nothing in the file has taken that CC. Without this, every param added since the
+	// card's MIDIFollow.XML was first written (Morph, the Gristleator Slicer...) has no CC at all.
+	initDefaultMappings();
+	const auto defaultSoundParamToCC = soundParamToCC;
+	const auto defaultGlobalParamToCC = globalParamToCC;
+	soundParamInFile.fill(false);
+	globalParamInFile.fill(false);
+
 	// Clear mappings before reading the settings from the file
 	clearMappings();
 
@@ -1867,6 +2214,21 @@ void MidiFollow::readDefaultsFromFile() {
 	activeDeserializer->closeWriter();
 	successfullyReadDefaultsFromFile = true;
 
+	for (size_t paramId = 0; paramId < defaultSoundParamToCC.size(); paramId++) {
+		uint8_t cc = defaultSoundParamToCC[paramId];
+		if (!soundParamInFile[paramId] && cc <= kMaxMIDIValue && ccToSoundParam[cc] == PARAM_ID_NONE) {
+			ccToSoundParam[cc] = static_cast<uint8_t>(paramId);
+			soundParamToCC[paramId] = cc;
+		}
+	}
+	for (size_t paramId = 0; paramId < defaultGlobalParamToCC.size(); paramId++) {
+		uint8_t cc = defaultGlobalParamToCC[paramId];
+		if (!globalParamInFile[paramId] && cc <= kMaxMIDIValue && ccToGlobalParam[cc] == PARAM_ID_NONE) {
+			ccToGlobalParam[cc] = static_cast<uint8_t>(paramId);
+			globalParamToCC[paramId] = cc;
+		}
+	}
+
 	// Write the migrated settings back out over the <settings> block we just skipped
 	if (FlashStorage::areLegacyMidiFollowSettingsPending()) {
 		completeLegacyFlashMigration(writeDefaultsToFile());
@@ -1885,7 +2247,10 @@ void MidiFollow::readDefaultMappingsFromFile(Deserializer& reader) {
 		for (uint8_t paramId = 0; paramId < params::GLOBAL_NONE; paramId++) {
 			if (!strcmp(tag_name, params::paramNameForFile(params::Kind::PATCHED, paramId, true))) {
 				soundParamToCC[paramId] = value;
-				ccToSoundParam[value] = paramId;
+				if (value >= 0 && value <= kMaxMIDIValue) {
+					ccToSoundParam[value] = paramId;
+				}
+				soundParamInFile[paramId] = true;
 				foundParam = true;
 				break;
 			}
@@ -1896,7 +2261,10 @@ void MidiFollow::readDefaultMappingsFromFile(Deserializer& reader) {
 				if (!strcmp(tag_name, params::paramNameForFile(params::Kind::UNPATCHED_SOUND,
 				                                               params::UNPATCHED_START + paramId, true))) {
 					soundParamToCC[params::UNPATCHED_START + paramId] = value;
-					ccToSoundParam[value] = params::UNPATCHED_START + paramId;
+					if (value >= 0 && value <= kMaxMIDIValue) {
+						ccToSoundParam[value] = params::UNPATCHED_START + paramId;
+					}
+					soundParamInFile[params::UNPATCHED_START + paramId] = true;
 					foundParam = true;
 					break;
 				}
@@ -1907,12 +2275,27 @@ void MidiFollow::readDefaultMappingsFromFile(Deserializer& reader) {
 			if (!strcmp(tag_name, params::paramNameForFile(params::Kind::UNPATCHED_GLOBAL,
 			                                               params::UNPATCHED_START + paramId, true))) {
 				globalParamToCC[paramId] = value;
-				ccToGlobalParam[value] = paramId;
+				if (value >= 0 && value <= kMaxMIDIValue) {
+					ccToGlobalParam[value] = paramId;
+				}
+				globalParamInFile[paramId] = true;
 				break;
 			}
 		}
 		// exit out of this tag so you can check the next tag
 		reader.exitTag();
+	}
+
+	// Morph moved from CC 90 to CC 102 (see init()). A MIDIFollow.XML written before the move still says 90,
+	// where it collides with the Gristleator Pattern, so move it on load as long as 102 is free.
+	if (globalParamToCC[params::UNPATCHED_MORPH] == 90 && ccToGlobalParam[102] == PARAM_ID_NONE) {
+		if (ccToGlobalParam[90] == params::UNPATCHED_MORPH) {
+			ccToGlobalParam[90] = (globalParamToCC[params::UNPATCHED_GRISTLE_PATTERN] == 90)
+			                         ? static_cast<uint8_t>(params::UNPATCHED_GRISTLE_PATTERN)
+			                         : static_cast<uint8_t>(PARAM_ID_NONE);
+		}
+		ccToGlobalParam[102] = params::UNPATCHED_MORPH;
+		globalParamToCC[params::UNPATCHED_MORPH] = 102;
 	}
 }
 

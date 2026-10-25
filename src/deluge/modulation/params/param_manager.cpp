@@ -209,6 +209,15 @@ Error ParamManager::cloneParamCollectionsFrom(ParamManager const* other, bool co
 			// Mark that there's nothing here
 			summaries[0] = mpeParamsOrNullHere;
 			summaries[1] = {0};
+			// Rudement E411 fix: expressionParamSetOffset is only set on the success path, so without this a
+			// ParamManager with no patched set still answers true to containsAnyMainParamCollections() and the
+			// next guard waves it through into getPatchedParamSetSummary(), which freezes with E411.
+			expressionParamSetOffset = 0;
+#if ALPHA_OR_BETA_VERSION
+			summaries[2] = {0};
+			summaries[3] = {0};
+			summaries[4] = {0};
+#endif
 			return Error::INSUFFICIENT_RAM;
 		}
 
@@ -390,15 +399,19 @@ void ParamManagerForTimeline::processCurrentPos(ModelStackWithThreeMainThings* m
 		// begin - whereas the ticks we've skipped belong to the span we've just finished. Applying them to the new
 		// increment sends the value far past its target (a whole inter-node gap's worth of a few-tick ramp), which for
 		// MIDI output means expression values well outside 0-127.
-		if (!mayInterpolate && (summary->whichParamsAreInterpolating[0] != 0u)) {
+		//
+		// containsInterpolation() reads BOTH words, not just [0]. The unpatched shared block is 40 params now, so for
+		// a Sound (41 total) the arp probability and spread params live in word 1; word 0 alone would silently stop
+		// tick-interpolating them.
+		if (!mayInterpolate && summary->containsInterpolation()) {
 			summary->paramCollection->tickTicks(ticksSkipped, modelStackWithParamCollection);
 		}
 
 		summary->paramCollection->processCurrentPos(modelStackWithParamCollection, ticksSkipped, reversed, didPingpong,
 		                                            true);
 		// Re-check after processCurrentPos(): if a node has just started some interpolation, we need to come back every
-		// tick to advance it.
-		if (!mayInterpolate && (summary->whichParamsAreInterpolating[0] != 0u)) {
+		// tick to advance it. Both words again, for the same reason as above.
+		if (!mayInterpolate && summary->containsInterpolation()) {
 			ticksTilNextEvent = 0;
 		}
 		ticksTilNextEvent = std::min(ticksTilNextEvent, summary->paramCollection->ticksTilNextEvent);

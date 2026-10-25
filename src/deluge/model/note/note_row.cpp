@@ -17,6 +17,7 @@
 
 #include "model/note/note_row.h"
 #include "definitions_cxx.hpp"
+#include "gui/ui/keyboard/keyboard_screen.h"
 #include "gui/views/automation_view.h"
 #include "gui/views/instrument_clip_view.h"
 #include "gui/views/view.h"
@@ -25,6 +26,7 @@
 #include "memory/general_memory_allocator.h"
 #include "model/action/action.h"
 #include "model/clip/instrument_clip.h"
+#include "model/clock_division.h"
 #include "model/consequence/consequence_note_existence.h"
 #include "model/drum/drum_name.h"
 #include "model/drum/gate_drum.h"
@@ -34,6 +36,13 @@
 #include "model/note/note.h"
 #include "model/settings/runtime_feature_settings.h"
 #include "model/song/song.h"
+#include "modulation/midi_fx/chord_source.h"
+#include "modulation/midi_fx/groove.h"
+#include "modulation/midi_fx/loop_remix.h"
+#include "modulation/midi_fx/loop_remix_io.h"
+#include "modulation/midi_fx/pitch_source.h"
+#include "modulation/midi_fx/spice.h"
+#include "modulation/midi_fx/spread.h"
 #include "modulation/params/param_set.h"
 #include "modulation/patch/patch_cable_set.h"
 #include "playback/playback_handler.h"
@@ -41,14 +50,139 @@
 #include "processing/sound/sound_drum.h"
 #include "processing/sound/sound_instrument.h"
 #include "storage/storage_manager.h"
+#include "util/d_string.h"
 #include "util/functions.h"
 #include "util/lookuptables/lookuptables.h"
+#include <algorithm>
 #include <new>
 #include <string.h>
 
 extern "C" {
 #include "RZA1/uart/sio_char.h"
 }
+
+namespace {
+
+/// Where in the phrase a row should be read, given where the clock actually is - the Play FX
+/// transform, in one place.
+///
+/// One place because it has to be: a note found in this frame and then acted on in the raw frame
+/// is a note started at the wrong sample offset, and that mixture is a real defect this had before
+/// the helper existed. Every playback read that can be handed a note from the other must use this.
+/// Recording, undo and the note-row length operations deliberately keep using the raw position -
+/// see docs/PLAY-FX-SEQUENCER-DESIGN.md.
+int32_t playFxAdjustedPos(int32_t clockShift, int32_t beatStretch, int32_t division, int32_t pos,
+                          int32_t effectiveLength) {
+	if (effectiveLength <= 0) {
+		return pos;
+	}
+
+	// Division and Beat Stretch are the same transform and compose into one multiply. Doing them
+	// as two would round twice, and a /3 that is exact on its own would stop being exact the
+	// moment the stretch was left at anything but neutral.
+	const auto ratio = deluge::model::clock_division::ratioFor(division);
+
+	if (beatStretch != InstrumentClip::kBeatStretchOff || ratio.num != ratio.den) {
+		// Faster than the clock and the phrase repeats inside the loop; slower and its tail falls
+		// off the end of the loop. The RS7000 truncates too, so matching it is both the cheap
+		// answer and the right one - and it is why a division here resyncs every loop rather than
+		// running free against the rest of the kit.
+		//
+		// int64_t for the multiply: position times 100 times the ratio overflows int32_t on a long
+		// arrangement clip, and the wrap would put the read head somewhere arbitrary.
+		pos = static_cast<int32_t>((static_cast<int64_t>(pos) * InstrumentClip::kBeatStretchOff * ratio.num)
+		                           / (static_cast<int64_t>(beatStretch) * ratio.den));
+		pos %= effectiveLength;
+	}
+
+	if (clockShift != 0) {
+		pos += clockShift;
+		// Wrapped both ways: a negative shift near the top of the loop reads from the end of it,
+		// which is what "the phrase plays early" has to mean in a loop.
+		pos %= effectiveLength;
+		if (pos < 0) {
+			pos += effectiveLength;
+		}
+	}
+
+	return pos;
+}
+
+/// Loop Remix, in the same frame playFxAdjustedPos leaves a position in - so the slice grid is
+/// measured on the phrase the row is actually being read in, and Loop Remix composes with Beat
+/// Stretch, Division and Clock Shift instead of fighting them.
+///
+/// Stands down (returns the position untouched, ticksTilSliceEnd INT32_MAX) whenever applying it
+/// could only do harm:
+///  - Off, or the Community Features switch is off. Both leave the clip bit-for-bit as written.
+///  - Playing in reverse. The slice arithmetic and the wake-up are forwards-only.
+///  - A row with its own independent length, whose loop the clip's slice grid does not describe.
+///  - A drone. A note that fills its whole row is held across the loop on purpose; a jump landing
+///    inside it would stop it and the next note-on would not come until the loop restarts.
+deluge::modulation::midi_fx::loop_remix::Mapping
+loopRemixMapping(const deluge::modulation::midi_fx::loop_remix::Slot& slot, bool playingReversed,
+                 bool independentLength, bool hasDrone, int32_t pos, int32_t effectiveLength) {
+	namespace lr = deluge::modulation::midi_fx::loop_remix;
+	const lr::Settings& live = slot.live;
+	if (!live.active || playingReversed || independentLength || hasDrone
+	    || runtimeFeatureSettings.get(RuntimeFeatureSettingType::LoopRemix) != RuntimeFeatureStateToggle::On) {
+		return lr::Mapping{pos, 2147483647, -1, false, false};
+	}
+	return lr::map(pos, effectiveLength, live);
+}
+
+/// Groove plays only with its Community Features switch on. Off leaves every clip exactly as written,
+/// and a song's saved grooves come straight back the moment it is turned on again.
+bool grooveApplies() {
+	return runtimeFeatureSettings.get(RuntimeFeatureSettingType::Groove) == RuntimeFeatureStateToggle::On;
+}
+
+/// Groove's settings for a row: the drum's own on a Kit, the Clip's otherwise - Loop Remix's split. The
+/// salt is what keeps Random from rolling the same number for every drum; on a melodic clip it is shared,
+/// so the notes of a chord move together rather than flamming.
+const deluge::modulation::midi_fx::groove::Settings& grooveSettingsFor(const NoteRow& row, const InstrumentClip* clip,
+                                                                       int32_t noteRowId, int32_t& salt) {
+	const bool perRow = clip->output != nullptr && clip->output->type == OutputType::KIT;
+	salt = perRow ? noteRowId : 0;
+	return perRow ? row.groove : clip->groove;
+}
+
+/// A note-on's velocity with Groove's Accent and Random applied. Measured against where the clock really
+/// is at the note-on, which a grooved note reaches within half a step of the step it was written on.
+int32_t grooveVelocity(const NoteRow& row, ModelStackWithNoteRow* modelStack, int32_t velocity) {
+	if (!grooveApplies()) {
+		return velocity;
+	}
+	const auto* clip = static_cast<const InstrumentClip*>(modelStack->getTimelineCounter());
+	int32_t salt = 0;
+	const auto& settings = grooveSettingsFor(row, clip, modelStack->noteRowId, salt);
+	if (settings.isDefault()) {
+		return velocity;
+	}
+	return deluge::modulation::midi_fx::groove::accentVelocity(
+	    settings, velocity, static_cast<int32_t>(currentSong->getQuarterNoteLength()), modelStack->getLastProcessedPos(),
+	    modelStack->getLoopLength(), modelStack->getRepeatCount(), salt);
+}
+
+/// The grooved position for a raw one, for the paths that only need to know where the row is being read.
+int32_t grooveAdjustedPos(const NoteRow& row, ModelStackWithNoteRow* modelStack, int32_t pos) {
+	if (!grooveApplies()) {
+		return pos;
+	}
+	const auto* clip = static_cast<const InstrumentClip*>(modelStack->getTimelineCounter());
+	int32_t salt = 0;
+	const auto& settings = grooveSettingsFor(row, clip, modelStack->noteRowId, salt);
+	deluge::modulation::midi_fx::groove::Warp warp;
+	if (!deluge::modulation::midi_fx::groove::makeWarp(settings,
+	                                                   static_cast<int32_t>(currentSong->getQuarterNoteLength()),
+	                                                   modelStack->getLoopLength(), modelStack->getRepeatCount(), salt,
+	                                                   warp)) {
+		return pos;
+	}
+	return warp.forward(pos);
+}
+
+} // namespace
 
 NoteRow::NoteRow(int16_t newY) {
 	y = newY;
@@ -57,6 +191,7 @@ NoteRow::NoteRow(int16_t newY) {
 	drum = nullptr;
 	firstOldDrumName = nullptr;
 	sequenced = false;
+	soundingNoteCode = -1;
 	ignoreNoteOnsBefore_ = 0;
 	probabilityValue = kNumProbabilityValues;
 	iteranceValue = kDefaultIteranceValue;
@@ -1873,6 +2008,21 @@ void NoteRow::stopCurrentlyPlayingNote(ModelStackWithNoteRow* modelStack, bool a
 	if (actuallySoundChange) {
 		playNote(false, modelStack, note);
 	}
+	// Clear this row's playback note-preview white (254) whenever it stops being sequenced — regardless
+	// of the sound-change path — so loops, cuts and re-triggers can't leave stale white pads lit.
+	{
+		InstrumentClip* clip = (InstrumentClip*)modelStack->getTimelineCounter();
+		int32_t noteCode = getNoteCode();
+		if (clip == getCurrentInstrumentClip() && noteCode >= 0
+		    && noteCode < deluge::gui::ui::keyboard::kHighestKeyboardNote
+		    && keyboardScreen.highlightedNotes[noteCode] == 254) {
+			keyboardScreen.highlightedNotes[noteCode] = 0;
+			keyboardScreen.requestRendering();
+		}
+	}
+	// Drop Strum's latch with the note it belonged to. Left standing, it would push out the end of
+	// whatever note this row plays next, which is the quiet version of a hung note.
+	strumOffset = 0;
 	sequenced = false;
 }
 
@@ -2008,6 +2158,14 @@ void NoteRow::renderRow(TimelineView* editorScreen, RGB rowColour, RGB rowTailCo
 						pixel = deluge::gui::colours::yellow;
 					}
 				}
+				// otherwise, mark notes that have non-default probability or iterance in the same yellow the Note
+				// Editor uses (upstream 1.3 RC), so an altered step looks the same on the grid as it does in there.
+				// Fill is left out: outside Fill mode it has no effect, and in Fill mode it has its own colours above.
+				else if (drewNote
+				         && (note->getProbability() != kNumProbabilityValues
+				             || note->getIterance() != kDefaultIteranceValue)) {
+					pixel = deluge::gui::colours::yellow;
+				}
 			}
 		}
 
@@ -2138,6 +2296,82 @@ int32_t NoteRow::processCurrentPos(ModelStackWithNoteRow* modelStack, int32_t ti
 
 	int32_t ticksTilNextNoteEvent = 2147483647;
 	int32_t effectiveCurrentPos = modelStack->getLastProcessedPos(); // May have got incremented above
+
+	// Play FX - Beat Stretch and Clock Shift.
+	//
+	// Both move where in the phrase this row is read, and neither touches a note. That is what
+	// makes them non-destructive, and it is why they are applied *here* rather than in
+	// ModelStackWithNoteRow::getLastProcessedPos: that accessor is also how recording, undo and
+	// the note-row length operations ask where they are, and those have to keep seeing the real
+	// position or the effect would be baked into the phrase the moment anyone recorded over it.
+	//
+	// Everything downstream in this function - the note search, the currently-playing-note
+	// bookkeeping, the ticks-til-next arithmetic - then works in one consistent frame. The
+	// end-of-loop detection above deliberately does not: it compares this row's own raw members
+	// against its length, and it must keep doing so, or the row would stop looping.
+	// On a Kit the row owns these, because a row is a drum and moving one drum against the others is
+	// the useful thing. On a melodic clip a row is a pitch, so the Clip owns them there.
+	const bool perRow = clip->output != nullptr && clip->output->type == OutputType::KIT;
+	const int32_t clockShift = perRow ? playFxClockShift : clip->playFxClockShift;
+	const int32_t beatStretch = perRow ? playFxBeatStretch : clip->playFxBeatStretch;
+	const int32_t division = perRow ? playFxDivision : clip->playFxDivision;
+	const auto rateRatio = deluge::model::clock_division::ratioFor(division);
+	const bool stretching =
+	    (beatStretch != InstrumentClip::kBeatStretchOff || rateRatio.num != rateRatio.den) && effectiveLength > 0;
+
+	// Groove - the clock this row reads through is bent before anything else, closest to real time, so
+	// the groove stays on the song's grid whatever Play FX and Loop Remix then do to the phrase. Same
+	// contract as theirs: only where the phrase is read changes, never a note. See groove.h.
+	namespace grv = deluge::modulation::midi_fx::groove;
+	grv::Warp grooveWarp;
+	int32_t grooveSalt = 0;
+	const bool grooving =
+	    grooveApplies()
+	    && grv::makeWarp(grooveSettingsFor(*this, clip, modelStack->noteRowId, grooveSalt),
+	                     static_cast<int32_t>(currentSong->getQuarterNoteLength()), effectiveLength,
+	                     modelStack->getRepeatCount(), grooveSalt, grooveWarp);
+	const int32_t grooveRealPos = effectiveCurrentPos;
+	if (grooving) {
+		int32_t g = grooveWarp.forward(effectiveCurrentPos);
+		// Where the groove squeezes time the bent clock moves more than a tick per tick, so arriving for
+		// a planned event can land just past it - and the note search, which looks forwards from here,
+		// would step over the note. Snap back to the planned position. Less than one step either side
+		// only, so a jump or a loop wrap is never mistaken for an arrival.
+		if (grooveTarget_ >= 0) {
+			const bool overshot = playingReversedNow ? (g < grooveTarget_ && grooveTarget_ - g < grooveWarp.step)
+			                                         : (g > grooveTarget_ && g - grooveTarget_ < grooveWarp.step);
+			if (overshot) {
+				g = grooveTarget_;
+			}
+		}
+		effectiveCurrentPos = g;
+	}
+	const int32_t grooveNow = effectiveCurrentPos;
+	grooveTarget_ = -1;
+
+	effectiveCurrentPos = playFxAdjustedPos(clockShift, beatStretch, division, effectiveCurrentPos, effectiveLength);
+
+	// Loop Remix - the loop is chopped into slices and each is read from somewhere else.
+	//
+	// The same contract as the Play FX transform just above: only where the phrase is read changes,
+	// no note is touched, so it is non-destructive and recording and undo still see the real
+	// position. See LOOP-REMIX-FEASIBILITY.md.
+	const bool hasDrone = notes.getNumElements() && notes.getElement(0)->isDrone(effectiveLength);
+	const auto remix = loopRemixMapping(perRow ? loopRemix : clip->loopRemix, playingReversedNow,
+	                                    loopLengthIfIndependent != 0, hasDrone, effectiveCurrentPos, effectiveLength);
+	if (remix.slice >= 0) {
+		effectiveCurrentPos = remix.pos;
+
+		// A note sounding as the read head jumps would otherwise hang: its note-off is somewhere this
+		// row never reaches now. Slices chop - that is the faithful behaviour, and the honest one.
+		// Only slices that really moved cut (cutsAt), so a gentle remix leaves long notes alone.
+		if (sequenced && (remix.silent || (remix.cut && remix.slice != loopRemixLastSlice_))) {
+			stopCurrentlyPlayingNote(modelStack, true, nullptr);
+		}
+	}
+	loopRemixLastSlice_ = remix.slice;
+	loopRemixTranspose_ = static_cast<int16_t>(remix.transpose);
+
 	int32_t effectiveForwardPos =
 	    playingReversedNow ? (effectiveLength - effectiveCurrentPos - 1) : effectiveCurrentPos;
 
@@ -2148,7 +2382,7 @@ int32_t NoteRow::processCurrentPos(ModelStackWithNoteRow* modelStack, int32_t ti
 		ignoreNoteOnsBefore_ = 0;
 	}
 
-	if (muted) {
+	if (muted || remix.silent) {
 noFurtherNotes:
 		// If this NoteRow has independent length set, make sure we come back at its end. Otherwise, the Clip
 		// handles this.
@@ -2222,10 +2456,116 @@ stopNote:
 					}
 				}
 
+				// Spice's gate half. The note-off tick is recomputed from the stored length on every
+				// pass, so moving it here is non-destructive for free: the Note keeps its written
+				// length, and turning Spice back to zero puts the gate back where it was mid-note.
+				//
+				// v1 shortens only, never lengthens. Holding a note past its written end means
+				// suppressing the sequencer's own note-off and owing the note a release - which is
+				// exactly the debt MIDI FX Gate Time takes on above 100%, with a note pool and four
+				// ways out of it. Spice does not need that to be useful, so it does not take it on.
+				//
+				// sampleSyncLength is deliberately left alone (see where it is set in playNote): it
+				// drives sample sync and time-stretch ratios, so feeding a spiced length into it
+				// would make a spiced drum row change pitch rather than gate.
+				//
+				// Drones are left alone. A note that fills its whole row does not take the ordinary
+				// note-off path below - it takes the constant-note branch, which deliberately does
+				// *not* stop the sound, because the note is meant to run into the next loop. Cutting
+				// one short would reach that branch early and leave the note sounding with nothing
+				// scheduled to end it. Gating a drone is a different feature (it would have to become
+				// a non-drone first), and MIDI FX Gate Time is where that belongs.
+				int32_t spicedLength = thisNote->length;
+				if (!thisNote->isDrone(effectiveLength)) {
+					const auto* midiFx = clip->midiFxSettingsForRow(this);
+					if (midiFx != nullptr && midiFx->enabled
+					    && midiFx->spiceAmount != deluge::modulation::midi_fx::spice::kAmountOff) {
+						spicedLength = deluge::modulation::midi_fx::spice::gateLength(
+						    thisNote->length, midiFx->spiceAmount, midiFx->spiceDice, modelStack->noteRowId,
+						    thisNote->pos);
+					}
+				}
+
+				// Spread's gate half, applied on top of whatever Spice left so the two compose and
+				// this is the length that actually goes out.
+				//
+				// Unlike Spice this lengthens as well as shortens, and the clamp below is the whole
+				// reason it can. A note-off pushed past the next note-on of the same row never gets
+				// sent at all - the row moves on to the new note and the latch that would have
+				// stopped the old one is overwritten - so an unclamped lengthening is not a long
+				// note, it is a stuck one. Strum skips this check because its offset moves the whole
+				// note rather than stretching it; Spread genuinely stretches.
+				//
+				// The limit is the neighbouring note *in the direction of play*, which is not the
+				// same note in the two directions: forwards the note sounds from its own start, so
+				// it may fill the gap to the next note's start; reversed it sounds backwards from
+				// its own end, so what it may use is its written length plus the silence lying
+				// before it.
+				//
+				// Non-kit only, like the other two halves - `drum` is null on exactly the melodic
+				// path. Drones are exempt for the reason the Spice block above gives.
+				if (clip->spreadGate != deluge::modulation::midi_fx::spread::kOff && drum == nullptr
+				    && !thisNote->isDrone(effectiveLength)) {
+					const int32_t spreadLength = deluge::modulation::midi_fx::spread::gateLength(
+					    spicedLength, clip->spreadGate, modelStack->noteRowId, thisNote->pos);
+					int32_t maxLength = spreadLength;
+					if (const int32_t numNotes = notes.getNumElements(); numNotes > 1) {
+						if (!playingReversedNow) {
+							int32_t gap = notes.getElement(i + 1 == numNotes ? 0 : i + 1)->pos - thisNote->pos;
+							if (gap <= 0) {
+								gap += effectiveLength;
+							}
+							maxLength = gap;
+						}
+						else {
+							const auto* previous = notes.getElement(i == 0 ? numNotes - 1 : i - 1);
+							int32_t gap = thisNote->pos - (previous->pos + previous->length);
+							if (gap < 0) {
+								gap += effectiveLength;
+							}
+							maxLength = thisNote->length + gap;
+						}
+					}
+					// Strum has already eaten some of that room: the note starts late by
+					// `strumOffset` going forwards, and the reversed branch below subtracts it from
+					// the late edge in the same way, so in both directions the strummed note reaches
+					// exactly that much further than an unstrummed one would.
+					maxLength -= strumOffset;
+					spicedLength = spreadLength < maxLength ? spreadLength : maxLength;
+					if (spicedLength < 1) {
+						spicedLength = 1;
+					}
+				}
+
+				// Strum's half of the same arithmetic, and it goes in the opposite direction from
+				// Spice's: the note started late by `strumOffset`, so its end moves out by the same
+				// amount and it keeps every tick of its written length. Latched at note-on and zero
+				// whenever Strum is off or this note was the one that led the chord, so the
+				// unstrummed path is bit-for-bit what it was.
+				//
+				// The offset can never exceed the note's own length - strum::clampedOffset sees to
+				// that before the note is ever queued - so this cannot push a note-off past the next
+				// note-on of the same row. Drones never get an offset at all: a note filling its
+				// whole row takes the constant-note branch below, which deliberately does not stop
+				// the sound, and there is no note-off here to move.
+				const int32_t strumLateEdgeOffset = thisNote->isDrone(effectiveLength) ? 0 : strumOffset;
+
 				int32_t noteLateEdgePos = thisNote->pos; // Depending on play direction, this will be either the
 				                                         // left or right edge of the Note.
 				if (!playingReversedNow) {
-					noteLateEdgePos += thisNote->length;
+					noteLateEdgePos += spicedLength + strumLateEdgeOffset;
+				}
+				else {
+					// Reversed, the late edge is the note's *start*: the note ends when playback
+					// reaches its left edge. Shortening the gate therefore has to move the edge
+					// earlier in time, which going backwards means a higher pos - so the shortfall is
+					// added rather than subtracted. It is 0 whenever Spice is off, which keeps the
+					// unspiced path identical to what it was.
+					//
+					// Strum runs the other way for the same reason: going backwards, later in time
+					// is a *lower* pos, so a note held back by the strum has its late edge pulled
+					// down rather than pushed up.
+					noteLateEdgePos += thisNote->length - spicedLength - strumLateEdgeOffset;
 				}
 
 				if (wrapping) {
@@ -2391,6 +2731,52 @@ gotValidNoteIndex:
 		}
 	}
 
+	// Loop Remix: wake at every slice boundary. The phrase changes under the row there, so a row whose
+	// next note is two beats away would otherwise sleep straight through the slice it was meant to
+	// jump into. Still in the Play FX frame, so it goes before the conversion below. This is the one
+	// place the feature costs CPU: 16 extra wake-ups a bar at 1/16, 32 at 1/32.
+	if (remix.ticksTilSliceEnd != 2147483647) {
+		ticksTilNextNoteEvent = std::min(ticksTilNextNoteEvent, remix.ticksTilSliceEnd);
+	}
+
+	// Beat Stretch worked that out in the stretched frame; the caller schedules in real ticks, so
+	// it has to come back. Without this the sequencer wakes up at the wrong time and the notes
+	// land wherever the next unrelated event happened to be.
+	//
+	// At least 1: a stretch that rounds the interval to zero would ask to be woken immediately,
+	// forever. The param manager's number is deliberately left alone - automation keeps running at
+	// the clip's own rate rather than stretching with the notes. That is a decision and it is
+	// noted as one in docs/PLAY-FX-SEQUENCER-DESIGN.md, not an oversight.
+	if (stretching && ticksTilNextNoteEvent != 2147483647) {
+		ticksTilNextNoteEvent = std::max<int32_t>(
+		    1, static_cast<int32_t>((static_cast<int64_t>(ticksTilNextNoteEvent) * beatStretch * rateRatio.den)
+		                            / (static_cast<int64_t>(InstrumentClip::kBeatStretchOff) * rateRatio.num)));
+	}
+
+	// Groove: everything above was worked out on the bent clock; the caller schedules in real ticks.
+	// Converted after Beat Stretch's conversion because the groove sits underneath it - Beat Stretch's
+	// output is a distance on the bent clock. The target is remembered for the snap at the top.
+	if (grooving && ticksTilNextNoteEvent != 2147483647) {
+		int32_t gNow = grooveNow;
+		int32_t rNow = grooveRealPos;
+		if (!playingReversedNow) {
+			const int32_t gTarget = gNow + ticksTilNextNoteEvent;
+			ticksTilNextNoteEvent = std::max<int32_t>(1, grooveWarp.realAtOrAfter(gTarget) - rNow);
+			grooveTarget_ = gTarget;
+		}
+		else {
+			// Reversed at position 0 the row has already measured from the far end of the loop, which
+			// the warp pins to the same place on both clocks.
+			if (gNow == 0) {
+				gNow = effectiveLength;
+				rNow = effectiveLength;
+			}
+			const int32_t gTarget = gNow - ticksTilNextNoteEvent;
+			ticksTilNextNoteEvent = std::max<int32_t>(1, rNow - grooveWarp.realAtOrBefore(gTarget));
+			grooveTarget_ = gTarget;
+		}
+	}
+
 	ignoreUntil = std::min(ticksTilNextNoteEvent, ticksTilNextParamManagerEvent);
 	return ignoreUntil;
 }
@@ -2424,7 +2810,25 @@ void NoteRow::attemptLateStartOfNextNoteToPlay(ModelStackWithNoteRow* modelStack
 		noteBeginsSoundingAtPos += note->length; // We already know that allowNoteTails() is true, from check above
 	}
 
-	int32_t swungTicksAgo = modelStack->getLastProcessedPos() - noteBeginsSoundingAtPos;
+	// The same frame the note was found in. This function is only ever called with a note that
+	// processCurrentPos located in the Play FX frame, so reading the raw position here would work
+	// out how late the note is against a clock it was never measured on - a note started at the
+	// wrong sample offset, and worse the more the phrase is shifted or stretched.
+	const InstrumentClip* lateClip = (InstrumentClip*)modelStack->getTimelineCounter();
+	const bool latePerRow = lateClip->output != nullptr && lateClip->output->type == OutputType::KIT;
+	// Through the groove first, as processCurrentPos does.
+	int32_t adjustedPos = playFxAdjustedPos(latePerRow ? playFxClockShift : lateClip->playFxClockShift,
+	                                        latePerRow ? playFxBeatStretch : lateClip->playFxBeatStretch,
+	                                        latePerRow ? playFxDivision : lateClip->playFxDivision,
+	                                        grooveAdjustedPos(*this, modelStack, modelStack->getLastProcessedPos()),
+	                                        modelStack->getLoopLength());
+	// And through Loop Remix, for the same reason: the note was located in that frame too.
+	adjustedPos = loopRemixMapping(latePerRow ? loopRemix : lateClip->loopRemix, currentlyPlayingReversed, false,
+	                               notes.getNumElements() && notes.getElement(0)->isDrone(modelStack->getLoopLength()),
+	                               adjustedPos, modelStack->getLoopLength())
+	                  .pos;
+
+	int32_t swungTicksAgo = adjustedPos - noteBeginsSoundingAtPos;
 	if (currentlyPlayingReversed) {
 		swungTicksAgo = -swungTicksAgo;
 	}
@@ -2508,7 +2912,9 @@ void NoteRow::attemptLateStartOfNextNoteToPlay(ModelStackWithNoteRow* modelStack
 }
 /// If a note is on in a SoundInstrument and it's allowed to have tails it might be a drone
 bool NoteRow::check_for_note_still_sounding(ModelStackWithNoteRow* modelStack, SoundInstrument* output) {
-	return (output)->noteIsOn(getNoteCode(), true)
+	// The latched pitch, because that is what is actually sounding. A held note keeps the pitch it
+	// started on until it ends - Harmonize re-pitches on note events, not underneath a ringing note.
+	return (output)->noteIsOn(getSoundingNoteCode(), true)
 	       && (output)->allowNoteTails(
 	           modelStack
 	               ->addOtherTwoThings(((Clip*)modelStack->getTimelineCounter())->output->toModControllable(),
@@ -2522,6 +2928,22 @@ void NoteRow::playNote(bool on, ModelStackWithNoteRow* modelStack, Note* thisNot
 	Output* output = clip->output;
 
 	if (output->type != OutputType::KIT) {
+		// Light the playing note on the keyboard grid, so playback shows as shapes on the iso/in-key
+		// grids (watch a progression move under your fingers). Only for the clip you're viewing, and
+		// only when note highlighting is enabled; cleared on the note-off.
+		if (clip == getCurrentInstrumentClip()
+		    && runtimeFeatureSettings.get(RuntimeFeatureSettingType::KeyboardNotePreview)
+		           == RuntimeFeatureStateToggle::On) {
+			int32_t noteCode = getNoteCode();
+			// 254 = the DIM-white playback highlight. Never disturb a 255 chord-memory shape that's
+			// painted on this pad — the stored shape owns it until it's cleared by chord memory.
+			if (noteCode >= 0 && noteCode < deluge::gui::ui::keyboard::kHighestKeyboardNote
+			    && keyboardScreen.highlightedNotes[noteCode] != 255) {
+				keyboardScreen.highlightedNotes[noteCode] = on ? 254 : 0;
+				keyboardScreen.requestRendering();
+			}
+		}
+
 		// If it's a note-on, we'll send it "soon", after all note-offs
 
 		if (on) {
@@ -2549,13 +2971,19 @@ doSentNoteForMelodicInstrument:
 storePendingNoteOn:
 					pendingNoteOnList->pendingNoteOns[pendingNoteOnList->count].noteRow = this;
 					pendingNoteOnList->pendingNoteOns[pendingNoteOnList->count].noteRowId = modelStack->noteRowId;
-					pendingNoteOnList->pendingNoteOns[pendingNoteOnList->count].velocity = thisNote->getVelocity();
+					// Groove's Accent here, at the one label every output path stores through, so kits, synths,
+					// MIDI and CV all get it and everything downstream (Spread, MIDI FX) works on top of it.
+					pendingNoteOnList->pendingNoteOns[pendingNoteOnList->count].velocity =
+					    grooveVelocity(*this, modelStack, thisNote->getVelocity());
 					pendingNoteOnList->pendingNoteOns[pendingNoteOnList->count].probability =
 					    thisNote->getProbability();
 					pendingNoteOnList->pendingNoteOns[pendingNoteOnList->count].iterance = thisNote->getIterance();
 					pendingNoteOnList->pendingNoteOns[pendingNoteOnList->count].fill = thisNote->getFill();
 					pendingNoteOnList->pendingNoteOns[pendingNoteOnList->count].sampleSyncLength =
 					    thisNote->getLength();
+					// One label, both output paths - the Kit branch below jumps here - so this is set
+					// once for melodic instruments, kits, MIDI and CV alike.
+					pendingNoteOnList->pendingNoteOns[pendingNoteOnList->count].notePos = thisNote->pos;
 					pendingNoteOnList->pendingNoteOns[pendingNoteOnList->count].ticksLate = ticksLate;
 					pendingNoteOnList->count++;
 				}
@@ -2568,9 +2996,30 @@ storePendingNoteOn:
 					ModelStackWithThreeMainThings* modelStackWithThreeMainThings = modelStack->addOtherTwoThings(
 					    ((Clip*)modelStack->getTimelineCounter())->output->toModControllable(),
 					    &modelStack->getTimelineCounter()->paramManager);
+					// Overflow path for note-ons - same decision as InstrumentClip::sendPendingNoteOn,
+					// and it has to latch too or a note that came through here would never be turned off.
+					// Through pitch_source rather than chord_source directly, so that Stochastic and
+					// Harmonize run in the same order here as they do there - an order spelled out at
+					// two call sites is an order that eventually differs between them.
+					soundingNoteCode = static_cast<int16_t>(deluge::modulation::midi_fx::pitch_source::soundingNoteFor(
+					                                            clip, this, modelStack->noteRowId, thisNote->pos)
+					                                        + loopRemixTranspose_);
+					// And Spread's octave on top of it, after Harmonize for the reason
+					// InstrumentClip::sendPendingNoteOn gives. This path is the buffer-full overflow,
+					// so it is the one place a note can sound without passing through there.
+					if (clip->spreadOctave != deluge::modulation::midi_fx::spread::kOff) {
+						soundingNoteCode = static_cast<int16_t>(deluge::modulation::midi_fx::spread::octave(
+						    soundingNoteCode, clip->spreadOctave, modelStack->noteRowId, thisNote->pos));
+					}
+					// Spread's velocity too, for the same reason: this path bypasses the pending
+					// list, which is where InstrumentClip applies it to every other note.
 					((MelodicInstrument*)output)
-					    ->sendNote(modelStackWithThreeMainThings, true, getNoteCode(), mpeValues, MIDI_CHANNEL_NONE,
-					               thisNote->velocity, thisNote->length, ticksLate, samplesLate);
+					    ->sendNote(modelStackWithThreeMainThings, true, getSoundingNoteCode(), mpeValues,
+					               MIDI_CHANNEL_NONE,
+					               deluge::modulation::midi_fx::spread::velocity(
+					                   grooveVelocity(*this, modelStack, thisNote->velocity), clip->spreadVelocity,
+					                   modelStack->noteRowId, thisNote->pos),
+					               thisNote->length, ticksLate, samplesLate);
 				}
 			}
 		}
@@ -2585,8 +3034,12 @@ storePendingNoteOn:
 			ModelStackWithThreeMainThings* modelStackWithThreeMainThings =
 			    modelStack->addOtherTwoThings(((Clip*)modelStack->getTimelineCounter())->output->toModControllable(),
 			                                  &modelStack->getTimelineCounter()->paramManager);
+			// Read the latch, then drop it: whatever pitch went out is the pitch that comes back off,
+			// however far the chord has moved since.
+			const int32_t noteCodeToStop = getSoundingNoteCode();
+			soundingNoteCode = -1;
 			((MelodicInstrument*)output)
-			    ->sendNote(modelStackWithThreeMainThings, false, getNoteCode(), nullptr, MIDI_CHANNEL_NONE, lift);
+			    ->sendNote(modelStackWithThreeMainThings, false, noteCodeToStop, nullptr, MIDI_CHANNEL_NONE, lift);
 		}
 	}
 	else if (drum) {
@@ -2615,7 +3068,8 @@ storePendingNoteOn:
 
 					ModelStackWithThreeMainThings* modelStackWithThreeMainThings =
 					    modelStack->addOtherTwoThings(drum->toModControllable(), &paramManager);
-					drum->kit->noteOnPreKitArp(modelStackWithThreeMainThings, drum, thisNote->velocity, mpeValues,
+					drum->kit->noteOnPreKitArp(modelStackWithThreeMainThings, drum,
+					                           grooveVelocity(*this, modelStack, thisNote->velocity), mpeValues,
 					                           MIDI_CHANNEL_NONE, thisNote->length, ticksLate, samplesLate);
 				}
 			}
@@ -3153,6 +3607,7 @@ void NoteRow::maybeStartLateNote(ModelStackWithNoteRow* modelStack, int32_t effe
 }
 // Attempts (possibly late) start of any note at or overlapping the currentPos
 void NoteRow::resumePlayback(ModelStackWithNoteRow* modelStack, bool clipMayMakeSound) {
+	grooveTarget_ = -1; // A wake planned for the old play position means nothing at the new one.
 	if (noteRowMayMakeSound(clipMayMakeSound) && !sequenced && !isAuditioning(modelStack)) {
 
 		if (!notes.getNumElements()) {
@@ -3171,6 +3626,7 @@ void NoteRow::resumePlayback(ModelStackWithNoteRow* modelStack, bool clipMayMake
 
 // TODO: make this compatible with reverse playback
 void NoteRow::silentlyResumePlayback(ModelStackWithNoteRow* modelStack) {
+	grooveTarget_ = -1;
 
 	int32_t effectiveCurrentPos = modelStack->getLastProcessedPos(); // Why did we not opt for the "actual" one?
 
@@ -3228,6 +3684,31 @@ Error NoteRow::readFromFile(Deserializer& reader, int32_t* minY, InstrumentClip*
 
 		else if (!strcmp(tagName, "colourOffset")) {
 			colourOffset = reader.readTagOrAttributeValueInt();
+		}
+
+		else if (deluge::modulation::midi_fx::loop_remix::readAttribute(tagName, reader, loopRemix)) {}
+
+		else if (!strcmp(tagName, "groove")) {
+			String text;
+			if (reader.readTagOrAttributeValueString(&text) == Error::NONE) {
+				deluge::modulation::midi_fx::groove::decode(text.get(), groove);
+			}
+		}
+
+		else if (!strcmp(tagName, "playFxClockShift")) {
+			playFxClockShift =
+			    static_cast<int16_t>(std::clamp<int32_t>(reader.readTagOrAttributeValueInt(), -192, 192));
+		}
+
+		else if (!strcmp(tagName, "playFxBeatStretch")) {
+			playFxBeatStretch =
+			    static_cast<uint16_t>(std::clamp<int32_t>(reader.readTagOrAttributeValueInt(), 25, 400));
+		}
+
+		else if (!strcmp(tagName, "playFxDivision")) {
+			playFxDivision = static_cast<int8_t>(std::clamp<int32_t>(reader.readTagOrAttributeValueInt(),
+			                                                         -deluge::model::clock_division::kMaxDivision,
+			                                                         deluge::model::clock_division::kMaxDivision));
 		}
 
 		else if (!strcmp(tagName, "drumIndex")) {
@@ -3582,6 +4063,26 @@ void NoteRow::writeToFile(Serializer& writer, int32_t drumIndex, InstrumentClip*
 	}
 	if (sequenceDirectionMode != SequenceDirection::OBEY_PARENT) {
 		writer.writeAttribute("sequenceDirection", sequenceDirectionModeToString(sequenceDirectionMode));
+	}
+
+	// Only written when set, so a song full of untouched rows does not grow two attributes each.
+	if (!loopRemix.isDefault()) {
+		deluge::modulation::midi_fx::loop_remix::writeAttributes(writer, loopRemix);
+	}
+	if (!groove.isDefault()) {
+		char grooveText[400];
+		if (deluge::modulation::midi_fx::groove::encode(groove, grooveText, sizeof(grooveText)) != 0) {
+			writer.writeAttribute("groove", grooveText);
+		}
+	}
+	if (playFxClockShift != 0) {
+		writer.writeAttribute("playFxClockShift", playFxClockShift);
+	}
+	if (playFxBeatStretch != InstrumentClip::kBeatStretchOff) {
+		writer.writeAttribute("playFxBeatStretch", playFxBeatStretch);
+	}
+	if (!deluge::model::clock_division::isOff(playFxDivision)) {
+		writer.writeAttribute("playFxDivision", playFxDivision);
 	}
 
 	if (notes.getNumElements()) {

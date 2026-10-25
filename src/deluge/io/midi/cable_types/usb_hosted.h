@@ -89,7 +89,9 @@ public:
 	uint16_t vendorId{};
 	uint16_t productId{};
 
-	bool freshly_connected = true; // Used to trigger hookOnConnected from the input loop
+	// Loading a remembered device from MIDIDevices.XML is not a connection event. The USB host
+	// callback sets this true explicitly when the physical device is configured.
+	bool freshly_connected = false;
 
 	String name;
 };

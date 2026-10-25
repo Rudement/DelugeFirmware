@@ -23,6 +23,20 @@
 
 class ModelStack;
 class ModelStackWithSoundFlags;
+class ArpReturnInstruction;
+
+/// When dispatchArpNoteOns should mark an ArpNote as PLAYING, relative to the noteOnPostArp call.
+///
+/// The call sites this was factored out of did not agree: renderOutput used to set the status before
+/// switching the note on (upstream now sets it after, as sendNote does), and doTickForwardForArp never
+/// sets it at all. That disagreement is preserved here rather than normalised, because noteOnPostArp
+/// reads the status of *other* notes while choosing an MPE member channel, so the ordering is
+/// observable and changing it is a behavioural change that does not belong in a refactor.
+enum class ArpNoteStatusUpdate : uint8_t {
+	NONE,
+	BEFORE_NOTE_ON,
+	AFTER_NOTE_ON,
+};
 
 class NonAudioInstrument : public MelodicInstrument, public ModControllable {
 public:
@@ -62,6 +76,27 @@ public:
 	bool needsEarlyPlayback() const override;
 
 protected:
+	/// Fan the note-offs in an ArpReturnInstruction out to noteOffPostArp: glide note-offs first,
+	/// then plain ones, each stopping at the first ARP_NOTE_NONE.
+	///
+	/// This and dispatchArpNoteOns are the single seam through which every arpeggiator result
+	/// reaches a MIDI or CV output. Anything that wants to observe or alter notes on their way out
+	/// - a MIDI FX stage, say - belongs here rather than at the call sites, which is the whole
+	/// reason they were collapsed.
+	/// Runs the MIDI FX chain over a freshly-filled instruction. Returns false if an effect
+	/// swallowed the event.
+	bool runMidiFxOnNoteEvent(ArpReturnInstruction& instruction);
+
+	void dispatchArpNoteOffs(ArpReturnInstruction& instruction, int32_t velocity);
+
+	/// MIDI and CV send to something that is not this firmware, so a generated note left sounding
+	/// stays sounding. This is the override that matters - see the base declaration.
+	void dispatchMidiFxFlushNoteOffs(ArpReturnInstruction& instruction) override;
+
+	/// Fan the note-ons in an ArpReturnInstruction out to noteOnPostArp, stopping at the first
+	/// ARP_NOTE_NONE. Does nothing when the instruction carries no note-on.
+	void dispatchArpNoteOns(ArpReturnInstruction& instruction, ArpNoteStatusUpdate statusUpdate);
+
 	virtual void polyphonicExpressionEventPostArpeggiator(int32_t newValue, int32_t noteCodeAfterArpeggiation,
 	                                                      int32_t expressionDimension, ArpNote* arpNote,
 	                                                      int32_t noteIndex) = 0;

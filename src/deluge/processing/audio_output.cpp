@@ -29,6 +29,7 @@
 #include "playback/mode/playback_mode.h"
 #include "playback/playback_handler.h"
 #include "processing/engines/audio_engine.h"
+#include "processing/engines/usb_audio_stream.h"
 #include "storage/audio/audio_file.h"
 #include "storage/storage_manager.h"
 #include "util/lookuptables/lookuptables.h"
@@ -66,6 +67,12 @@ void AudioOutput::cloneFrom(ModControllableAudio* other) {
 	GlobalEffectableForClip::cloneFrom(other);
 	auto ao = ((AudioOutput*)other);
 	inputChannel = ao->inputChannel;
+
+	// A track cloned for layering keeps the original's track default, so its loops get the same treatment.
+	clearTrackDefault();
+	if (ao->hasTrackDefault()) {
+		setTrackDefaultFrom(&ao->trackDefault);
+	}
 
 	auto modeInt = util::to_underlying(ao->mode);
 
@@ -208,12 +215,30 @@ renderEnvelope:
 	                                     ? std::span{reinterpret_cast<StereoSample*>(bufferToTransferTo), render.size()}
 	                                     : render;
 
+	q31_t const monitoring_gain_end = AudioEngine::getInputMonitoringGain(render.size());
+
+	// Audio arriving over USB as this track's input, rendered through the track like a line input. Reading it here
+	// also takes that pair off the song's own mix, which is summed later.
+	if (modeAllowsMonitoring() && modelStack->song->isOutputActiveInArrangement(this)
+	    && isUsbReturnInput(inputChannel)) {
+		rendered = true;
+		const uint32_t monoChannel = usbReturnMonoChannelOf(inputChannel);
+		if (monoChannel != 0) {
+			deluge::processing::engines::USBAudioStream::readReturnChannel(
+			    monoChannel, output.data(), (uint32_t)output.size(), amplitudeAtStart, amplitudeAtEnd);
+		}
+		else {
+			deluge::processing::engines::USBAudioStream::readReturnPair(usbReturnPairOf(inputChannel), output.data(),
+			                                                            (uint32_t)output.size(), amplitudeAtStart,
+			                                                            amplitudeAtEnd);
+		}
+	}
+
 	// add in the monitored audio if in sampler or looper mode. Suppress until the codec ADC has settled after
 	// power-on, then fade it in (issue #4517) - otherwise its power-on transient gets passed straight through to the
 	// output.
-	q31_t const monitoring_gain_end = AudioEngine::getInputMonitoringGain(render.size());
-	if (monitoring_gain_end != 0 && modeAllowsMonitoring() && modelStack->song->isOutputActiveInArrangement(this)
-	    && inputChannel != AudioInputChannel::SPECIFIC_OUTPUT) {
+	else if (monitoring_gain_end != 0 && modeAllowsMonitoring() && modelStack->song->isOutputActiveInArrangement(this)
+	         && inputChannel != AudioInputChannel::SPECIFIC_OUTPUT) {
 		rendered = true;
 		int32_t const* __restrict__ input_ptr = (int32_t const*)AudioEngine::i2sRXBufferPos;
 
@@ -328,7 +353,47 @@ bool AudioOutput::writeDataToFile(Serializer& writer, Clip* clipForSavingOutputO
 
 	GlobalEffectableForClip::writeTagsToFile(writer, paramManager, true);
 
+	// Track default. Firmware that does not know this tag skips it, so the song still loads there without it.
+	if (hasTrackDefault()) {
+		writer.writeOpeningTagBeginning("trackDefault");
+		GlobalEffectable::writeParamAttributesToFile(writer, &trackDefault, false);
+		writer.writeOpeningTagEnd();
+		GlobalEffectable::writeParamTagsToFile(writer, &trackDefault, false);
+		writer.writeClosingTag("trackDefault");
+	}
+
 	return true;
+}
+
+bool AudioOutput::setTrackDefaultFrom(ParamManager* source) {
+	if (!source || !source->containsAnyMainParamCollections()) {
+		return false;
+	}
+	ParamManagerForTimeline copy;
+	if (copy.cloneParamCollectionsFrom(source, false) != Error::NONE) {
+		return false; // Out of RAM: keep whatever default there was.
+	}
+	trackDefault.destructAndForgetParamCollections();
+	trackDefault.stealParamCollectionsFrom(&copy);
+	return true;
+}
+
+void AudioOutput::applyTrackDefaultTo(ParamManager* target) {
+	if (!hasTrackDefault() || !target || !target->containsAnyMainParamCollections()) {
+		return;
+	}
+	UnpatchedParamSet* from = trackDefault.getUnpatchedParamSet();
+	UnpatchedParamSet* to = target->getUnpatchedParamSet();
+	if (!from || !to) {
+		return;
+	}
+	int32_t n = std::min(from->getNumParams(), to->getNumParams());
+	for (int32_t p = 0; p < n; p++) {
+		// An automated param would rewrite itself from its nodes on the next tick anyway.
+		if (!to->params[p].isAutomated()) {
+			to->params[p].setCurrentValueBasicForSetup(from->params[p].getCurrentValue());
+		}
+	}
 }
 
 // clip will always be NULL and is of no consequence - see note in parent output.h
@@ -359,6 +424,15 @@ Error AudioOutput::readFromFile(Deserializer& reader, Song* song, Clip* clip, in
 
 		else if (!strcmp(tagName, "outputRecordingIndex")) {
 			outputRecordingFromIndex = reader.readTagOrAttributeValueInt();
+		}
+
+		else if (!strcmp(tagName, "trackDefault")) {
+			trackDefault.destructAndForgetParamCollections();
+			if (trackDefault.setupUnpatched() == Error::NONE) {
+				GlobalEffectable::initParamsForAudioClip(&trackDefault);
+				GlobalEffectable::readParamsFromFile(reader, &trackDefault, 0);
+			}
+			reader.exitTag("trackDefault");
 		}
 
 		else if (Output::readTagFromFile(reader, tagName)) {}

@@ -372,7 +372,12 @@ void HorizontalMenu::switchHorizontalMenu(int32_t direction, std::span<Horizonta
 
 	const auto target_menu = chain[target_menu_pos];
 	const auto total_pages = target_menu->preparePaging(target_menu->items, nullptr).totalPages;
-	if (total_pages == 0) {
+	// MIDI FX switched off in Community Features. Its pages are FIXED layout, which draws an irrelevant
+	// item as a dash instead of dropping it, so the page count alone would still land on a strip of
+	// dashes. See menu_item/midi_fx/switched_on.h.
+	const bool switched_off = target_menu == static_cast<HorizontalMenu*>(&midiFxMenuGroup)
+	                          && !runtimeFeatureSettings.isOn(RuntimeFeatureSettingType::MidiFx);
+	if (total_pages == 0 || switched_off) {
 		// No relevant items on the switched menu, go to the next menu
 		return switchHorizontalMenu(direction >= 0 ? ++direction : --direction, chain);
 	}

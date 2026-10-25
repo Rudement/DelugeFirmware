@@ -20,6 +20,8 @@
 #include "gui/l10n/l10n.h"
 #include "gui/ui/sound_editor.h"
 #include "hid/display/display.h"
+#include "hid/display/visualizer.h"
+#include "hid/display/visualizer/visualizer_midi_piano_roll.h"
 #include "hid/hid_sysex.h"
 #include "hid/led/indicator_leds.h"
 #include "io/debug/log.h"
@@ -428,6 +430,13 @@ void MidiEngine::sendNote(MIDISource source, bool on, int32_t note, uint8_t velo
 	// between 0 and 128
 	velocity = std::max((uint8_t)1, velocity);
 	velocity = std::min((uint8_t)127, velocity);
+
+	// Feed the MIDI piano roll visualizer with everything going out.
+	{
+		bool visualizerActive =
+		    (::deluge::hid::display::Visualizer::getMode() == RuntimeFeatureStateVisualizer::VisualizerMidiPianoRoll);
+		::deluge::hid::display::midiPianoRollNoteEvent(static_cast<uint8_t>(note), on, velocity, visualizerActive);
+	}
 
 	if (on) {
 		sendMidi(source, MIDIMessage::noteOn(channel, note, velocity), filter);
@@ -851,6 +860,14 @@ void MidiEngine::midiSysexReceived(MIDICable& cable, uint8_t* data, int32_t len)
 		HIDSysex::sysexReceived(cable, payloadStart, payloadLength);
 		break;
 
+	case SysEx::SysexCommands::ChordApply: // Chroma WRITE: F0 00 21 7B 01 44 <modType> <value> F7
+		// payload: [0]=0x44 cmd, [1]=modType, [2]=value. Stash only — the Harmonic layout applies it on the UI
+		// thread, then re-broadcasts 0x43 to the handshaked host (the bridge arms that via its periodic HID ping).
+		if (payloadLength >= 3) {
+			HIDSysex::receiveChordApply(payloadStart[1], payloadStart[2]);
+		}
+		break;
+
 	case SysEx::SysexCommands::Debug:
 		// debug namespace: for sysex calls useful for debugging purposes
 		// and/or might require a debug build to function.
@@ -1034,6 +1051,14 @@ void MidiEngine::midiMessageReceived(MIDICable& cable, uint8_t statusType, uint8
 
 			case 0x08: // Note off, and note on continues here too
 				playbackHandler.noteMessageReceived(cable, statusType & 1, channel, data1, data2, &shouldDoMidiThruNow);
+
+				// ...and with everything coming in.
+				{
+					bool visualizerActive = (::deluge::hid::display::Visualizer::getMode()
+					                         == RuntimeFeatureStateVisualizer::VisualizerMidiPianoRoll);
+					::deluge::hid::display::midiPianoRollNoteEvent(static_cast<uint8_t>(data1), (statusType & 1) != 0,
+					                                               data2, visualizerActive, true);
+				}
 #if MISSING_MESSAGE_CHECK
 				if (lastWasNoteOn == (bool)(statusType & 1))
 					FREEZE_WITH_ERROR("MISSED!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");

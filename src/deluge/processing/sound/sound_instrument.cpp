@@ -25,6 +25,7 @@
 #include "model/song/song.h"
 #include "model/voice/voice.h"
 #include "modulation/arpeggiator.h"
+#include "modulation/midi_fx/midi_fx.h"
 #include "modulation/params/param_manager.h"
 #include "modulation/params/param_set.h"
 #include "modulation/patch/patch_cable_set.h"
@@ -33,6 +34,7 @@
 #include "storage/audio/audio_file_manager.h"
 #include "storage/storage_manager.h"
 #include "util/misc.h"
+#include <algorithm>
 
 namespace params = deluge::modulation::params;
 
@@ -262,6 +264,17 @@ bool SoundInstrument::setActiveClip(ModelStackWithTimelineCounter* modelStack, P
 
 		if (modelStack) {
 			ParamManager* paramManager = &modelStack->getTimelineCounter()->paramManager;
+			// Rudement 2026-09-15: same repair as Kit::setActiveClip. A clip whose ParamManager has lost its patched
+			// collections freezes right here with E411, and even if it got past,
+			// SoundInstrument::getThingWithMostReverb
+			// -> Sound::getThingWithMostReverb reads the same manager with no guard at all, from the audio thread,
+			// every block. Rebuild it with defaults instead - a synth with default params beats a frozen instrument.
+			if (!paramManager->summaries[0].paramCollection || !paramManager->summaries[1].paramCollection
+			    || !paramManager->summaries[2].paramCollection) {
+				if (paramManager->setupWithPatching() == Error::NONE) {
+					Sound::initParams(paramManager);
+				}
+			}
 			patcher.performInitialPatching(*this, *paramManager);
 
 			// Grab mono expression params
@@ -427,32 +440,24 @@ int32_t SoundInstrument::doTickForwardForArp(ModelStack* modelStack, int32_t cur
 
 	ArpReturnInstruction instruction;
 
+	// Already unconditional: doTickForward() gates internally and returns kNoEvent when the arp is off, so
+	// this call site is the arp-independent tick path the FX seam needs. Nothing to open up here.
 	int32_t ticksTilNextArpEvent =
 	    arpeggiator.doTickForward(arpSettings, &instruction, currentPos, activeClip->currentlyPlayingReversed);
 
+	deluge::modulation::midi_fx::MidiFxContext midiFxContext{.settings = getMidiFxSettings(),
+	                                                         .arpIsOn = !ArpeggiatorBase::arpIsOff(arpSettings)};
+	int32_t ticksTilNextFxEvent = midiFx.tick(midiFxContext, currentPos, instruction);
+	(void)midiFx.onNoteEvent(midiFxContext, instruction);
+
 	ModelStackWithSoundFlags* modelStackWithSoundFlags = modelStackWithThreeMainThings->addSoundFlags();
 
-	bool atLeastOneOff = false;
-	for (int32_t n = 0; n < ARP_MAX_INSTRUCTION_NOTES; n++) {
-		if (instruction.glideNoteCodeOffPostArp[n] == ARP_NOTE_NONE) {
-			break;
-		}
-		atLeastOneOff = true;
-		noteOffPostArpeggiator(modelStackWithSoundFlags, instruction.glideNoteCodeOffPostArp[n]);
-	}
-	for (int32_t n = 0; n < ARP_MAX_INSTRUCTION_NOTES; n++) {
-		if (instruction.noteCodeOffPostArp[n] == ARP_NOTE_NONE) {
-			break;
-		}
-		atLeastOneOff = true;
-		noteOffPostArpeggiator(modelStackWithSoundFlags, instruction.noteCodeOffPostArp[n]);
-	}
-	if (atLeastOneOff) {
+	if (dispatchArpNoteOffs(modelStackWithSoundFlags, instruction)) {
 		invertReversed = false;
 	}
 	process_postarp_notes(modelStackWithSoundFlags, arpSettings, instruction);
 
-	return ticksTilNextArpEvent;
+	return std::min(ticksTilNextArpEvent, ticksTilNextFxEvent);
 }
 
 void SoundInstrument::getThingWithMostReverb(Sound** soundWithMostReverb, ParamManager** paramManagerWithMostReverb,
@@ -466,6 +471,14 @@ void SoundInstrument::getThingWithMostReverb(Sound** soundWithMostReverb, ParamM
 
 ArpeggiatorBase* SoundInstrument::getArp() {
 	return &arpeggiator;
+}
+
+deluge::modulation::midi_fx::MidiFxChain* SoundInstrument::getMidiFx() {
+	return &midiFx;
+}
+
+deluge::modulation::midi_fx::MidiFxSettings* SoundInstrument::getMidiFxSettings() {
+	return MelodicInstrument::getMidiFxSettings();
 }
 
 bool SoundInstrument::noteIsOn(int32_t noteCode, bool resetTimeEntered) {

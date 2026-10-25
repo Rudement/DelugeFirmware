@@ -28,7 +28,9 @@
 #include "io/midi/midi_transpose.h"
 #include "model/scale/preset_scales.h"
 #include "processing/engines/audio_engine.h"
+#include "processing/engines/cv_audio_stream.h"
 #include "processing/engines/cv_engine.h"
+#include "processing/engines/usb_audio_stream.h"
 #include "processing/metronome/metronome.h"
 #include "util/firmware_version.h"
 #include "util/functions.h"
@@ -45,6 +47,7 @@ extern "C" {
 #include "gui/menu_item/key_range.h"
 
 using namespace deluge;
+using namespace deluge::processing::engines;
 
 extern gui::menu_item::IntegerRange defaultTempoMenu;
 extern gui::menu_item::IntegerRange defaultSwingAmountMenu;
@@ -216,6 +219,24 @@ enum Entries {
 190: GlobalMIDICommand::SHIFT channel + 1
 191: GlobalMIDICommand::SHIFT noteCode + 1
 192-195: GlobalMIDICommand::SHIFT product / vendor ids
+198: CV stereo split -- 0 unwritten/default-on, 1 off, 2 on
+199: GlobalMIDICommand::DICE channel + 1
+200: GlobalMIDICommand::DICE noteCode + 1
+201-204: GlobalMIDICommand::DICE product / vendor ids
+205: GlobalMIDICommand::TEMP_HOLD channel + 1
+206: GlobalMIDICommand::TEMP_HOLD noteCode + 1
+207-210: GlobalMIDICommand::TEMP_HOLD product / vendor ids
+211: GlobalMIDICommand::MORPH_CAPTURE channel + 1
+212: GlobalMIDICommand::MORPH_CAPTURE noteCode + 1
+213-216: GlobalMIDICommand::MORPH_CAPTURE product / vendor ids
+217: GlobalMIDICommand::LOOP_HOLD channel + 1
+218: GlobalMIDICommand::LOOP_HOLD noteCode + 1
+219-222: GlobalMIDICommand::LOOP_HOLD product / vendor ids
+223: usbAudioReturnPair + 1 (0 = never written)
+224: usbAudioReturnLevel + 1 (0 = never written)
+225: usbAudioCompensationMs
+226: retired (Out Level on its first scale, where 40 clipped); written 0
+227: usbAudioOutLevel + 1 (0 = never written), on the scale where 40 is unity
 */
 
 uint8_t defaultScale;
@@ -262,6 +283,10 @@ bool highCPUUsageIndicator;
 uint8_t defaultHoldTime;
 ScreensaverMode screensaverMode;
 uint8_t screensaverTimeoutMinutes;
+uint8_t usbAudioReturnPair;
+uint8_t usbAudioReturnLevel;
+uint8_t usbAudioCompensationMs;
+uint8_t usbAudioOutLevel;
 int32_t holdTime;
 
 uint8_t defaultSwingInterval;
@@ -378,6 +403,10 @@ void resetSettings() {
 
 	screensaverMode = kDefaultScreensaverMode;
 	screensaverTimeoutMinutes = kDefaultScreensaverTimeoutMinutes;
+	usbAudioReturnPair = 1;
+	usbAudioReturnLevel = deluge::processing::engines::USBAudioStream::kReturnLevelDefault;
+	usbAudioCompensationMs = 0;
+	usbAudioOutLevel = deluge::processing::engines::USBAudioStream::kOutLevelDefault;
 
 	defaultSwingInterval = 8 - defaultMagnitude; // 16th notes
 
@@ -392,6 +421,8 @@ void resetSettings() {
 	defaultThresholdRecordingMode = ThresholdRecordingMode::OFF;
 
 	defaultUseSharps = true;
+
+	cvSetStereoSplit(true);
 }
 
 void factoryReset(bool showPopup) {
@@ -531,6 +562,30 @@ void readSettings() {
 	/* buffer[193]  \
 	   buffer[194]   device reference above occupies 4 bytes
 	   buffer[195] */
+	// Spice & Dice's roll. Bytes 199 onward were the first ones free; a unit that has never saved
+	// settings from a build with this reads 0 in both, which is -1 after the -1 and means unlearned.
+	midiEngine.globalMIDICommands[util::to_underlying(GlobalMIDICommand::DICE)].channelOrZone = buffer[199] - 1;
+	midiEngine.globalMIDICommands[util::to_underlying(GlobalMIDICommand::DICE)].noteOrCC = buffer[200] - 1;
+	MIDIDeviceManager::readDeviceReferenceFromFlash(GlobalMIDICommand::DICE, &buffer[201]);
+
+	// Temp Hold's footswitch. Bytes 205 onward were the next ones free; a unit that has never saved
+	// them reads zeroes, which is -1 after the decrement - i.e. unlearned, which is the right default.
+	midiEngine.globalMIDICommands[util::to_underlying(GlobalMIDICommand::TEMP_HOLD)].channelOrZone = buffer[205] - 1;
+	midiEngine.globalMIDICommands[util::to_underlying(GlobalMIDICommand::TEMP_HOLD)].noteOrCC = buffer[206] - 1;
+	MIDIDeviceManager::readDeviceReferenceFromFlash(GlobalMIDICommand::TEMP_HOLD, &buffer[207]);
+
+	midiEngine.globalMIDICommands[util::to_underlying(GlobalMIDICommand::MORPH_CAPTURE)].channelOrZone =
+	    buffer[211] - 1;
+	midiEngine.globalMIDICommands[util::to_underlying(GlobalMIDICommand::MORPH_CAPTURE)].noteOrCC = buffer[212] - 1;
+	MIDIDeviceManager::readDeviceReferenceFromFlash(GlobalMIDICommand::MORPH_CAPTURE, &buffer[213]);
+
+	// Hold-to-loop's footswitch. Never-saved bytes read as zero, i.e. unlearned.
+	midiEngine.globalMIDICommands[util::to_underlying(GlobalMIDICommand::LOOP_HOLD)].channelOrZone = buffer[217] - 1;
+	midiEngine.globalMIDICommands[util::to_underlying(GlobalMIDICommand::LOOP_HOLD)].noteOrCC = buffer[218] - 1;
+	MIDIDeviceManager::readDeviceReferenceFromFlash(GlobalMIDICommand::LOOP_HOLD, &buffer[219]);
+	/* buffer[202]  \
+	   buffer[203]   device reference above occupies 4 bytes
+	   buffer[204] */
 
 	if (buffer[50] >= kNumInputMonitoringModes) {
 		AudioEngine::inputMonitoringMode = InputMonitoringMode::SMART;
@@ -818,6 +873,12 @@ void readSettings() {
 		defaultUseLastClipType = buffer[177];
 	}
 
+	// Stereo split, global. Tri-state rather than a plain bool, because the default is now ON
+	// and a never-written slot reads as 0 -- a bool would force every existing Deluge to the
+	// wrong default. 0 means "never written, use the default", 1 is explicitly off, 2 is
+	// explicitly on.
+	cvSetStereoSplit(buffer[198] != 1);
+
 	if (buffer[178] >= kNumThresholdRecordingModes) {
 		defaultThresholdRecordingMode = ThresholdRecordingMode::OFF;
 	}
@@ -868,6 +929,25 @@ void readSettings() {
 		// corrupt out-of-range mode falls back.
 		screensaverMode =
 		    (buffer[196] < kNumScreensaverModes) ? static_cast<ScreensaverMode>(buffer[196]) : kDefaultScreensaverMode;
+	}
+
+	{
+		using deluge::processing::engines::USBAudioStream;
+		usbAudioReturnPair =
+		    (buffer[223] == 0 || buffer[223] > USBAudioStream::numReturnPairs() + 1) ? 1 : (uint8_t)(buffer[223] - 1);
+		usbAudioReturnLevel = (buffer[224] == 0 || buffer[224] > USBAudioStream::kReturnLevelMax + 1)
+		                          ? (uint8_t)USBAudioStream::kReturnLevelDefault
+		                          : (uint8_t)(buffer[224] - 1);
+		usbAudioCompensationMs = (buffer[225] > USBAudioStream::kCompensationMaxMs) ? 0 : buffer[225];
+		USBAudioStream::setMasterReturnPair(usbAudioReturnPair);
+		USBAudioStream::setReturnLevel(usbAudioReturnLevel);
+		// Byte 226 held Out Level on a scale 27 steps hotter. It is not converted: a value set there was found by ear
+		// against a Windows input that was quietly turning the stream down, so it would mean nothing now.
+		usbAudioOutLevel = (buffer[227] == 0 || buffer[227] > USBAudioStream::kOutLevelMax + 1)
+		                       ? (uint8_t)USBAudioStream::kOutLevelDefault
+		                       : (uint8_t)(buffer[227] - 1);
+		USBAudioStream::setCompensationMs(usbAudioCompensationMs);
+		USBAudioStream::setOutLevel(usbAudioOutLevel);
 	}
 }
 
@@ -1032,6 +1112,24 @@ void writeSettings() {
 	/* buffer[193]  \
 	   buffer[194]   device reference above occupies 4 bytes
 	   buffer[195] */
+	buffer[199] = midiEngine.globalMIDICommands[util::to_underlying(GlobalMIDICommand::DICE)].channelOrZone + 1;
+	buffer[200] = midiEngine.globalMIDICommands[util::to_underlying(GlobalMIDICommand::DICE)].noteOrCC + 1;
+	MIDIDeviceManager::writeDeviceReferenceToFlash(GlobalMIDICommand::DICE, &buffer[201]);
+	buffer[205] = midiEngine.globalMIDICommands[util::to_underlying(GlobalMIDICommand::TEMP_HOLD)].channelOrZone + 1;
+	buffer[206] = midiEngine.globalMIDICommands[util::to_underlying(GlobalMIDICommand::TEMP_HOLD)].noteOrCC + 1;
+	MIDIDeviceManager::writeDeviceReferenceToFlash(GlobalMIDICommand::TEMP_HOLD, &buffer[207]);
+
+	buffer[211] =
+	    midiEngine.globalMIDICommands[util::to_underlying(GlobalMIDICommand::MORPH_CAPTURE)].channelOrZone + 1;
+	buffer[212] = midiEngine.globalMIDICommands[util::to_underlying(GlobalMIDICommand::MORPH_CAPTURE)].noteOrCC + 1;
+	MIDIDeviceManager::writeDeviceReferenceToFlash(GlobalMIDICommand::MORPH_CAPTURE, &buffer[213]);
+
+	buffer[217] = midiEngine.globalMIDICommands[util::to_underlying(GlobalMIDICommand::LOOP_HOLD)].channelOrZone + 1;
+	buffer[218] = midiEngine.globalMIDICommands[util::to_underlying(GlobalMIDICommand::LOOP_HOLD)].noteOrCC + 1;
+	MIDIDeviceManager::writeDeviceReferenceToFlash(GlobalMIDICommand::LOOP_HOLD, &buffer[219]);
+	/* buffer[202]  \
+	   buffer[203]   device reference above occupies 4 bytes
+	   buffer[204] */
 
 	buffer[50] = util::to_underlying(AudioEngine::inputMonitoringMode);
 
@@ -1136,6 +1234,13 @@ void writeSettings() {
 
 	buffer[196] = util::to_underlying(screensaverMode);
 	buffer[197] = screensaverTimeoutMinutes;
+	buffer[223] = (uint8_t)(usbAudioReturnPair + 1);
+	buffer[224] = (uint8_t)(usbAudioReturnLevel + 1);
+	buffer[225] = usbAudioCompensationMs;
+	buffer[226] = 0;
+	buffer[227] = (uint8_t)(usbAudioOutLevel + 1);
+
+	buffer[198] = cvGetStereoSplit() ? 2 : 1;
 
 	R_SFLASH_EraseSector(0x80000 - 0x1000, SPIBSC_CH, SPIBSC_CMNCR_BSZ_SINGLE, 1, SPIBSC_OUTPUT_ADDR_24);
 	R_SFLASH_ByteProgram(0x80000 - 0x1000, buffer.data(), 256, SPIBSC_CH, SPIBSC_CMNCR_BSZ_SINGLE, SPIBSC_1BIT,

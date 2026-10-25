@@ -36,6 +36,11 @@ void GateDrum::noteOn(ModelStackWithThreeMainThings* modelStack, uint8_t velocit
 	ArpReturnInstruction instruction;
 	// Run everything by the Arp...
 	arpeggiator.noteOn(arpSettings, kNoteForDrum, velocity, &instruction, fromMIDIChannel, mpeValues);
+
+	// Note-event seam, after the arp and before the dispatch.
+	if (!runMidiFxOnNoteEvent(instruction)) {
+		return;
+	}
 	if (instruction.arpNoteOn != nullptr) {
 		for (int32_t n = 0; n < ARP_MAX_INSTRUCTION_NOTES; n++) {
 			if (instruction.arpNoteOn->noteCodeOnPostArp[n] == ARP_NOTE_NONE) {
@@ -52,6 +57,9 @@ void GateDrum::noteOff(ModelStackWithThreeMainThings* modelStack, int32_t veloci
 	ArpReturnInstruction instruction;
 	// Run everything by the Arp...
 	arpeggiator.noteOff(arpSettings, kNoteForDrum, &instruction);
+
+	// Return value deliberately ignored: a swallowed note-off is a hanging note.
+	(void)runMidiFxOnNoteEvent(instruction);
 	for (int32_t n = 0; n < ARP_MAX_INSTRUCTION_NOTES; n++) {
 		if (instruction.glideNoteCodeOffPostArp[n] == ARP_NOTE_NONE) {
 			break;

@@ -43,6 +43,7 @@
 #include "model/voice/voice_sample.h"
 #include "modulation/arpeggiator.h"
 #include "modulation/envelope.h"
+#include "modulation/midi_fx/midi_fx.h"
 #include "modulation/params/param.h"
 #include "modulation/params/param_manager.h"
 #include "modulation/params/param_set.h"
@@ -86,6 +87,11 @@ Sound::Sound() : patcher(kPatcherConfigForSound, globalSourceValues, paramFinalV
 	unpatchedParamKind_ = params::Kind::UNPATCHED_SOUND;
 
 	oscRetriggerPhase.fill(0xFFFFFFFF);
+
+	// Sear runs per Sound now; its state lives here for the Sound's whole life. See sound.h.
+	// One out-of-line call, NOT member writes here: inlined, GCC zeroed these with an 8-byte-aligned
+	// NEON store that faults on the Deluge's 4-byte-aligned allocations. See the note in sear.hpp.
+	dsp::searResetAll(searLevel, searChannels.data(), 2, searToneState.data());
 
 	modFXType_ = ModFXType::NONE;
 
@@ -137,6 +143,18 @@ void Sound::initParams(ParamManager* paramManager) {
 
 	unpatchedParams->params[params::UNPATCHED_PORTAMENTO].setCurrentValueBasicForSetup(-2147483648);
 
+	// Wisps: the same defaults as an audio clip's copy (GlobalEffectable::initParams). Density
+	// starts at menu 40 because 0 (menu 25) is its silent dead zone; Blend at minimum is dry.
+	unpatchedParams->params[params::UNPATCHED_SOUND_CLOUDS_POSITION].setCurrentValueBasicForSetup(0);
+	unpatchedParams->params[params::UNPATCHED_SOUND_CLOUDS_SIZE].setCurrentValueBasicForSetup(0);
+	unpatchedParams->params[params::UNPATCHED_SOUND_CLOUDS_PITCH].setCurrentValueBasicForSetup(0);
+	unpatchedParams->params[params::UNPATCHED_SOUND_CLOUDS_DENSITY].setCurrentValueBasicForSetup(1288490152);
+	unpatchedParams->params[params::UNPATCHED_SOUND_CLOUDS_TEXTURE].setCurrentValueBasicForSetup(0);
+	unpatchedParams->params[params::UNPATCHED_SOUND_CLOUDS_BLEND].setCurrentValueBasicForSetup(-2147483648);
+	unpatchedParams->params[params::UNPATCHED_SOUND_CLOUDS_SPREAD].setCurrentValueBasicForSetup(0);
+	unpatchedParams->params[params::UNPATCHED_SOUND_CLOUDS_FEEDBACK].setCurrentValueBasicForSetup(-2147483648);
+	unpatchedParams->params[params::UNPATCHED_SOUND_CLOUDS_REVERB].setCurrentValueBasicForSetup(-2147483648);
+
 	PatchedParamSet* patchedParams = paramManager->getPatchedParamSet();
 	patchedParams->params[params::LOCAL_VOLUME].setCurrentValueBasicForSetup(0);
 	patchedParams->params[params::LOCAL_OSC_A_VOLUME].setCurrentValueBasicForSetup(2147483647);
@@ -145,6 +163,7 @@ void Sound::initParams(ParamManager* paramManager) {
 	    getParamFromUserValue(params::GLOBAL_VOLUME_POST_FX, kDefaultSoundVolumeUserValue));
 	patchedParams->params[params::GLOBAL_VOLUME_POST_REVERB_SEND].setCurrentValueBasicForSetup(0);
 	patchedParams->params[params::LOCAL_FOLD].setCurrentValueBasicForSetup(-2147483648);
+	patchedParams->params[params::LOCAL_SEAR].setCurrentValueBasicForSetup(-2147483648);
 	patchedParams->params[params::LOCAL_HPF_RESONANCE].setCurrentValueBasicForSetup(-2147483648);
 	patchedParams->params[params::LOCAL_HPF_FREQ].setCurrentValueBasicForSetup(-2147483648);
 	patchedParams->params[params::LOCAL_HPF_MORPH].setCurrentValueBasicForSetup(-2147483648);
@@ -1280,6 +1299,11 @@ Error Sound::readTagFromFileOrError(Deserializer& reader, char const* tagName, P
 		patchedParams->readParam(reader, patchedParamsSummary, params::LOCAL_FOLD, readAutomationUpToPos);
 		reader.exitTag("waveFold");
 	}
+	else if (!strcmp(tagName, "sear")) {
+		ENSURE_PARAM_MANAGER_EXISTS
+		patchedParams->readParam(reader, patchedParamsSummary, params::LOCAL_SEAR, readAutomationUpToPos);
+		reader.exitTag("sear");
+	}
 	else if (!strcmp(tagName, "midiOutput")) {
 		reader.match('{');
 		while (*(tagName = reader.readNextTagOrAttributeName())) {
@@ -1539,6 +1563,13 @@ void Sound::noteOn(ModelStackWithThreeMainThings* modelStack, ArpeggiatorBase* a
 	// find any negative consequence of this, or need to ever remove them en masse.
 	arpeggiator->noteOn(arpSettings, noteCodePreArp, velocity, &instruction, fromMIDIChannel, mpeValues);
 
+	// Note-event seam. Runs after the arp and before the dispatch, arp on or off - the arp passes through
+	// when mode == OFF, so this fires either way with no extra plumbing. A note-mapping effect needs only
+	// this axis; it does not need the clock at all.
+	if (!runMidiFxOnNoteEvent(instruction)) {
+		return;
+	}
+
 	bool atLeastOneNoteOn = false;
 	bool atLeastOneNoteLeftPending = false;
 	if (instruction.arpNoteOn != nullptr) {
@@ -1585,20 +1616,45 @@ void Sound::noteOff(ModelStackWithThreeMainThings* modelStack, ArpeggiatorBase* 
 	ArpReturnInstruction instruction;
 	arpeggiator->noteOff(arpSettings, noteCode, &instruction);
 
+	// A swallowed note-off is a hanging note, so unlike noteOn() this deliberately ignores the
+	// return value and dispatches regardless. An effect that wants to suppress a note-off has to
+	// take responsibility for sending one later, which nothing does yet.
+	(void)runMidiFxOnNoteEvent(instruction);
+
+	// Unlike the other two callers, this one does not clear invertReversed on a note-off. Left as
+	// it was.
+	(void)dispatchArpNoteOffs(modelStackWithSoundFlags, instruction);
+
+	reassessRenderSkippingStatus(modelStackWithSoundFlags);
+}
+
+bool Sound::runMidiFxOnNoteEvent(ArpReturnInstruction& instruction) {
+	auto* midiFx = getMidiFx();
+	if (midiFx == nullptr || midiFx->isEmpty()) {
+		return true;
+	}
+	deluge::modulation::midi_fx::MidiFxContext context{.settings = getMidiFxSettings(),
+	                                                   .arpIsOn = !ArpeggiatorBase::arpIsOff(getArpSettings())};
+	return midiFx->onNoteEvent(context, instruction);
+}
+
+bool Sound::dispatchArpNoteOffs(ModelStackWithSoundFlags* modelStackWithSoundFlags, ArpReturnInstruction& instruction) {
+	bool atLeastOneOff = false;
 	for (int32_t n = 0; n < ARP_MAX_INSTRUCTION_NOTES; n++) {
 		if (instruction.glideNoteCodeOffPostArp[n] == ARP_NOTE_NONE) {
 			break;
 		}
+		atLeastOneOff = true;
 		noteOffPostArpeggiator(modelStackWithSoundFlags, instruction.glideNoteCodeOffPostArp[n]);
 	}
 	for (int32_t n = 0; n < ARP_MAX_INSTRUCTION_NOTES; n++) {
 		if (instruction.noteCodeOffPostArp[n] == ARP_NOTE_NONE) {
 			break;
 		}
+		atLeastOneOff = true;
 		noteOffPostArpeggiator(modelStackWithSoundFlags, instruction.noteCodeOffPostArp[n]);
 	}
-
-	reassessRenderSkippingStatus(modelStackWithSoundFlags);
+	return atLeastOneOff;
 }
 
 void Sound::noteOnPostArpeggiator(ModelStackWithSoundFlags* modelStack, int32_t noteCodePreArp, int32_t noteCodePostArp,
@@ -2175,8 +2231,10 @@ void Sound::reassessRenderSkippingStatus(ModelStackWithSoundFlags* modelStack, b
 
 	// A note that couldn't get a voice yet is only ever started from render(), so we must keep rendering while one is
 	// pending - otherwise it'd stay pending forever (issue #2262)
+	// Wisps keeps sounding after the notes stop (grains, repeats, tails, a frozen buffer), so a
+	// Sound with it audible keeps rendering, like one with delay repeats still going.
 	bool skippingStatusNow =
-	    (voices_.empty() && (delay.repeatsUntilAbandon == 0u) && !stutterer.isStuttering(this)
+	    (voices_.empty() && (delay.repeatsUntilAbandon == 0u) && !stutterer.isStuttering(this) && !cloudsWantsRendering()
 	     && ((arpSettings == nullptr) || !getArp()->hasAnyInputNotesActive() || arpSettings->mode == ArpMode::OFF)
 	     && !getArp()->hasPendingNotes(arpSettings));
 
@@ -2474,22 +2532,25 @@ void Sound::render(ModelStackWithThreeMainThings* modelStack, std::span<StereoSa
 	else {
 		getArp()->handlePendingNotes(arpSettings, &instruction);
 	}
-	bool atLeastOneOff = false;
-	for (int32_t n = 0; n < ARP_MAX_INSTRUCTION_NOTES; n++) {
-		if (instruction.glideNoteCodeOffPostArp[n] == ARP_NOTE_NONE) {
-			break;
-		}
-		atLeastOneOff = true;
-		noteOffPostArpeggiator(modelStackWithSoundFlags, instruction.glideNoteCodeOffPostArp[n]);
+
+	// The FX seam. This path was already arp-independent - the else branch above, and the dispatch below,
+	// both run with the arp off - so there is no gate to open here, only a call site to name. It is the
+	// pattern the MIDI/CV side was restructured to match.
+	//
+	// Non-null for SoundInstrument and, since stage 5, SoundDrum. Still null for anything else
+	// deriving from Sound.
+	if (auto* midiFx = getMidiFx(); midiFx != nullptr && !midiFx->isEmpty()) {
+		deluge::modulation::midi_fx::MidiFxContext midiFxContext{.settings = getMidiFxSettings(),
+		                                                         .arpIsOn = !ArpeggiatorBase::arpIsOff(arpSettings)};
+		midiFx->render(midiFxContext, output.size(), instruction);
+		// Note-event axis after the time axis, so note-mapping effects also see anything a
+		// time-based effect just generated. This is also the path an arpeggiating note takes to
+		// the output, so an effect wired only into noteOn() would silently do nothing with the
+		// arp on.
+		(void)midiFx->onNoteEvent(midiFxContext, instruction);
 	}
-	for (int32_t n = 0; n < ARP_MAX_INSTRUCTION_NOTES; n++) {
-		if (instruction.noteCodeOffPostArp[n] == ARP_NOTE_NONE) {
-			break;
-		}
-		atLeastOneOff = true;
-		noteOffPostArpeggiator(modelStackWithSoundFlags, instruction.noteCodeOffPostArp[n]);
-	}
-	if (atLeastOneOff) {
+
+	if (dispatchArpNoteOffs(modelStackWithSoundFlags, instruction)) {
 		invertReversed = false;
 	}
 	process_postarp_notes(modelStackWithSoundFlags, arpSettings, instruction);
@@ -2512,7 +2573,13 @@ void Sound::render(ModelStackWithThreeMainThings* modelStack, std::span<StereoSa
 	// FIXME(@stellar-aria): if we have simulataneous sounds rendering, they'll overwrite
 	// each other in this buffer. It probably should be object or thread-local
 	alignas(CACHE_LINE_SIZE) static q31_t sound_memory[SSI_TX_BUFFER_NUM_SAMPLES * 2];
-	memset(sound_memory, 0, output.size() * sizeof(q31_t) * (voice_rendered_in_stereo ? 2 : 1));
+	// With no voices, everything after this (Wisps above all, which keeps an idle Sound rendering)
+	// reads the whole stereo span, so clear all of it: a mono-voiced Sound used to clear only
+	// half, and the other half held whatever Sound last rendered into this shared buffer. Wisps
+	// on an idle synth was fed that stale audio -- Resonestor rang a chord from it with the
+	// transport stopped. With voices, the mono case clears the rest below, after rendering.
+	memset(sound_memory, 0,
+	       output.size() * sizeof(q31_t) * ((voice_rendered_in_stereo || voices_.empty()) ? 2 : 1));
 
 	std::span sound_mono{sound_memory, output.size()};
 	std::span sound_stereo{(StereoSample*)sound_memory, output.size()};
@@ -2538,6 +2605,9 @@ void Sound::render(ModelStackWithThreeMainThings* modelStack, std::span<StereoSa
 		    thisHasFilters
 		    && (paramManager->getPatchCableSet()->doesParamHaveSomethingPatchedToIt(params::LOCAL_HPF_FREQ)
 		        || (hpfFreq != std::numeric_limits<q31_t>::min()) || (hpfMorph > std::numeric_limits<q31_t>::min()));
+		// Each voice raises this to its own final LOCAL_SEAR as it renders. See sound.h.
+		searDriveThisBlock = 0;
+
 		for (auto it = voices_.begin(); it != voices_.end();) {
 			ActiveVoice& voice = *it;
 
@@ -2582,8 +2652,28 @@ void Sound::render(ModelStackWithThreeMainThings* modelStack, std::span<StereoSa
 				sample.r = multiply_32x32_rshift32(sample.r, amplitudeR) << 2;
 			}
 		}
+
+		// Sear, on the summed voices: the pedal sits after the instrument and ahead of the mod FX,
+		// delay and reverb, the way it would on a pedalboard. Always stereo here — mono renders were
+		// doubled up just above. See sound.h on where the drive comes from.
+		//
+		// Called on every block, drive or not: with the drive at 0 it still has to finish fading
+		// itself out, and fully off it returns at once. See searProcessStereo in sear.hpp.
+		{
+			// Dry copy for the on/off crossfade. Same lifetime caveat as sound_memory above.
+			static q31_t sear_dry[SSI_TX_BUFFER_NUM_SAMPLES * 2];
+			q31_t* const searStart = reinterpret_cast<q31_t*>(sound_stereo.data());
+			q31_t* const searEnd = searStart + (sound_stereo.size() * 2);
+			const q31_t searTone =
+			    dsp::searToneFromUnpatched(paramManager->getUnpatchedParamSet()->getValue(params::UNPATCHED_SEAR_TONE));
+			dsp::searProcessStereo(searStart, searEnd, searDriveThisBlock, searTone, searLevel, searChannels.data(),
+			                       &searToneState[0], &searToneState[1], sear_dry);
+		}
 	}
 	else {
+		// Nothing sounding: Sear's next block may jump straight to its setting. See searNoteSilence.
+		dsp::searNoteSilence(searLevel);
+
 		if (!delayWorkingState.doDelay) {
 			reassessRenderSkippingStatus(modelStackWithSoundFlags);
 		}
@@ -2606,6 +2696,9 @@ void Sound::render(ModelStackWithThreeMainThings* modelStack, std::span<StereoSa
 	int32_t modFXRate = paramFinalValues[params::GLOBAL_MOD_FX_RATE - params::FIRST_GLOBAL];
 
 	processSRRAndBitcrushing(sound_stereo, &postFXVolume, paramManager);
+	// Wisps: after the voices, Sear and the SRR/bitcrush, ahead of mod FX, delay and reverb --
+	// the same place it sits in an audio clip's chain. Returns at once while it is OFF.
+	processClouds(sound_stereo, paramManager->getUnpatchedParamSet(), params::kCloudsSoundParamIds);
 	processFX(sound_stereo, modFXType_, modFXRate, modFXDepth, delayWorkingState, &postFXVolume, paramManager,
 	          !voices_.empty(), reverbSendAmount >> 1);
 	processStutter(sound_stereo, paramManager);
@@ -3395,6 +3488,37 @@ Error Sound::readSourceFromFile(Deserializer& reader, int32_t s, ParamManagerFor
 			source->sampleControls.reversed = reader.readTagOrAttributeValueInt();
 			reader.exitTag("reversed");
 		}
+		else if (!strcmp(tagName, "plaitsaux")) {
+			source->plaitsAux = (reader.readTagOrAttributeValueInt() != 0);
+			reader.exitTag("plaitsaux");
+		}
+		else if (!strcmp(tagName, "plaitsengine")) {
+			int32_t value = reader.readTagOrAttributeValueInt();
+			// Clamp on read: a preset from a future firmware with more models
+			// must not index off the end of the engine table.
+			if (value < 0 || value >= kPlaitsNumEngines) {
+				value = kPlaitsDefaultEngine;
+			}
+			source->plaitsEngine = static_cast<uint8_t>(value);
+			reader.exitTag("plaitsengine");
+		}
+		else if (!strcmp(tagName, "plaitslpg")) {
+			source->plaitsLpg = (reader.readTagOrAttributeValueInt() != 0);
+			reader.exitTag("plaitslpg");
+		}
+		else if (!strcmp(tagName, "plaitsdecay")) {
+			// Absent from any preset written before the LPG existed, which is
+			// why Source's default (25, i.e. 0.5) is the value those keep --
+			// exactly the constant the adapter used to hardcode. Old presets
+			// sound identical.
+			source->plaitsDecay = static_cast<uint8_t>(std::clamp<int32_t>(reader.readTagOrAttributeValueInt(), 0, 50));
+			reader.exitTag("plaitsdecay");
+		}
+		else if (!strcmp(tagName, "plaitslpgcolour")) {
+			source->plaitsLpgColour =
+			    static_cast<uint8_t>(std::clamp<int32_t>(reader.readTagOrAttributeValueInt(), 0, 50));
+			reader.exitTag("plaitslpgcolour");
+		}
 		else if (!strcmp(tagName, "dx7patch")) {
 			DxPatch* patch = source->ensureDxPatch();
 			int len = reader.readTagOrAttributeValueHexBytes(patch->params, 156);
@@ -3741,6 +3865,28 @@ void Sound::writeSourceToFile(Serializer& writer, int32_t s, char const* tagName
 				goto justCloseTag;
 			}
 		}
+		else if (source->oscType == OscType::PLAITS && synthMode != SynthMode::FM) {
+			// Written unconditionally so a preset always records which model it
+			// meant. Harmonics/Timbre/Morph need nothing here -- they are
+			// patched params and the param set already saves them.
+			writer.writeAttribute("plaitsengine", source->plaitsEngine);
+			if (source->plaitsAux) {
+				writer.writeAttribute("plaitsaux", 1);
+			}
+			// LPG state. Written only when it differs from the default, same as
+			// plaitsaux, so a preset that never touched these stays byte-for-byte
+			// what the previous firmware wrote.
+			if (source->plaitsLpg) {
+				writer.writeAttribute("plaitslpg", 1);
+			}
+			if (source->plaitsDecay != 25) {
+				writer.writeAttribute("plaitsdecay", source->plaitsDecay);
+			}
+			if (source->plaitsLpgColour != 25) {
+				writer.writeAttribute("plaitslpgcolour", source->plaitsLpgColour);
+			}
+			goto justCloseTag;
+		}
 		else if (source->oscType == OscType::DX7
 		         && synthMode != SynthMode::FM) { // Don't combine this with the above "if" - there's an "else" below
 			if (source->dxPatch) {
@@ -3765,6 +3911,33 @@ justCloseTag:
 	}
 }
 
+// Wisps' nine params on a Sound, by the same tag names an audio clip uses.
+static bool readCloudsParamTag(Deserializer& reader, char const* tagName, UnpatchedParamSet* unpatchedParams,
+                               ParamCollectionSummary* unpatchedParamsSummary, int32_t readAutomationUpToPos) {
+	static constexpr struct {
+		char const* tag;
+		params::ParamType id;
+	} kTags[] = {
+	    {"cloudsPosition", params::UNPATCHED_SOUND_CLOUDS_POSITION},
+	    {"cloudsSize", params::UNPATCHED_SOUND_CLOUDS_SIZE},
+	    {"cloudsPitch", params::UNPATCHED_SOUND_CLOUDS_PITCH},
+	    {"cloudsDensity", params::UNPATCHED_SOUND_CLOUDS_DENSITY},
+	    {"cloudsTexture", params::UNPATCHED_SOUND_CLOUDS_TEXTURE},
+	    {"cloudsBlend", params::UNPATCHED_SOUND_CLOUDS_BLEND},
+	    {"cloudsSpread", params::UNPATCHED_SOUND_CLOUDS_SPREAD},
+	    {"cloudsFeedback", params::UNPATCHED_SOUND_CLOUDS_FEEDBACK},
+	    {"cloudsReverb", params::UNPATCHED_SOUND_CLOUDS_REVERB},
+	};
+	for (auto const& t : kTags) {
+		if (!strcmp(tagName, t.tag)) {
+			unpatchedParams->readParam(reader, unpatchedParamsSummary, t.id, readAutomationUpToPos);
+			reader.exitTag(t.tag);
+			return true;
+		}
+	}
+	return false;
+}
+
 bool Sound::readParamTagFromFile(Deserializer& reader, char const* tagName, ParamManagerForTimeline* paramManager,
                                  int32_t readAutomationUpToPos) {
 
@@ -3777,6 +3950,7 @@ bool Sound::readParamTagFromFile(Deserializer& reader, char const* tagName, Para
 		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_PORTAMENTO, readAutomationUpToPos);
 		reader.exitTag("portamento");
 	}
+	else if (readCloudsParamTag(reader, tagName, unpatchedParams, unpatchedParamsSummary, readAutomationUpToPos)) {}
 	else if (!strcmp(tagName, "compressorShape")) {
 		unpatchedParams->readParam(reader, unpatchedParamsSummary, params::UNPATCHED_SIDECHAIN_SHAPE,
 		                           readAutomationUpToPos);
@@ -3846,6 +4020,10 @@ bool Sound::readParamTagFromFile(Deserializer& reader, char const* tagName, Para
 	else if (!strcmp(tagName, "waveFold")) {
 		patchedParams->readParam(reader, patchedParamsSummary, params::LOCAL_FOLD, readAutomationUpToPos);
 		reader.exitTag("waveFold");
+	}
+	else if (!strcmp(tagName, "sear")) {
+		patchedParams->readParam(reader, patchedParamsSummary, params::LOCAL_SEAR, readAutomationUpToPos);
+		reader.exitTag("sear");
 	}
 
 	else if (!strcmp(tagName, "envelope1")) {
@@ -4059,6 +4237,25 @@ void Sound::writeParamsToFile(Serializer& writer, ParamManager* paramManager, bo
 	UnpatchedParamSet* unpatchedParams = paramManager->getUnpatchedParamSet();
 
 	unpatchedParams->writeParamAsAttribute(writer, "portamento", params::UNPATCHED_PORTAMENTO, writeAutomation);
+	// Wisps' params are written whether or not it is on, like an audio clip's: a texture dialled in
+	// and then switched off comes back as it was.
+	unpatchedParams->writeParamAsAttribute(writer, "cloudsPosition", params::UNPATCHED_SOUND_CLOUDS_POSITION,
+	                                       writeAutomation);
+	unpatchedParams->writeParamAsAttribute(writer, "cloudsSize", params::UNPATCHED_SOUND_CLOUDS_SIZE, writeAutomation);
+	unpatchedParams->writeParamAsAttribute(writer, "cloudsPitch", params::UNPATCHED_SOUND_CLOUDS_PITCH,
+	                                       writeAutomation);
+	unpatchedParams->writeParamAsAttribute(writer, "cloudsDensity", params::UNPATCHED_SOUND_CLOUDS_DENSITY,
+	                                       writeAutomation);
+	unpatchedParams->writeParamAsAttribute(writer, "cloudsTexture", params::UNPATCHED_SOUND_CLOUDS_TEXTURE,
+	                                       writeAutomation);
+	unpatchedParams->writeParamAsAttribute(writer, "cloudsBlend", params::UNPATCHED_SOUND_CLOUDS_BLEND,
+	                                       writeAutomation);
+	unpatchedParams->writeParamAsAttribute(writer, "cloudsSpread", params::UNPATCHED_SOUND_CLOUDS_SPREAD,
+	                                       writeAutomation);
+	unpatchedParams->writeParamAsAttribute(writer, "cloudsFeedback", params::UNPATCHED_SOUND_CLOUDS_FEEDBACK,
+	                                       writeAutomation);
+	unpatchedParams->writeParamAsAttribute(writer, "cloudsReverb", params::UNPATCHED_SOUND_CLOUDS_REVERB,
+	                                       writeAutomation);
 	unpatchedParams->writeParamAsAttribute(writer, "compressorShape", params::UNPATCHED_SIDECHAIN_SHAPE,
 	                                       writeAutomation);
 
@@ -4124,6 +4321,7 @@ void Sound::writeParamsToFile(Serializer& writer, ParamManager* paramManager, bo
 	patchedParams->writeParamAsAttribute(writer, "hpfMorph", params::LOCAL_HPF_MORPH, writeAutomation);
 
 	patchedParams->writeParamAsAttribute(writer, "waveFold", params::LOCAL_FOLD, writeAutomation);
+	patchedParams->writeParamAsAttribute(writer, "sear", params::LOCAL_SEAR, writeAutomation);
 
 	writer.writeOpeningTagEnd();
 
@@ -4444,6 +4642,16 @@ ModelStackWithAutoParam* Sound::getParamFromModEncoderDeeper(int32_t whichModEnc
 
 	ParamManagerForTimeline* paramManager = (ParamManagerForTimeline*)modelStack->paramManager;
 
+	// The indicator refresh calls in here with whatever mod controllable and ParamManager are active at
+	// the time, and those two do not always belong to the same Clip -- MIDI Follow holding one clip while
+	// a clip view is open on another, or the audition-pad case the caller warns about in
+	// View::setKnobIndicatorLevel(). A ParamManager that is missing, or that never had the set the knob
+	// is asking for, freezes the unit on the summary calls below (E410/E411). Answer "no param" instead,
+	// exactly as the macro-setup case does above -- the knob simply shows nothing until the two agree.
+	if (paramManager == nullptr || !paramManager->containsAnyMainParamCollections()) {
+		return modelStack->addParam(nullptr, nullptr, 0, nullptr); // "none"
+	}
+
 	int32_t modKnobMode = *getModKnobMode();
 	ModKnob* knob = &modKnobs[modKnobMode][whichModEncoder];
 
@@ -4458,6 +4666,9 @@ ModelStackWithAutoParam* Sound::getParamFromModEncoderDeeper(int32_t whichModEnc
 
 		// Patched param
 		else {
+			if (!paramManager->containsPatchedParamCollections()) {
+				return modelStack->addParam(nullptr, nullptr, 0, nullptr); // "none"
+			}
 			paramId = p;
 			summary = paramManager->getPatchedParamSetSummary();
 		}
@@ -4465,6 +4676,9 @@ ModelStackWithAutoParam* Sound::getParamFromModEncoderDeeper(int32_t whichModEnc
 
 	// Patch cable
 	else {
+		if (!paramManager->containsPatchedParamCollections()) {
+			return modelStack->addParam(nullptr, nullptr, 0, nullptr); // "none"
+		}
 		paramId = knob->paramDescriptor.data;
 		summary = paramManager->getPatchCableSetSummary();
 	}

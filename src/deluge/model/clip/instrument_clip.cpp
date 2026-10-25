@@ -30,8 +30,10 @@
 #include "memory/general_memory_allocator.h"
 #include "model/action/action_logger.h"
 #include "model/clip/clip_instance.h"
+#include "model/clock_division.h"
 #include "model/consequence/consequence_note_row_mute.h"
 #include "model/consequence/consequence_scale_add_note.h"
+#include "model/drum/drum.h"
 #include "model/drum/drum_name.h"
 #include "model/instrument/cv_instrument.h"
 #include "model/instrument/midi_instrument.h"
@@ -42,10 +44,23 @@
 #include "model/scale/preset_scales.h"
 #include "model/scale/scale_change.h"
 #include "model/scale/utils.h"
+#include "model/settings/runtime_feature_settings.h"
 #include "model/song/song.h"
+#include "model/song/track_link.h"
 #include "modulation/arpeggiator.h"
 #include "modulation/midi/midi_param.h"
 #include "modulation/midi/midi_param_collection.h"
+#include "modulation/midi_fx/chord_source.h"
+#include "modulation/midi_fx/generate.h"
+#include "modulation/midi_fx/groove.h"
+#include "modulation/midi_fx/loop_remix.h"
+#include "modulation/midi_fx/loop_remix_io.h"
+#include "util/d_string.h"
+#include "modulation/midi_fx/pitch_source.h"
+#include "modulation/midi_fx/spice.h"
+#include "modulation/midi_fx/spread.h"
+#include "modulation/midi_fx/stochastic.h"
+#include "modulation/midi_fx/strum.h"
 #include "modulation/patch/patch_cable_set.h"
 #include "processing/engines/audio_engine.h"
 #include "processing/engines/cv_engine.h"
@@ -54,6 +69,7 @@
 #include "util/const_functions.h"
 #include "util/firmware_version.h"
 #include "util/try.h"
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <new>
@@ -110,6 +126,11 @@ InstrumentClip::~InstrumentClip() {
 	// Note: it's possible that we might be currentlyRecordingLinearly if we're being destructed because of a song-swap.
 	// That's ok. Whereas, for AudioClips, it's made sure that all linear recording is stopped first
 
+	// Anything Strum still had in flight refers to this Clip by pointer. Dropping it here is what
+	// makes the tagged table safe: no entry can outlive the clip it belongs to, so nothing can be
+	// matched against a Clip address that has since been reused.
+	strumFlush();
+
 	deleteBackedUpParamManagerMIDI();
 }
 
@@ -149,6 +170,25 @@ void InstrumentClip::copyBasicsFrom(Clip const* otherClip) {
 	}
 
 	arpSettings.cloneFrom(&otherInstrumentClip->arpSettings);
+	midiFxSettings.cloneFrom(&otherInstrumentClip->midiFxSettings);
+	playFxClockShift = otherInstrumentClip->playFxClockShift;
+	playFxBeatStretch = otherInstrumentClip->playFxBeatStretch;
+	playFxDivision = otherInstrumentClip->playFxDivision;
+	strumAmount = otherInstrumentClip->strumAmount;
+	strumDirection = otherInstrumentClip->strumDirection;
+	strumContour = otherInstrumentClip->strumContour;
+	generateDensity = otherInstrumentClip->generateDensity;
+	generateSeed = otherInstrumentClip->generateSeed;
+	generateGatePercent = otherInstrumentClip->generateGatePercent;
+	generateRange = otherInstrumentClip->generateRange;
+	generateLeap = otherInstrumentClip->generateLeap;
+	spreadVelocity = otherInstrumentClip->spreadVelocity;
+	spreadGate = otherInstrumentClip->spreadGate;
+	spreadOctave = otherInstrumentClip->spreadOctave;
+	loopRemix = otherInstrumentClip->loopRemix;
+	groove = otherInstrumentClip->groove;
+	stochasticAmount = otherInstrumentClip->stochasticAmount;
+	stochasticWidth = otherInstrumentClip->stochasticWidth;
 }
 
 // Will replace the Clip in the modelStack, if success.
@@ -191,10 +231,20 @@ deleteClipAndGetOut:
 		NoteRow* noteRow = newClip->noteRows.getElement(i);
 		int32_t noteRowId = newClip->getNoteRowId(noteRow, i);
 		ModelStackWithNoteRow* modelStackWithNoteRow = modelStack->addNoteRow(noteRowId, noteRow);
-		Error error = noteRow->beenCloned(modelStackWithNoteRow, shouldFlattenReversing);
+		Error thisNoteRowError = noteRow->beenCloned(modelStackWithNoteRow, shouldFlattenReversing);
 
 		// If that fails, we have to keep going, cos otherwise some NoteRows' NoteVector will be left pointing to stuff
-		// it shouldn't be
+		// it shouldn't be.
+		// Rudement E411 fix: but do not then return NONE. A NoteRow whose beenCloned() ran out of RAM has no
+		// patched param set, and the Clip only freezes later, when it is armed. beenCloned() already did
+		// notes.init() on the failed row, which is what the comment above protects, so finish the loop.
+		if (thisNoteRowError != Error::NONE) {
+			error = thisNoteRowError;
+		}
+	}
+
+	if (error != Error::NONE) {
+		goto deleteClipAndGetOut;
 	}
 
 	if (shouldFlattenReversing && newClip->sequenceDirectionMode == SequenceDirection::REVERSE) {
@@ -381,6 +431,9 @@ void InstrumentClip::setPos(ModelStackWithTimelineCounter* modelStack, int32_t n
 	Clip::setPos(modelStack, newPos, useActualPosForParamManagers); // This will also call our own virtual expectEvent()
 
 	noteRowsNumTicksBehindClip = 0;
+	// The playhead has jumped, so a note queued against the old position has nothing to be late
+	// relative to any more.
+	strumFlush();
 
 	Clip::setPosForParamManagers(
 	    modelStack,
@@ -693,6 +746,202 @@ void InstrumentClip::pingpongOccurred(ModelStackWithTimelineCounter* modelStack)
 	}
 }
 
+deluge::modulation::midi_fx::MidiFxSettings* InstrumentClip::midiFxSettingsForRow(NoteRow* noteRow) {
+	if (output != nullptr && output->type == OutputType::KIT) {
+		if (noteRow == nullptr || noteRow->drum == nullptr) {
+			return nullptr;
+		}
+		return &noteRow->drum->midiFxSettings;
+	}
+	return &midiFxSettings;
+}
+
+namespace {
+
+/// One note of a chord, waiting for its tick.
+///
+/// `noteRow` is stored alongside `noteRowId` and is never dereferenced on its own: on the way out
+/// the id is resolved against the clip's current rows and the answer must come back as the same
+/// pointer, or the entry is dropped. Holding either one alone is the bug STRUM-FEASIBILITY.md §8.1
+/// warns about, and it fails silently in both directions - a raw pointer outlives a deleted row
+/// with the memory still mapped and holding a different note, while a raw Kit row *index* quietly
+/// starts naming a different drum the moment a row above it is deleted.
+struct StrumQueueEntry {
+	InstrumentClip* clip;
+	NoteRow* noteRow;
+	int32_t noteRowId;
+	int32_t ticksTilDue;
+	uint32_t sampleSyncLength;
+	int32_t ticksLate;
+	uint8_t velocity;
+};
+
+/// One table for the whole song rather than a queue on every InstrumentClip.
+///
+/// A per-clip queue big enough for a chord is a couple of hundred bytes on every clip whether it
+/// is strummed or not, and a song carries a lot of clips. What is actually in flight is at most a
+/// chord or two, because a strum drains within a handful of ticks. Entries are tagged with their
+/// clip, and every clip drops its own on stop, on a position jump and in its destructor - so no
+/// entry can outlive the clip it names.
+constexpr int32_t kStrumQueueSize = 32;
+StrumQueueEntry strumQueue[kStrumQueueSize];
+int32_t strumQueueCount = 0;
+
+/// Entries pulled out of the table to be sounded. Separated from the table before any of them is
+/// dispatched, so the table is in a consistent state for the whole of the sounding pass.
+StrumQueueEntry strumDue[deluge::modulation::midi_fx::strum::kMaxStrumNotes];
+
+/// Survivors of the condition pass, and their places in the sweep. Static for the same reason
+/// pendingNoteOnList above is: this runs on the audio path and the stack there is precious.
+uint8_t strumSurvivors[kMaxNumNoteOnsPending];
+uint8_t strumPlaces[kMaxNumNoteOnsPending];
+
+} // namespace
+
+bool InstrumentClip::strumQueueNote(int32_t noteRowId, PendingNoteOn const* source, int32_t ticksTilDue,
+                                    uint8_t velocity) {
+	if (strumQueueCount >= kStrumQueueSize) {
+		return false;
+	}
+	StrumQueueEntry& entry = strumQueue[strumQueueCount++];
+	entry.clip = this;
+	entry.noteRow = source->noteRow;
+	entry.noteRowId = noteRowId;
+	entry.ticksTilDue = ticksTilDue;
+	entry.sampleSyncLength = source->sampleSyncLength;
+	entry.ticksLate = source->ticksLate;
+	entry.velocity = velocity;
+	return true;
+}
+
+void InstrumentClip::strumDropQueued(int32_t noteRowId) {
+	if (strumQueueCount == 0) {
+		return;
+	}
+	int32_t kept = 0;
+	for (int32_t i = 0; i < strumQueueCount; i++) {
+		if (strumQueue[i].clip == this && strumQueue[i].noteRowId == noteRowId) {
+			continue;
+		}
+		if (kept != i) {
+			strumQueue[kept] = strumQueue[i];
+		}
+		kept++;
+	}
+	strumQueueCount = kept;
+}
+
+void InstrumentClip::strumFlush() {
+	if (strumQueueCount == 0) {
+		return;
+	}
+	int32_t kept = 0;
+	for (int32_t i = 0; i < strumQueueCount; i++) {
+		if (strumQueue[i].clip == this) {
+			// The row was marked `sequenced` when its note-on was stored, before anyone knew the
+			// note would be held back - so a row that is only waiting looks exactly like a row that
+			// is sounding, and the stop paths would send it a note-off for a note that never
+			// started. Clearing the flag here is what makes a dropped strum tail silent rather than
+			// a stray off. STRUM-FEASIBILITY.md §8.2.
+			if (NoteRow* row = strumResolveRow(strumQueue[i].noteRowId, strumQueue[i].noteRow); row != nullptr) {
+				row->sequenced = false;
+				row->strumOffset = 0;
+			}
+			continue;
+		}
+		if (kept != i) {
+			strumQueue[kept] = strumQueue[i];
+		}
+		kept++;
+	}
+	strumQueueCount = kept;
+}
+
+int32_t InstrumentClip::strumTicksTilNextDue() const {
+	int32_t soonest = -1;
+	for (int32_t i = 0; i < strumQueueCount; i++) {
+		if (strumQueue[i].clip != this) {
+			continue;
+		}
+		if (soonest < 0 || strumQueue[i].ticksTilDue < soonest) {
+			soonest = strumQueue[i].ticksTilDue;
+		}
+	}
+	return soonest;
+}
+
+void InstrumentClip::strumCountDown(int32_t numTicks) {
+	for (int32_t i = 0; i < strumQueueCount; i++) {
+		if (strumQueue[i].clip == this) {
+			strumQueue[i].ticksTilDue -= numTicks;
+		}
+	}
+}
+
+NoteRow* InstrumentClip::strumResolveRow(int32_t noteRowId, NoteRow* expected) {
+	// Deliberately not getNoteRowFromId(). That one FREEZES with E177 on a Kit index that is no
+	// longer in range - which is the exact thing that happens when a row is deleted while a strum
+	// is in flight - and on a melodic clip it will happily *create* the row it was asked for. Both
+	// are right for the sequencer's own lookups and wrong for a lookup whose correct answer may be
+	// "that row is gone".
+	NoteRow* found = nullptr;
+	if (output != nullptr && output->type == OutputType::KIT) {
+		if (noteRowId >= 0 && noteRowId < noteRows.getNumElements()) {
+			found = noteRows.getElement(noteRowId);
+		}
+	}
+	else {
+		found = getNoteRowForYNote(noteRowId);
+	}
+	// The identity check. On a Kit the id is a row *index*, so after a deletion it can name a real
+	// row that is simply the wrong one; requiring the pointer to match as well turns that from a
+	// drum hit you cannot explain into a dropped note.
+	return found == expected ? found : nullptr;
+}
+
+void InstrumentClip::strumDrainDue(ModelStackWithTimelineCounter* modelStack) {
+	if (strumQueueCount == 0) {
+		return;
+	}
+
+	int32_t dueCount = 0;
+	int32_t kept = 0;
+	for (int32_t i = 0; i < strumQueueCount; i++) {
+		const bool mine = strumQueue[i].clip == this;
+		if (mine && strumQueue[i].ticksTilDue <= 0 && dueCount < deluge::modulation::midi_fx::strum::kMaxStrumNotes) {
+			strumDue[dueCount++] = strumQueue[i];
+			continue;
+		}
+		if (kept != i) {
+			strumQueue[kept] = strumQueue[i];
+		}
+		kept++;
+	}
+	strumQueueCount = kept;
+
+	for (int32_t i = 0; i < dueCount; i++) {
+		NoteRow* noteRow = strumResolveRow(strumDue[i].noteRowId, strumDue[i].noteRow);
+		if (noteRow == nullptr) {
+			continue; // The row went away mid-strum. Nothing sounded, so there is nothing to undo.
+		}
+
+		// Rebuilt rather than stored whole: the conditions - probability, iterance, Fill - were all
+		// answered before this note was ever queued, and a queued note is by definition one that
+		// passed them. Re-asking here would give a different answer on the second roll.
+		PendingNoteOn pending;
+		pending.noteRow = noteRow;
+		pending.noteRowId = strumDue[i].noteRowId;
+		pending.sampleSyncLength = strumDue[i].sampleSyncLength;
+		pending.notePos = 0;
+		pending.ticksLate = strumDue[i].ticksLate;
+		pending.probability = kNumProbabilityValues;
+		pending.velocity = strumDue[i].velocity;
+		pending.iterance = kDefaultIteranceValue;
+		pending.fill = FillMode::OFF;
+		sendPendingNoteOn(modelStack, &pending);
+	}
+}
+
 void InstrumentClip::processCurrentPos(ModelStackWithTimelineCounter* modelStack, uint32_t ticksSinceLast) {
 
 	Clip::processCurrentPos(modelStack, ticksSinceLast);
@@ -714,6 +963,11 @@ void InstrumentClip::processCurrentPos(ModelStackWithTimelineCounter* modelStack
 		else {
 			ticksTilNextNoteRowEvent = loopLength - lastProcessedPos;
 		}
+
+		// Strum's tail, first thing. Notes held back from an earlier chord are due on their own
+		// tick, and they sound before anything starting on this one - which is what "the chord
+		// spread out" means rather than "the chord got shuffled into the next bar".
+		strumDrainDue(modelStack);
 
 		// see if it's starting or ending - might be needed for iterance
 		bool ending = not currentPlaybackMode->willClipContinuePlayingAtEnd(modelStack);
@@ -805,6 +1059,14 @@ void InstrumentClip::processCurrentPos(ModelStackWithTimelineCounter* modelStack
 skipDoingSumTo100:
 
 		// Go through each pending note-on
+		//
+		// Surviving entries are collected rather than sounded as they are found. Strum needs to
+		// know how many notes are in the chord and where each one sits in it before it can place
+		// any of them, and the chord is not known until the last condition has been answered. With
+		// Strum off the collected list is sounded in exactly the order it was built, which is the
+		// order these calls happened in before - the conditions above touch nothing that a
+		// note-on could change, so moving the sounding after them is not observable.
+		int32_t numSurvivors = 0;
 		for (int32_t i = 0; i < pendingNoteOnList.count; i++) {
 
 			bool conditionPassed;
@@ -893,9 +1155,32 @@ doNewProbability:
 					}
 				}
 
-				// probability, iterance and fill conditions have passed
+				// Spice runs last, and it only ever subtracts.
+				//
+				// A note that already failed its own probability, iteration or fill stays failed -
+				// the dice never resurrects anything the user explicitly authored a condition for.
+				// And a FILL note that got this far is exempt: Fill is itself a deliberate
+				// performance gesture, and having Spice eat the thing you just pressed a button to
+				// hear would be surprising in the bad way.
+				//
+				// This is the single funnel for every sequenced note-on - kit, synth, MIDI and CV
+				// alike - which is why suppression needs no second hook and no per-output special
+				// case. See SPICE-DICE-FEASIBILITY.md §1 and §8.
+				if (conditionPassed && pendingNoteOnList.pendingNoteOns[i].fill != FillMode::FILL) {
+					const auto* midiFx = midiFxSettingsForRow(pendingNoteOnList.pendingNoteOns[i].noteRow);
+					if (midiFx != nullptr && midiFx->enabled
+					    && midiFx->spiceAmount != deluge::modulation::midi_fx::spice::kAmountOff) {
+						if (deluge::modulation::midi_fx::spice::dropsStep(
+						        midiFx->spiceAmount, midiFx->spiceDice, pendingNoteOnList.pendingNoteOns[i].noteRowId,
+						        pendingNoteOnList.pendingNoteOns[i].notePos)) {
+							conditionPassed = false;
+						}
+					}
+				}
+
+				// probability, iterance, fill and spice conditions have passed
 				if (conditionPassed) {
-					sendPendingNoteOn(modelStack, &pendingNoteOnList.pendingNoteOns[i]);
+					strumSurvivors[numSurvivors++] = static_cast<uint8_t>(i);
 				}
 				else {
 					pendingNoteOnList.pendingNoteOns[i].noteRow->sequenced = false;
@@ -904,6 +1189,134 @@ doNewProbability:
 			else {
 				pendingNoteOnList.pendingNoteOns[i].noteRow->sequenced = false;
 			}
+		}
+
+		// --- Spread's velocity half --------------------------------------------------------
+		//
+		// Here, ahead of Strum, so that both of Strum's paths get it from one place: the unstrummed
+		// branch below sounds `pending->velocity` directly, and the strummed one copies it into the
+		// queue. Applied before Strum's contour rather than after, so the contour's tilt across the
+		// chord is still the shape it says it is, carried on velocities that have already wandered.
+		//
+		// Downstream of probability, iterance, Fill and Spice for the same reason Strum is: there is
+		// no point deciding how loud a note that is not going to sound should be.
+		//
+		// **Non-kit only.** A kit row's velocity is already randomisable through the mod matrix by
+		// patching master volume to Random; a second route to the same result would be a duplicate
+		// with different arithmetic. SPREAD-FEASIBILITY.md §11.
+		namespace spread = deluge::modulation::midi_fx::spread;
+		if (spreadVelocity != spread::kOff && output != nullptr && output->type != OutputType::KIT) {
+			for (int32_t s = 0; s < numSurvivors; s++) {
+				PendingNoteOn* pending = &pendingNoteOnList.pendingNoteOns[strumSurvivors[s]];
+				pending->velocity =
+				    spread::velocity(pending->velocity, spreadVelocity, pending->noteRowId, pending->notePos);
+			}
+		}
+
+		// --- Strum -------------------------------------------------------------------------
+		//
+		// Everything above decided WHICH notes sound. This decides WHEN, and it has to run here,
+		// downstream of probability, iterance, Fill and Spice, because the chord that gets spread
+		// must be the chord that actually plays. Computed any earlier - from the written notes, the
+		// way chord_source reads them for Harmonize - it would space notes that then get dropped
+		// and the strum would come out with holes in it. STRUM-FEASIBILITY.md §2.1.
+		//
+		// Behind the Community Features toggle and off at Amount 0, so an existing song plays back
+		// down exactly the path it always did: with `strumming` false this is one bool test and a
+		// loop that sounds the notes in the order they were found.
+		//
+		// **Nothing to strum with the arpeggiator on.** The arp takes the chord and plays it one
+		// note at a time itself, from a set of held notes it builds as the note-ons arrive - so
+		// spreading them does not spread the arp's output, it feeds the arp a chord that grows
+		// from one note to four over the first few ticks and changes the pattern it plays. That is
+		// a surprising thing to happen to a clip, so Strum stands down instead. STRUM-FEASIBILITY.md
+		// §8.6, which suspected this and asked for it to be checked rather than assumed.
+		namespace strum = deluge::modulation::midi_fx::strum;
+		const bool strumming =
+		    numSurvivors > 1 && strumAmount != strum::kAmountOff && arpSettings.mode == ArpMode::OFF
+		    && runtimeFeatureSettings.get(RuntimeFeatureSettingType::Strum) == RuntimeFeatureStateToggle::On;
+
+		if (!strumming) {
+			for (int32_t s = 0; s < numSurvivors; s++) {
+				PendingNoteOn* pending = &pendingNoteOnList.pendingNoteOns[strumSurvivors[s]];
+				// A row starting a note has no business carrying the last note's offset, however
+				// this chord is being played.
+				pending->noteRow->strumOffset = 0;
+				strumDropQueued(pending->noteRowId);
+				sendPendingNoteOn(modelStack, pending);
+			}
+		}
+		else {
+			// Sorted explicitly rather than trusting the order the rows arrived in. Row order is
+			// very likely already ascending, but Down and Random need a known order anyway, an
+			// insertion sort over a chord costs nothing, and it removes a silent dependency on how
+			// NoteRowVector happens to be keyed. On a Kit pitch is meaningless, so the order is the
+			// row order - which is what you see top to bottom on the pad grid. §5.
+			const bool isKit = output != nullptr && output->type == OutputType::KIT;
+			for (int32_t a = 1; a < numSurvivors; a++) {
+				const uint8_t moving = strumSurvivors[a];
+				const int32_t movingKey = isKit ? pendingNoteOnList.pendingNoteOns[moving].noteRowId
+				                                : pendingNoteOnList.pendingNoteOns[moving].noteRow->getNoteCode();
+				int32_t b = a - 1;
+				while (b >= 0) {
+					const PendingNoteOn& other = pendingNoteOnList.pendingNoteOns[strumSurvivors[b]];
+					const int32_t otherKey = isKit ? other.noteRowId : other.noteRow->getNoteCode();
+					if (otherKey <= movingKey) {
+						break;
+					}
+					strumSurvivors[b + 1] = strumSurvivors[b];
+					b--;
+				}
+				strumSurvivors[b + 1] = moving;
+			}
+
+			// The seed is only used by Random. Mixed with the position so that two chords landing
+			// on one tick do not get the same shuffle, and drawn from the same generator the
+			// probability code above already uses.
+			const uint32_t seed =
+			    static_cast<uint32_t>(getRandom255()) * 0x9E3779B1U ^ static_cast<uint32_t>(lastProcessedPos);
+			strum::buildOrder(static_cast<strum::Direction>(strumDirection), numSurvivors, seed, strumPlaces);
+
+			for (int32_t rank = 0; rank < numSurvivors; rank++) {
+				PendingNoteOn* pending = &pendingNoteOnList.pendingNoteOns[strumSurvivors[rank]];
+				const int32_t place = strumPlaces[rank];
+				const int32_t noteLength = static_cast<int32_t>(pending->sampleSyncLength);
+
+				// Drones are exempt, the same way Spice leaves them alone and for the same reason: a
+				// note filling its whole row takes the constant-note branch in NoteRow, which
+				// deliberately does not stop the sound. Holding its start back would move a note-on
+				// that has no matching note-off to move with it.
+				const bool drone = loopLength > 0 && noteLength >= loopLength;
+				const int32_t offset =
+				    drone ? 0 : strum::clampedOffset(strum::offsetForPlace(strumAmount, place), noteLength);
+
+				pending->velocity = strum::contouredVelocity(pending->velocity, strumContour, place, numSurvivors);
+
+				// Whatever this row had queued belongs to a chord that is over. Dropping it is what
+				// stops a chord landing on the tail of the last one from doubling it - which is the
+				// loop-wrap pile-up of §8.3, answered per row rather than per wrap so that an
+				// unrelated row's strum tail is not cut short at the same time.
+				strumDropQueued(pending->noteRowId);
+
+				if (offset <= 0 || !strumQueueNote(pending->noteRowId, pending, offset, pending->velocity)) {
+					// Either this note leads the chord, or the table is full. A note that arrives
+					// unstrummed is a far smaller fault than a note that never arrives.
+					pending->noteRow->strumOffset = 0;
+					sendPendingNoteOn(modelStack, pending);
+					continue;
+				}
+				// Latched for the note-off, which is recomputed from the written length on every
+				// pass and would otherwise end this note where an unstrummed one would. §4.
+				pending->noteRow->strumOffset = static_cast<int16_t>(offset);
+			}
+		}
+
+		// Come back for the queue. This is the whole of Strum's scheduling: the clip already owns a
+		// knob that asks the transport to revisit it sooner, and a deferred note wants exactly that
+		// and nothing else - no new timing source, no render hook, no second tick axis. §2.2.
+		if (const int32_t soonestStrum = strumTicksTilNextDue();
+		    soonestStrum >= 0 && soonestStrum < ticksTilNextNoteRowEvent) {
+			ticksTilNextNoteRowEvent = soonestStrum;
 		}
 	}
 
@@ -931,8 +1344,34 @@ void InstrumentClip::sendPendingNoteOn(ModelStackWithTimelineCounter* modelStack
 	else {
 		ModelStackWithThreeMainThings* modelStackWithThreeMainThings =
 		    modelStackWithNoteRow->addOtherTwoThings(output->toModControllable(), &paramManager);
+		// The pitch is decided here, once, and latched on the row. This is upstream of
+		// MelodicInstrument::sendNote, so the arpeggiator and the whole MIDI FX chain receive the
+		// decided note and need no changes at all - an arpeggiated harmonised track arpeggiates
+		// the harmonised notes, for free, and the same is true of a stochastic one.
+		//
+		// pitch_source runs Stochastic and then Harmonize, in that order and in one place: the
+		// wander moves the note within the song's key, and Harmonize then puts whatever degree it
+		// is handed onto a chord tone. Reversed, the wander would walk off the chord tones
+		// Harmonize had just chosen, which is the one combination that sounds broken rather than
+		// generative. See modulation/midi_fx/pitch_source.h.
+		//
+		// Spread's octave rides the same latch, and lands *after* Harmonize rather than before.
+		// Harmonize derives the pitch from the written note's scale degree, so displacing first
+		// would have that derivation throw the octave straight away; displacing after keeps the
+		// note a chord tone, because an octave of a chord tone is still a chord tone. And because
+		// the latch is what the note-off reads, the displaced note is turned off at the pitch it
+		// was turned on at - which is the whole reason the latch exists.
+		pendingNoteOn->noteRow->soundingNoteCode =
+		    static_cast<int16_t>(deluge::modulation::midi_fx::pitch_source::soundingNoteFor(
+		                             this, pendingNoteOn->noteRow, pendingNoteOn->noteRowId, pendingNoteOn->notePos)
+		                         + pendingNoteOn->noteRow->loopRemixTranspose_);
+		if (spreadOctave != deluge::modulation::midi_fx::spread::kOff) {
+			pendingNoteOn->noteRow->soundingNoteCode = static_cast<int16_t>(
+			    deluge::modulation::midi_fx::spread::octave(pendingNoteOn->noteRow->soundingNoteCode, spreadOctave,
+			                                                pendingNoteOn->noteRowId, pendingNoteOn->notePos));
+		}
 		((MelodicInstrument*)output)
-		    ->sendNote(modelStackWithThreeMainThings, true, pendingNoteOn->noteRow->getNoteCode(), mpeValues,
+		    ->sendNote(modelStackWithThreeMainThings, true, pendingNoteOn->noteRow->getSoundingNoteCode(), mpeValues,
 		               MIDI_CHANNEL_NONE, pendingNoteOn->velocity, pendingNoteOn->sampleSyncLength,
 		               pendingNoteOn->ticksLate);
 	}
@@ -1158,6 +1597,25 @@ void InstrumentClip::expectNoFurtherTicks(Song* song, bool actuallySoundChange) 
 
 	stopAllNotesPlaying(modelStack, actuallySoundChange && !currentlyRecordingLinearly); // Stop all sound
 
+	// Transport stop / clip stop. Nothing the MIDI FX chain had scheduled is going to arrive now,
+	// and anything it already sent needs releasing.
+	//
+	// Type-switch rather than dynamic_cast: the build is -fno-rtti (CMakeLists.txt:183), and this
+	// is the idiom the rest of the file already uses. A Kit is not a MelodicInstrument, so it gets
+	// its own branch - its MIDI FX state lives per-drum rather than on the Instrument.
+	if (output != nullptr) {
+		if (output->type == OutputType::SYNTH || output->type == OutputType::MIDI_OUT
+		    || output->type == OutputType::CV) {
+			((MelodicInstrument*)output)->flushMidiFx();
+		}
+		else if (output->type == OutputType::KIT) {
+			Kit* kit = (Kit*)output;
+			for (Drum* thisDrum = kit->firstDrum; thisDrum != nullptr; thisDrum = thisDrum->next) {
+				thisDrum->flushMidiFx();
+			}
+		}
+	}
+
 	ModelStackWithThreeMainThings* modelStackWithThreeMainThings =
 	    modelStack->addOtherTwoThingsButNoNoteRow(output->toModControllable(), &paramManager);
 
@@ -1196,6 +1654,11 @@ void InstrumentClip::expectNoFurtherTicks(Song* song, bool actuallySoundChange) 
 // Stops currently-playing notes by actually sending a note-off right now.
 // Check that we're allowed to make sound before you call this (nowhere does, is that bad?)
 void InstrumentClip::stopAllNotesPlaying(ModelStackWithTimelineCounter* modelStack, bool actuallySoundChange) {
+	// Before the rows are stopped, not after. A note Strum still has queued has not sounded, so it
+	// must be dropped rather than fired - and dropping it clears the `sequenced` flag that would
+	// otherwise have the loop below send a note-off for a note that was never on.
+	strumFlush();
+
 	for (int32_t i = 0; i < noteRows.getNumElements(); i++) {
 		NoteRow* thisNoteRow = noteRows.getElement(i);
 		ModelStackWithNoteRow* modelStackWithNoteRow =
@@ -2411,6 +2874,91 @@ void InstrumentClip::writeDataToFile(Serializer& writer, Song* song) {
 
 	writer.closeTag();
 
+	// Its own tag, not an attribute on <arpeggiator>. MIDI FX is arp-independent by design and
+	// the file format should not imply otherwise - and an effect set that grows would end up
+	// with a pile of midiFx* attributes sitting inside a tag they have nothing to do with.
+	writer.writeOpeningTagBeginning("midiFx");
+	midiFxSettings.writeCommonParamsToFile(writer);
+	writer.closeTag();
+
+	// Its own tag again, and for a sharper reason than the one above: these two are not MIDI FX.
+	// They act on the phrase, they are clip-wide where MIDI FX settings are per-drum on a Kit, and
+	// filing them together would make the next person reading this format believe otherwise.
+	writer.writeOpeningTagBeginning("playFx");
+	writer.writeAttribute("clockShift", playFxClockShift);
+	writer.writeAttribute("beatStretch", playFxBeatStretch);
+	writer.writeAttribute("division", playFxDivision);
+	writer.closeTag();
+
+	// Strum keeps its own tag rather than joining playFx, even though both are clip-wide. They are
+	// not the same kind of thing - Play FX moves the whole phrase against the clock, Strum changes
+	// the internal timing of one chord - and a tag that means "the clip-wide ones" would be a
+	// bucket rather than a name.
+	writer.writeOpeningTagBeginning("strum");
+	writer.writeAttribute("amount", strumAmount);
+	writer.writeAttribute("direction", strumDirection);
+	writer.writeAttribute("contour", strumContour);
+	writer.closeTag();
+
+	// Generate's settings, in their own tag for the same reason as the two above: it is a different
+	// kind of thing again. Everything else stored here changes how the written notes are played;
+	// these three say how the next generation should write them. Nothing about a song's sound
+	// depends on them - they are saved so that a part you liked can be regenerated or nudged, which
+	// is the one thing you cannot get back by ear.
+	writer.writeOpeningTagBeginning("generate");
+	writer.writeAttribute("density", generateDensity);
+	writer.writeAttribute("seed", generateSeed);
+	writer.writeAttribute("gate", generateGatePercent);
+	writer.writeAttribute("range", generateRange);
+	writer.writeAttribute("leap", generateLeap);
+	writer.closeTag();
+
+	// Spread's own tag, and the reason is the reverse of Generate's above: these three DO change how
+	// the song sounds, every bar of it, so a song that loses them plays back wrong rather than
+	// merely un-regenerable. They are not in <strum> because a strum is one chord's internal timing
+	// and this is per-note variation across the whole phrase - filing them together would say they
+	// were the same kind of thing.
+	writer.writeOpeningTagBeginning("spread");
+	writer.writeAttribute("velocity", spreadVelocity);
+	writer.writeAttribute("gate", spreadGate);
+	writer.writeAttribute("octave", spreadOctave);
+	writer.closeTag();
+
+	// Loop Remix's own tag. These DO change how the song sounds, every bar of it, so a song that
+	// lost them would play back wrong: Spread's reason. Written only when the remix is on or has been
+	// touched, so a song that never used it carries nothing new and opens in older firmware.
+	if (!loopRemix.isDefault()) {
+		writer.writeOpeningTagBeginning("loopRemix");
+		deluge::modulation::midi_fx::loop_remix::writeAttributes(writer, loopRemix);
+		writer.closeTag();
+	}
+
+	// Groove's own tag, for Loop Remix's reason, and written only when touched for the same one. A user
+	// groove carries its whole template in the string, so the song plays the same on a card that never
+	// had the .agr file on it.
+	if (!groove.isDefault()) {
+		char grooveText[400];
+		if (deluge::modulation::midi_fx::groove::encode(groove, grooveText, sizeof(grooveText)) != 0) {
+			writer.writeOpeningTagBeginning("groove");
+			writer.writeAttribute("v", grooveText);
+			writer.closeTag();
+		}
+	}
+
+	// Stochastic's own tag, for Spread's reason rather than Generate's: this changes how the song
+	// sounds every bar of it, so a song that lost it would play back wrong rather than merely
+	// un-regenerable. Not folded into <spread> even though both are per-note variation - Spread
+	// moves velocity, length and register while leaving the written pitch alone, and this one moves
+	// the pitch, which is the line between humanising a part and rewriting it.
+	//
+	// Width is saved even though it does nothing at Amount 0, because a Width you dialled in and an
+	// Amount you turned down to audition something else is a very ordinary state to save a song in.
+	// The variation index is not here: it is Spice's Dice, saved with <midiFx>.
+	writer.writeOpeningTagBeginning("stochastic");
+	writer.writeAttribute("amount", stochasticAmount);
+	writer.writeAttribute("width", stochasticWidth);
+	writer.closeTag();
+
 	if (output->type == OutputType::KIT) {
 		writer.writeOpeningTagBeginning("kitParams");
 		GlobalEffectableForClip::writeParamAttributesToFile(writer, &paramManager, true);
@@ -2687,6 +3235,188 @@ someError:
 				}
 			}
 			reader.match('}'); // End arpeggiator value object.
+		}
+
+		// A song saved before MIDI FX existed simply has no <midiFx> tag, so the settings keep
+		// their defaults - and every effect is neutral at its default. That is the only load
+		// behaviour that cannot surprise anyone.
+		else if (!strcmp(tagName, "midiFx")) {
+			reader.match('{');
+			while (*(tagName = reader.readNextTagOrAttributeName())) {
+				if (!midiFxSettings.readCommonTagsFromFile(reader, tagName)) {
+					reader.exitTag(tagName);
+				}
+			}
+			reader.match('}'); // End midiFx value object.
+			midiFxSettings.finishReading();
+		}
+
+		// Same story: no <playFx> tag means an older song, and the defaults are both "off".
+		else if (!strcmp(tagName, "playFx")) {
+			reader.match('{');
+			while (*(tagName = reader.readNextTagOrAttributeName())) {
+				if (!strcmp(tagName, "clockShift")) {
+					// Clamped on the way in as well as out. A hand-edited song should not be able
+					// to put the read position somewhere the sequencer cannot follow.
+					playFxClockShift =
+					    static_cast<int16_t>(std::clamp<int32_t>(reader.readTagOrAttributeValueInt(), -192, 192));
+				}
+				else if (!strcmp(tagName, "beatStretch")) {
+					playFxBeatStretch =
+					    static_cast<uint16_t>(std::clamp<int32_t>(reader.readTagOrAttributeValueInt(), 25, 400));
+				}
+				else if (!strcmp(tagName, "division")) {
+					playFxDivision = static_cast<int8_t>(std::clamp<int32_t>(
+					    reader.readTagOrAttributeValueInt(), -deluge::model::clock_division::kMaxDivision,
+					    deluge::model::clock_division::kMaxDivision));
+				}
+				reader.exitTag(tagName);
+			}
+			reader.match('}'); // End playFx value object.
+		}
+
+		// And the same again: no <strum> tag means a song from before Strum existed, and Amount 0
+		// is off, so it plays back untouched. Clamped on the way in as well as out - a hand-edited
+		// or truncated file should not be able to hand the sequencer a direction that is not one of
+		// the three, which would index the order table off its end.
+		else if (!strcmp(tagName, "strum")) {
+			reader.match('{');
+			while (*(tagName = reader.readNextTagOrAttributeName())) {
+				if (!strcmp(tagName, "amount")) {
+					strumAmount = static_cast<uint8_t>(std::clamp<int32_t>(
+					    reader.readTagOrAttributeValueInt(), deluge::modulation::midi_fx::strum::kAmountOff,
+					    deluge::modulation::midi_fx::strum::kAmountMax));
+				}
+				else if (!strcmp(tagName, "direction")) {
+					strumDirection = static_cast<uint8_t>(std::clamp<int32_t>(
+					    reader.readTagOrAttributeValueInt(), deluge::modulation::midi_fx::strum::kDirectionMin,
+					    deluge::modulation::midi_fx::strum::kDirectionMax));
+				}
+				else if (!strcmp(tagName, "contour")) {
+					strumContour = static_cast<int8_t>(std::clamp<int32_t>(
+					    reader.readTagOrAttributeValueInt(), deluge::modulation::midi_fx::strum::kContourMin,
+					    deluge::modulation::midi_fx::strum::kContourMax));
+				}
+				reader.exitTag(tagName);
+			}
+			reader.match('}'); // End strum value object.
+		}
+
+		// No <generate> tag means a song from before Generate existed. The header's defaults stand
+		// in that case rather than the zeros a missing attribute would read as - zero density would
+		// make the command refuse to run on every old song until the knob was found, and zero gate
+		// is out of range entirely. Clamped on the way in as well as out.
+		else if (!strcmp(tagName, "generate")) {
+			reader.match('{');
+			while (*(tagName = reader.readNextTagOrAttributeName())) {
+				if (!strcmp(tagName, "density")) {
+					generateDensity = static_cast<uint8_t>(std::clamp<int32_t>(
+					    reader.readTagOrAttributeValueInt(), deluge::modulation::midi_fx::generate::kDensityMin,
+					    deluge::modulation::midi_fx::generate::kDensityMax));
+				}
+				else if (!strcmp(tagName, "seed")) {
+					generateSeed = static_cast<uint8_t>(std::clamp<int32_t>(
+					    reader.readTagOrAttributeValueInt(), deluge::modulation::midi_fx::generate::kSeedMin,
+					    deluge::modulation::midi_fx::generate::kSeedMax));
+				}
+				else if (!strcmp(tagName, "gate")) {
+					generateGatePercent = static_cast<uint16_t>(std::clamp<int32_t>(
+					    reader.readTagOrAttributeValueInt(), deluge::modulation::midi_fx::generate::kGateMin,
+					    deluge::modulation::midi_fx::generate::kGateMax));
+				}
+				else if (!strcmp(tagName, "range")) {
+					// Missing reads as 0, which IS the default here and is also the old behaviour, so
+					// this one needs none of the fallback the three above do.
+					generateRange = static_cast<uint8_t>(std::clamp<int32_t>(
+					    reader.readTagOrAttributeValueInt(), deluge::modulation::midi_fx::generate::kRangeMin,
+					    deluge::modulation::midi_fx::generate::kRangeMax));
+				}
+				else if (!strcmp(tagName, "leap")) {
+					generateLeap = static_cast<uint8_t>(std::clamp<int32_t>(
+					    reader.readTagOrAttributeValueInt(), deluge::modulation::midi_fx::generate::kLeapMin,
+					    deluge::modulation::midi_fx::generate::kLeapMax));
+				}
+				reader.exitTag(tagName);
+			}
+			reader.match('}'); // End generate value object.
+		}
+
+		// No <spread> tag means a song from before Spread existed, and 0 is off on all three, so it
+		// plays back untouched. Clamped on the way in as well as out: a hand-edited file should not
+		// be able to hand the sequencer a velocity deviation wider than MIDI or a probability above
+		// 100, both of which the arithmetic assumes rather than checks.
+		else if (!strcmp(tagName, "spread")) {
+			reader.match('{');
+			while (*(tagName = reader.readNextTagOrAttributeName())) {
+				if (!strcmp(tagName, "velocity")) {
+					spreadVelocity = static_cast<uint8_t>(std::clamp<int32_t>(
+					    reader.readTagOrAttributeValueInt(), deluge::modulation::midi_fx::spread::kOff,
+					    deluge::modulation::midi_fx::spread::kVelocityMax));
+				}
+				else if (!strcmp(tagName, "gate")) {
+					spreadGate = static_cast<uint8_t>(std::clamp<int32_t>(
+					    reader.readTagOrAttributeValueInt(), deluge::modulation::midi_fx::spread::kOff,
+					    deluge::modulation::midi_fx::spread::kGateMax));
+				}
+				else if (!strcmp(tagName, "octave")) {
+					spreadOctave = static_cast<uint8_t>(std::clamp<int32_t>(
+					    reader.readTagOrAttributeValueInt(), deluge::modulation::midi_fx::spread::kOff,
+					    deluge::modulation::midi_fx::spread::kOctaveMax));
+				}
+				reader.exitTag(tagName);
+			}
+			reader.match('}'); // End spread value object.
+		}
+
+		// No <loopRemix> tag means a song from before Loop Remix existed, and Family 0 is off, so it
+		// plays back untouched. Clamped on the way in, as Spread is: the hash indexes by Type and
+		// Variation and the slice table by Slice, and none of them checks.
+		else if (!strcmp(tagName, "loopRemix")) {
+			reader.match('{');
+			// A tag from before Launch existed carries no live values: what it said was playing, so
+			// keep it playing.
+			while (*(tagName = reader.readNextTagOrAttributeName())) {
+				deluge::modulation::midi_fx::loop_remix::readAttribute(tagName, reader, loopRemix);
+				reader.exitTag(tagName);
+			}
+			reader.match('}'); // End loopRemix value object.
+		}
+
+		// No <groove> tag means a song from before Groove existed, and the default is off, so it plays
+		// back untouched. decode() clamps everything and leaves Groove off on anything it can't read.
+		else if (!strcmp(tagName, "groove")) {
+			reader.match('{');
+			while (*(tagName = reader.readNextTagOrAttributeName())) {
+				if (!strcmp(tagName, "v")) {
+					String text;
+					if (reader.readTagOrAttributeValueString(&text) == Error::NONE) {
+						deluge::modulation::midi_fx::groove::decode(text.get(), groove);
+					}
+				}
+				reader.exitTag(tagName);
+			}
+			reader.match('}'); // End groove value object.
+		}
+
+		// No <stochastic> tag means a song from before Stochastic existed, and Amount 0 is off, so it
+		// plays back untouched. Width is clamped to its minimum rather than to 0 on the way in: a
+		// hand-edited file offering width 0 would otherwise hand degreeOffset a span of nothing.
+		else if (!strcmp(tagName, "stochastic")) {
+			reader.match('{');
+			while (*(tagName = reader.readNextTagOrAttributeName())) {
+				if (!strcmp(tagName, "amount")) {
+					stochasticAmount = static_cast<uint8_t>(std::clamp<int32_t>(
+					    reader.readTagOrAttributeValueInt(), deluge::modulation::midi_fx::stochastic::kOff,
+					    deluge::modulation::midi_fx::stochastic::kAmountMax));
+				}
+				else if (!strcmp(tagName, "width")) {
+					stochasticWidth = static_cast<uint8_t>(std::clamp<int32_t>(
+					    reader.readTagOrAttributeValueInt(), deluge::modulation::midi_fx::stochastic::kWidthMin,
+					    deluge::modulation::midi_fx::stochastic::kWidthMax));
+				}
+				reader.exitTag(tagName);
+			}
+			reader.match('}'); // End stochastic value object.
 		}
 
 		// For song files from before V2.0, where Instruments were stored within the Clip.
@@ -4372,8 +5102,12 @@ void InstrumentClip::abortRecording() {
 // ----- PlayPositionCounter implementation -------
 
 void InstrumentClip::getActiveModControllable(ModelStackWithTimelineCounter* modelStack) {
-	if (output->type == OutputType::KIT && !affectEntire && getRootUI() != &sessionView
-	    && getRootUI() != &arrangerView) {
+	// Song view has no way to pick a drum, so track edit mode carries its own whole-kit / drum-row choice there.
+	bool useDrumRow = deluge::model::track_link::isSelected(output)
+	                      ? deluge::model::track_link::targetsDrumRow(output)
+	                      : (!affectEntire && getRootUI() != &sessionView && getRootUI() != &arrangerView);
+
+	if (output->type == OutputType::KIT && useDrumRow) {
 		Kit* kit = (Kit*)output;
 
 		if (!kit->selectedDrum || kit->selectedDrum->type != DrumType::SOUND) {
@@ -4730,6 +5464,10 @@ void InstrumentClip::incrementPos(ModelStackWithTimelineCounter* modelStack, int
 
 	ticksTilNextNoteRowEvent -= numTicks; // We're one tick closer to the next event...
 	noteRowsNumTicksBehindClip += numTicks;
+	// And so is anything Strum is holding back. Counted here rather than on its own clock so a
+	// queued note and the event the clip is already waiting for move together, whatever the
+	// transport does to the tick rate.
+	strumCountDown(numTicks);
 
 	if (ticksTilNextNoteRowEvent <= 0) {
 

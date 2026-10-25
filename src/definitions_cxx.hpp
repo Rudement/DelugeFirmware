@@ -365,12 +365,24 @@ enum class OscType : uint8_t {
 	WAVETABLE,
 	SAMPLE,
 	DX7,
+	// Mutable Instruments Plaits. Appended after DX7 and BEFORE the input
+	// types. Song files store osc types by NAME, so inserting here does not
+	// break saved songs -- but the option-list index arithmetic in
+	// gui/menu_item/osc/type.h depends on this position.
+	PLAITS,
 	INPUT_L,
 	INPUT_R,
 	INPUT_STEREO,
 };
 
 constexpr OscType kLastRingmoddableOscType = OscType::WAVETABLE;
+
+/// Mutable Instruments Plaits: 24 synthesis models, in upstream's registration
+/// order (plaits/dsp/voice.cc). Indices 0-7 are the models added in Plaits
+/// firmware 1.2; 8-23 are the original sixteen.
+constexpr uint8_t kPlaitsNumEngines = 24;
+/// Virtual Analog -- upstream index 8.
+constexpr uint8_t kPlaitsDefaultEngine = 8;
 constexpr int32_t kNumOscTypesRingModdable = util::to_underlying(kLastRingmoddableOscType) + 1;
 constexpr int32_t kNumOscTypes = util::to_underlying(OscType::INPUT_STEREO) + 1;
 
@@ -417,6 +429,27 @@ enum class ModFXType : uint8_t {
 	GRAIN, // Look below if you want to add another one
 };
 constexpr int32_t kNumModFXTypes = util::to_underlying(ModFXType::GRAIN) + 1;
+
+/// Playback modes of the vendored Mutable Instruments Clouds engine, plus an
+/// OFF that upstream has no equivalent of.
+///
+/// OFF is what makes Clouds cost nothing when nobody is using it: it is the
+/// default, and while it is selected no CloudsAdapter is constructed and none
+/// of the ~180 KB working buffer is allocated. Everything after OFF maps 1:1
+/// onto clouds::PlaybackMode in the order upstream declares it -- the mapping
+/// table in clouds_adapter.cpp static_asserts on this enum's size, so adding
+/// an entry here without extending that table is a compile error, not a
+/// silent mode mix-up.
+enum class CloudsMode : uint8_t {
+	OFF,
+	GRANULAR,
+	STRETCH,
+	DELAY,
+	SPECTRAL,
+	OLIVERB,
+	RESONESTOR,
+};
+constexpr int32_t kNumCloudsModes = util::to_underlying(CloudsMode::RESONESTOR) + 1;
 
 enum class SynthMode : uint8_t {
 	SUBTRACTIVE,
@@ -595,6 +628,19 @@ enum class GlobalMIDICommand {
 	TRANSPOSE,
 	NEXT_SONG,
 	SHIFT,
+	// Appended rather than slotted in next to a relative: these values index
+	// midiEngine.globalMIDICommands, which is saved by index, so inserting above SHIFT would
+	// silently repoint every command a user has already learned.
+	DICE,
+	// Appended after DICE for the same reason DICE was appended after SHIFT: these values
+	// index midiEngine.globalMIDICommands, which flash saves by index.
+	TEMP_HOLD,
+	// Appended after TEMP_HOLD for the same reason TEMP_HOLD was appended after DICE: these
+	// values index midiEngine.globalMIDICommands, which flash saves by index.
+	MORPH_CAPTURE,
+	// Appended after MORPH_CAPTURE for the same reason: these values index
+	// midiEngine.globalMIDICommands, which flash saves by index.
+	LOOP_HOLD,
 	LAST, // Keep as boundary
 };
 constexpr auto kNumGlobalMIDICommands = util::to_underlying(GlobalMIDICommand::LAST) + 1;
@@ -870,9 +916,50 @@ enum class AudioInputChannel {
 	OUTPUT,
 	SPECIFIC_OUTPUT,
 	OFFLINE_OUTPUT, // special output only used with offline stem exporting
+	// Audio arriving over USB. Past the internal options, because everything below them reads the codec input.
+	// In the order the USB input menu lists them.
+	USB_1,
+	USB_2,
+	USB_3,
+	USB_4,
+	USB_1_2,
+	USB_3_4,
 };
 
 constexpr AudioInputChannel AUDIO_INPUT_CHANNEL_FIRST_INTERNAL_OPTION = AudioInputChannel::MIX;
+
+/// Whether this input is one of the USB return channels or pairs.
+constexpr bool isUsbReturnInput(AudioInputChannel channel) {
+	return channel >= AudioInputChannel::USB_1 && channel <= AudioInputChannel::USB_3_4;
+}
+
+/// Which single return channel an input names, 1-based. Zero for a pair, and for anything that is not USB.
+constexpr uint32_t usbReturnMonoChannelOf(AudioInputChannel channel) {
+	switch (channel) {
+	case AudioInputChannel::USB_1:
+		return 1;
+	case AudioInputChannel::USB_2:
+		return 2;
+	case AudioInputChannel::USB_3:
+		return 3;
+	case AudioInputChannel::USB_4:
+		return 4;
+	default:
+		return 0;
+	}
+}
+
+/// Which return pair an input names, 1-based. Zero for a single channel, and for anything that is not USB.
+constexpr uint32_t usbReturnPairOf(AudioInputChannel channel) {
+	switch (channel) {
+	case AudioInputChannel::USB_1_2:
+		return 1;
+	case AudioInputChannel::USB_3_4:
+		return 2;
+	default:
+		return 0;
+	}
+}
 
 enum class ActionResult {
 	DEALT_WITH,
@@ -1077,6 +1164,7 @@ enum KeyboardLayoutType : uint8_t {
 	KeyboardLayoutTypeChordLibrary,
 	KeyboardLayoutTypeDrums,
 	KeyboardLayoutTypeNorns,
+	KeyboardLayoutTypeHarmonic,  // appended so existing saved-layout indices stay stable
 	KeyboardLayoutTypeMaxElement // Keep as boundary
 };
 

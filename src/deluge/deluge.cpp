@@ -16,6 +16,7 @@
  */
 
 #include "deluge.h"
+#include "dsp/clouds_adapter.h"
 
 #include "RZA1/sdhi/inc/sdif.h"
 #include "definitions_cxx.hpp"
@@ -57,11 +58,15 @@
 #include "model/output.h"
 #include "model/settings/runtime_feature_settings.h"
 #include "model/song/song.h"
+#include "modulation/morph.h"
+#include "modulation/temp_hold.h"
 #include "modulation/params/param_manager.h"
 #include "playback/mode/arrangement.h"
 #include "playback/mode/session.h"
 #include "processing/engines/audio_engine.h"
+#include "processing/engines/cv_audio_stream.h"
 #include "processing/engines/cv_engine.h"
+#include "processing/engines/usb_audio_stream.h"
 #include "scheduler_api.h"
 #include "storage/audio/audio_file_manager.h"
 #include "storage/flash_storage.h"
@@ -142,8 +147,10 @@ void inputRoutine() {
 	bool speakerOn = (!AudioEngine::headphonesPluggedIn && !outputPluggedInR && !outputPluggedInL);
 	setOutputState(SPEAKER_ENABLE.port, SPEAKER_ENABLE.pin, speakerOn);
 
+	// A host streaming USB audio is a listener too; without it a stereo pair carries a mono render.
 	AudioEngine::renderInStereo =
-	    (AudioEngine::headphonesPluggedIn || outputPluggedInR || AudioEngine::isAnyInternalRecordingHappening());
+	    (AudioEngine::headphonesPluggedIn || outputPluggedInR || AudioEngine::isAnyInternalRecordingHappening()
+	     || deluge::processing::engines::USBAudioStream::stemsWanted());
 
 	bool lineInNow = readInput(LINE_IN_DETECT.port, LINE_IN_DETECT.pin) != 0u;
 	if (lineInNow != AudioEngine::lineInPluggedIn) {
@@ -396,6 +403,10 @@ void setupBlankSong() {
 	setRootUILowLevel(&instrumentClipView); // Prevents crash. (Wait, I'd like to know more about what crash...)
 	preLoadedSong->ensureAtLeastOneSessionClip();
 
+	// Every morph delta points at a ParamManager in the outgoing song.
+	morph.clear();
+	morph.discardPending();
+
 	currentSong = preLoadedSong;
 	preLoadedSong = nullptr;
 
@@ -551,6 +562,7 @@ void registerTasks() {
 	AudioEngine::routine_task_id = addRepeatingTask(&(AudioEngine::routine_task), p++, 8 / 44100., 64 / 44100.,
 	                                                128 / 44100., "audio  routine", RESOURCE_NONE);
 	addRepeatingTask(MidiEngine::check_incoming_usb, p++, 0.0005, 0.0005, 0.001, "check usb midi", RESOURCE_USB);
+	addRepeatingTask(usbAudioStreamRoutine, p++, 0.0005, 0.0005, 0.001, "usb audio stream", RESOURCE_USB);
 
 	// Polling both phases catches slow B-only transitions; A-edge IRQs still capture fast movement promptly.
 	encoders::EncoderTaskID = addRepeatingTask(&(encoders::interpretEncodersTask), p++, 0.001, 0.001, 0.002,
@@ -598,6 +610,10 @@ void registerTasks() {
 	// handles animations and checks on the timers for any infrequent actions
 	// long term this should probably be made into an idle task
 	addRepeatingTask([]() { uiTimerManager.routine(); }, p++, 0.0001, 0.0007, 0.01, "ui routine", RESOURCE_NONE);
+
+	// Temp Hold tails: mod FX params gliding back after a hold. Returns at once when nothing is.
+	addRepeatingTask([]() { deluge::modulation::temp_hold::tempHold.tickGlides(); }, p++, 0.01, 0.02, 0.05,
+	                 "temp hold glide", RESOURCE_NONE);
 
 	// addRepeatingTask([]() { AudioEngine::routineWithClusterLoading(true); }, 0, 1 / 44100., 16 / 44100., 32 / 44100.,
 	// true); addRepeatingTask(&(AudioEngine::routine), 0, 16 / 44100., 64 / 44100., true);
@@ -700,6 +716,11 @@ extern "C" int32_t deluge_main(void) {
 	R_RSPI_Start(SPI_CHANNEL_CV);
 	setPinMux(SPI_CLK.port, SPI_CLK.pin, 3);   // CLK
 	setPinMux(SPI_MOSI.port, SPI_MOSI.pin, 3); // MOSI
+
+	// Here, and not later: setupOLED() a few lines below reconfigures this same channel for
+	// 8-bit display writes, and those are not the settings the converter wants back. The AUX
+	// send stream borrows the block and has to be able to return it exactly as it is now.
+	deluge::processing::engines::cvStreamRecordBootSpiConfig();
 
 	if (have_oled) {
 		// If OLED sharing SPI channel, have to manually control SSL pin.
@@ -1043,11 +1064,20 @@ void deleteOldSongBeforeLoadingNew() {
 	AudioEngine::killAllVoices(true); // Need to do this now that we're not bothering getting the old Song's
 	                                  // Instruments detached and everything on delete
 
+	// The other place a Song gets swapped out (playbackHandler's preLoadedSong path, used while
+	// playback is active) clears MidiFollow's stored clip pointers before the old Song goes away.
+	// This is the ordinary "Load Song" path -- taken whenever playback isn't active, which is most
+	// of the time -- and it was missing the same call: every Clip below is about to be destructed,
+	// so any pointer MidiFollow is still holding onto (gridSelectedClip, clipForLastNoteReceived)
+	// would dangle from here until something happens to overwrite it.
+	midiFollow.clearStoredClips();
+
 	view.activeModControllableModelStack.modControllable = nullptr;
 	view.activeModControllableModelStack.setTimelineCounter(nullptr);
 	view.activeModControllableModelStack.paramManager = nullptr;
 
 	Song* toDelete = currentSong;
+	morph.clear();
 	currentSong = nullptr;
 	void* toDealloc = dynamic_cast<void*>(toDelete);
 	toDelete->~Song();

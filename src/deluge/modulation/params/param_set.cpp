@@ -182,8 +182,8 @@ void ParamSet::setPlayPos(uint32_t pos, ModelStackWithParamCollection* modelStac
 }
 
 void ParamSet::writeParamAsAttribute(Serializer& writer, char const* name, int32_t p, bool writeAutomation,
-                                     bool onlyIfContainsSomething, int32_t* valuesForOverride) {
-	if (onlyIfContainsSomething && !params[p].containsSomething()) {
+                                     bool onlyIfContainsSomething, int32_t* valuesForOverride, int32_t neutralValue) {
+	if (onlyIfContainsSomething && !params[p].containsSomething((uint32_t)neutralValue)) {
 		return;
 	}
 
@@ -416,6 +416,18 @@ bool UnpatchedParamSet::shouldParamIndicateMiddleValue(ModelStackWithParamId con
 		       || isUIModeActive(UI_MODE_STUTTERING);
 	case params::UNPATCHED_BASS:
 	case params::UNPATCHED_TREBLE:
+	case params::UNPATCHED_LOW_MID:
+	case params::UNPATCHED_HIGH_MID:
+	// The only two bipolar Gristleizer params. Bias is centred when it leaves the LFO symmetric,
+	// Freq when the filter sits at its neutral ~800 Hz. The other seven run from a minimum and
+	// would be wrong to show a centre detent on.
+	case params::UNPATCHED_GRISTLE_BIAS:
+	case params::UNPATCHED_GRISTLE_FREQ:
+		return true;
+	}
+	// Wisps' pitch on a Sound, centred on unity like the global copy below.
+	if (modelStack->paramCollection->getParamKind() == deluge::modulation::params::Kind::UNPATCHED_SOUND
+	    && modelStack->paramId == params::UNPATCHED_SOUND_CLOUDS_PITCH) {
 		return true;
 	}
 	// Global
@@ -425,6 +437,10 @@ bool UnpatchedParamSet::shouldParamIndicateMiddleValue(ModelStackWithParamId con
 		case params::UNPATCHED_DELAY_AMOUNT:
 		case params::UNPATCHED_PAN:
 		case params::UNPATCHED_PITCH_ADJUST:
+		// Clouds' pitch shifter is centred on unity, so it wants the detent
+		// too. The other eight Clouds params are genuinely unipolar and are
+		// deliberately absent from this list.
+		case params::UNPATCHED_CLOUDS_PITCH:
 			return true;
 		}
 	}

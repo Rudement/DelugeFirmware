@@ -19,6 +19,7 @@
 #include "dsp/reverb/reverb.hpp"
 #include "gui/l10n/strings.h"
 #include "gui/menu_item/integer.h"
+#include "gui/menu_item/reverb/filter_hz.h"
 #include "processing/engines/audio_engine.h"
 #include <cmath>
 
@@ -32,9 +33,13 @@ public:
 	[[nodiscard]] int32_t getMaxValue() const override { return kMaxMenuValue; }
 	[[nodiscard]] RenderingStyle getRenderingStyle() const override { return RenderingStyle::LPF; }
 
-	bool isRelevant(ModControllableAudio* modControllable, int32_t whichThing) const override {
-		auto model = AudioEngine::reverb.getModel();
-		return (model == dsp::Reverb::Model::MUTABLE) || (model == dsp::Reverb::Model::DIGITAL);
+	bool isRelevant(ModControllableAudio* modControllable, int32_t whichThing) const override { return true; }
+
+	// Rudement: with Community Features > Rudement upgrades > Reverb Filter Hz On, read in Hz. Label only.
+	void getNotificationValue(StringBuf& value) override {
+		if (!appendReverbFilterHz(value, this->getValue(), false)) {
+			Integer::getNotificationValue(value);
+		}
 	}
 };
 } // namespace deluge::gui::menu_item::reverb

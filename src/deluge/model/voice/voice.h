@@ -19,12 +19,14 @@
 
 #include "definitions_cxx.hpp"
 #include "dsp/filter/filter_set.h"
+#include "dsp/sear.hpp"
 #include "model/voice/voice_sample_playback_guide.h"
 #include "model/voice/voice_unison_part.h"
 #include "modulation/envelope.h"
 #include "modulation/lfo.h"
 #include "modulation/params/param.h"
 #include "modulation/patch/patcher.h"
+#include "util/fixedpoint.h"
 #include <bitset>
 #include <compare>
 #include <memory>

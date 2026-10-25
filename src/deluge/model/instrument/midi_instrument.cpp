@@ -996,6 +996,25 @@ void MIDIInstrument::noteOnPostArp(int32_t noteCodePostArp, ArpNote* arpNote, in
 					}
 				}
 			}
+
+			// And the notes MIDI FX generated, which are deliberately NOT in `arpeggiator.notes`:
+			// they outlive the records there, which is the entire reason the note pool exists. A
+			// ringing echo that this survey cannot see is a member channel that looks free, so the
+			// next live note is assigned to it and inherits the echo's pitch bend.
+			//
+			// No inputCharacteristics comparison: a generated note has no input channel to group
+			// with. It counts against the channel, and that is all it should influence.
+			midiFx.notePool().forEachActive([&](const ArpNote& pooledNote) {
+				for (uint32_t i = 0; i < ARP_MAX_INSTRUCTION_NOTES; i++) {
+					if (pooledNote.outputMemberChannel[i] == MIDI_CHANNEL_NONE) {
+						break;
+					}
+					if (pooledNote.outputMemberChannel[i] >= lowestMemberChannel
+					    && pooledNote.outputMemberChannel[i] <= highestMemberChannel) {
+						numNotesPreviouslyActiveOnMemberChannel[pooledNote.outputMemberChannel[i]]++;
+					}
+				}
+			});
 		}
 
 		// See which member channel fits criteria best. The MPE spec has guidelines about what criteria to use.
@@ -1171,6 +1190,7 @@ void MIDIInstrument::noteOffPostArp(int32_t noteCodePostArp, int32_t oldOutputMe
 void MIDIInstrument::allNotesOff() {
 	int32_t channel = getChannel();
 	arpeggiator.reset();
+	flushMidiFx();
 
 	// If no MPE, nice and simple
 	if (!sendsToMPE()) {

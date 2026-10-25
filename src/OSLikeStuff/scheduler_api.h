@@ -65,6 +65,19 @@ int8_t addConditionalTask(TaskHandle task, uint8_t priority, RunCondition condit
 void ignoreForStats();
 double getAverageRunTimeForTask(TaskID id);
 double getAverageRunTimeforCurrentTask();
+/// Worst single call to this task since the last resetTaskStats(), in seconds.
+///
+/// There is deliberately no matching minimum: StatBlock::min starts at
+/// Time(std::numeric_limits<Time>::infinity()), and numeric_limits of a non-arithmetic type
+/// value-initialises, so min is pinned at zero and means nothing. The maximum starts at zero and
+/// grows, which is correct.
+double getMaxRunTimeForTask(TaskID id);
+/// Total CPU spent in this task since the last resetTaskStats(), in seconds. Divide by elapsed
+/// wall time for a duty cycle.
+double getTotalRunTimeForTask(TaskID id);
+/// Zero every task's duration statistics and totals. Used by SETTINGS > CPU > RESET so that an
+/// A/B comparison starts from a clean peak rather than from whatever happened since boot.
+void resetTaskStats(void);
 double getSystemTime();
 /// raw value of the free running system timer (DELUGE_CLOCKS_PER ticks per second), wraps roughly every 129 seconds.
 /// Unlike getSystemTime() this doesn't modify any state so it's safe to call from an ISR. Compare values using signed

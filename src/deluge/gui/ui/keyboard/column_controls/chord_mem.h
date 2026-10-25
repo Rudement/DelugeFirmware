@@ -37,6 +37,21 @@ public:
 	void writeToFile(Serializer& writer);
 	void readFromFile(Deserializer& reader);
 
+	/// Read a stored slot's notes without sounding them (for LEARN / inspection). Returns the note count.
+	uint8_t peekChord(int32_t slot, uint8_t* out, uint8_t maxOut) const {
+		if (slot < 0 || slot >= 8) {
+			return 0;
+		}
+		uint8_t n = chordMemNoteCount[slot];
+		if (n > maxOut) {
+			n = maxOut;
+		}
+		for (uint8_t i = 0; i < n; i++) {
+			out[i] = chordMem[slot][i];
+		}
+		return n;
+	}
+
 private:
 	uint8_t chordMemNoteCount[8] = {0};
 	uint8_t chordMem[8][kMaxNotesChordMem] = {0};

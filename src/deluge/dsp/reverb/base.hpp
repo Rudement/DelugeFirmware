@@ -20,8 +20,8 @@ struct Base {
 		float minFreq;
 		float maxFreq;
 		// this exp will be between 1 and 4.48, half the knob range is about 2
-		// for the HPF the result will then be from 0 to 500Hz with half the knob range at 300hz
-		// then shift to 20-520Hz as there is a low end buildup in the reverb that should always be filtered out
+		// For the HPF, keep a protective 20Hz floor and spread the useful cleanup range around 300Hz at centre.
+		// The top of the control reaches roughly 890Hz so the upper half remains clearly audible.
 		// for the LPF the result will be from 0 to 20000 with half the knob range at 5678.537hz
 		if constexpr (filtertype == FilterType::LowPass) {
 			minFreq = 0.0f;
@@ -29,7 +29,7 @@ struct Base {
 		}
 		else if constexpr (filtertype == FilterType::HighPass) {
 			minFreq = 20.0f;
-			maxFreq = 150.0f;
+			maxFreq = 250.0f;
 		}
 		float fc_hz = minFreq + (std::exp(1.5f * f) - 1) * maxFreq;
 		float fc = fc_hz / float(kSampleRate);

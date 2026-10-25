@@ -31,7 +31,10 @@
 #include "gui/ui/slicer.h"
 #include "gui/ui_timer_manager.h"
 #include "gui/views/view.h"
+#include "dsp/clouds_adapter.h"
+#include "gui/l10n/l10n.h"
 #include "hid/display/display.h"
+#include "hid/display/visualizer.h"
 #include "hid/encoder_input.h"
 #include "hid/encoders.h"
 #include "hid/led/indicator_leds.h"
@@ -48,7 +51,10 @@
 #include "modulation/envelope.h"
 #include "modulation/patch/patch_cable_set.h"
 #include "processing/audio_output.h"
+#include "processing/engines/cpu_stats.h"
+#include "processing/engines/cv_audio_stream.h"
 #include "processing/engines/cv_engine.h"
+#include "processing/engines/usb_audio_stream.h"
 #include "processing/live/live_input_buffer.h"
 #include "processing/metronome/metronome.h"
 #include "processing/sound/sound.h"
@@ -97,14 +103,13 @@ uint32_t disableInterrupts[] = {INTC_ID_SPRI0,
                                 INTC_ID_SDHI1_1};
 
 using namespace deluge;
+using namespace deluge::processing::engines;
 
 extern int32_t spareRenderingBuffer[][SSI_TX_BUFFER_NUM_SAMPLES];
 
 // #define REPORT_CPU_USAGE 1
 
 #define NUM_SAMPLES_FOR_CPU_USAGE_REPORT 32
-
-#define AUDIO_OUTPUT_GAIN_DOUBLINGS 8
 
 #ifdef REPORT_CPU_USAGE
 #define REPORT_AVERAGE_NUM 10
@@ -478,6 +483,9 @@ void cullVoices(size_t numSamples, int32_t numAudio, int32_t numVoice) {
 			logAction("hard cull");
 
 #endif
+			// SETTINGS > CPU. The forced release below is the soft one; kills and terminates are
+			// the audible ones.
+			deluge::processing::engines::cpuStatsNoteCulls(num_to_kill + num_to_terminate, 1);
 			culled = true;
 		}
 
@@ -486,6 +494,7 @@ void cullVoices(size_t numSamples, int32_t numAudio, int32_t numVoice) {
 		else if (num_samples_over_limit >= 0) {
 			if (last_num_samples_over > 0 && num_samples_over_limit >= last_num_samples_over) {
 				forceReleaseOneVoice(numSamples);
+				deluge::processing::engines::cpuStatsNoteCulls(0, 1);
 				if (numRoutines > 0) {
 					culled = true;
 					D_PRINTLN("culling in second routine");
@@ -498,6 +507,7 @@ void cullVoices(size_t numSamples, int32_t numAudio, int32_t numVoice) {
 		if (num_samples_over_limit >= 40) {
 			D_PRINTLN("under min voices but culling anyway");
 			terminateOneVoice(numSamples);
+			deluge::processing::engines::cpuStatsNoteCulls(1, 0);
 			culled = true;
 		}
 	}
@@ -514,11 +524,17 @@ void cullVoices(size_t numSamples, int32_t numAudio, int32_t numVoice) {
 // not in header (private to audio engine)
 /// set the direness level and cull any voices
 inline void setDireness(size_t numSamples) { // Consider direness and culling - before increasing the number of samples
+	// The DMA advance as it came in, before the rewrite below. This is the load signal SETTINGS >
+	// CPU reports as WIN, and it has to be grabbed here because numSamples stops meaning that
+	// three lines down.
+	const uint32_t windowForStats = (uint32_t)numSamples;
 	// number of samples it took to do the last render
 	auto dspTime = (int32_t)(getAverageRunTimeForTask(routine_task_id) * 44100.);
 	size_t nonDSP = numSamples - dspTime;
 	// we don't care about the number that were rendered in the last go, only the ones taken by the first routine call
 	numSamples = std::max<int32_t>(dspTime - (int32_t)(numRoutines * numSamples), 0);
+	// Wisps' overload guard: with two or more instances audible, a lasting overrun sheds one.
+	CloudsAdapter::noteRenderLoad((int32_t)numSamples - numSamplesLimit);
 
 	// don't smooth this - used for other decisions as well
 	if (numSamples >= direnessThreshold) {
@@ -557,6 +573,11 @@ inline void setDireness(size_t numSamples) { // Consider direness and culling - 
 			}
 		}
 	}
+
+	// SETTINGS > CPU, once per render, after cpuDireness has settled for this call. Two 64-bit
+	// adds, two compares and an increment -- see the cost note in cpu_stats.h. Deliberately at the
+	// end rather than the top so the direness recorded is this render's, not the previous one's.
+	deluge::processing::engines::cpuStatsNoteRender(windowForStats, dspTime, cpuDireness);
 }
 
 // MIDI / gate output scheduling. Gates changed while finalizing the render window are captured along with their sample
@@ -794,6 +815,11 @@ bool calledFromScheduler = false;
 
 	renderAudio(numSamples);
 
+	// Once per rendered window, with the window's real length. Must stay paired with
+	// renderAudio: the capture that feeds it happens in there, and pumping without a fresh
+	// capture emits silence while still advancing the stream.
+	cvStreamPump(numSamples);
+
 	scheduleMidiGateOutISR(numSamples);
 
 #if DO_AUDIO_LOG
@@ -841,6 +867,8 @@ void renderAudio(size_t numSamples) {
 
 	numHopsEndedThisRoutineCall = 0;
 
+	deluge::processing::engines::USBAudioStream::beginRender(numSamples);
+
 	// Render audio for song
 	if (currentSong != nullptr) {
 		currentSong->renderAudio(renderingBuffer, reverbBuffer.data(), sideChainHitPending);
@@ -855,6 +883,10 @@ void renderAudio(size_t numSamples) {
 	metronome.render(renderingBuffer);
 
 	approxRMSLevel = envelopeFollower.calcApproxRMS(renderingBuffer);
+
+	// Visualizer: copy this block into the meter's ring. Early-outs on the mode setting, so
+	// with it Off this is one compare.
+	deluge::hid::display::Visualizer::sampleAudioForDisplay(renderingBuffer, numSamples);
 
 	setMonitoringMode();
 
@@ -875,6 +907,8 @@ void renderAudioForStemExport(size_t numSamples) {
 	}
 
 	numHopsEndedThisRoutineCall = 0;
+
+	deluge::processing::engines::USBAudioStream::beginRender(numSamples);
 
 	// Render audio for song
 	if (currentSong != nullptr) {
@@ -1291,6 +1325,9 @@ void routine() {
 	}
 	audioRoutineLocked = false;
 	routineBeenCalled = true;
+
+	// A card load runs this task by hand and starves every other one, including the USB stream's own.
+	deluge::processing::engines::USBAudioStream::service();
 }
 
 int32_t getNumSamplesLeftToOutputFromPreviousRender() {
@@ -1300,11 +1337,19 @@ int32_t getNumSamplesLeftToOutputFromPreviousRender() {
 // Returns whether we got to the end
 bool doSomeOutputting() {
 
+	// The CV pump does not belong here. This function runs up to three times per rendered
+	// window (see the while loop in routine()), fed "samples still waiting to be output"
+	// rather than "samples just rendered" -- pumping on a second pass would stream silence
+	// into the ring and still advance the write pointer, feeding the rate loop frames that
+	// carried nothing. The pump runs exactly once per render, from routine_(), paired with
+	// the capture inside Song::renderAudio (before master volume and master FX).
+
 	// Copy to actual output buffer, and apply heaps of gain too, with clipping
 	int32_t numSamplesOutputted = 0;
 
 	std::span<StereoSample> outputBufferForResampling{reinterpret_cast<StereoSample*>(spareRenderingBuffer), 128 * 2};
 	StereoSample* __restrict__ renderingBufferOutputPosNow = renderingBufferOutputPos;
+	const uint32_t renderOffsetAtStart = (uint32_t)(renderingBufferOutputPosNow - renderingMemory.begin());
 	int32_t* __restrict__ i2sTXBufferPosNow = (int32_t*)i2sTXBufferPos;
 	int32_t* __restrict__ inputReadPos = (int32_t*)i2sRXBufferPos;
 
@@ -1387,6 +1432,8 @@ bool doSomeOutputting() {
 
 	if (numSamplesOutputted) {
 
+		deluge::processing::engines::USBAudioStream::feedMix(numSamplesOutputted, renderOffsetAtStart);
+
 		i2sRXBufferPos += (numSamplesOutputted << (NUM_MONO_INPUT_CHANNELS_MAGNITUDE + 2));
 		if (i2sRXBufferPos >= (uint32_t)getRxBufferEnd()) {
 			i2sRXBufferPos -= (SSI_RX_BUFFER_NUM_SAMPLES << (NUM_MONO_INPUT_CHANNELS_MAGNITUDE + 2));
@@ -1402,6 +1449,25 @@ bool doSomeOutputting() {
 			// Recording final output
 			if (recorder->mode == AudioInputChannel::OUTPUT) {
 				recorder->feedAudio(outputBufferForResampling.first(numSamplesOutputted));
+			}
+
+			// Recording a USB input: the frames the output pass just consumed, so the file matches what was heard.
+			else if (isUsbReturnInput(recorder->mode)) {
+				const uint32_t monoChannel = usbReturnMonoChannelOf(recorder->mode);
+				const uint32_t chL =
+				    (monoChannel != 0) ? (monoChannel - 1) : ((usbReturnPairOf(recorder->mode) - 1) * 2);
+				const uint32_t chR = (monoChannel != 0) ? chL : (chL + 1);
+				StereoSample chunk[64];
+				const uint32_t owed = deluge::processing::engines::USBAudioStream::consumedReturnFrames();
+				for (uint32_t at = 0; at < owed;) {
+					const uint32_t got = deluge::processing::engines::USBAudioStream::readConsumedReturn(
+					    chL, chR, chunk, at, std::size(chunk));
+					if (got == 0) {
+						break;
+					}
+					recorder->feedAudio({chunk, got});
+					at += got;
+				}
 			}
 
 			// Recording from an input source
@@ -1608,6 +1674,7 @@ void stopAnyPreviewing() {
 void getReverbParamsFromSong(Song* song) {
 	reverb.setModel(song->model);
 	reverb.setRoomSize(song->reverbRoomSize);
+	reverb.setHPF(song->reverbHPF);
 	reverb.setLPF(song->reverbLPF);
 	reverb.setDamping(song->reverbDamp);
 	reverb.setWidth(song->reverbWidth);
@@ -1725,6 +1792,12 @@ void slowRoutine() {
 	if (sdRoutineLock) {
 		// can happen if the SD routine is yielding
 		return;
+	}
+	// A Wisps instance the overload guard shed (see CloudsAdapter::noteRenderLoad) has ramped to
+	// dry; switch it properly OFF, which frees its buffer, and say why.
+	if (void* owner = CloudsAdapter::takeShedOwner()) {
+		static_cast<ModControllableAudio*>(owner)->setCloudsMode(CloudsMode::OFF);
+		display->displayPopup(deluge::l10n::get(deluge::l10n::String::STRING_FOR_CLOUDS_OVERLOAD_OFF));
 	}
 	// The RX buffer is much bigger than the TX, and we get our timing from the TX buffer's sending.
 	// However, if there's an audio glitch, and also at start-up, it's possible we might have missed an entire cycle
