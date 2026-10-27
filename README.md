@@ -39,6 +39,7 @@ If you enjoy this firmware, you can support its development on [Patreon](https:/
 
 ## Credits
 
+- **Rudement**: created and maintains this firmware, its features and the manual
 - **Synthstrom Audible** and the Deluge community developers, for the open-source firmware this is built on
 - **Émilie Gillet / Mutable Instruments**: Plaits and Clouds DSP, MIT licence (see `src/deluge/dsp/plaits/` and `src/deluge/dsp/clouds/`)
 - **sticknobills**: USB Audio, adapted for this firmware ([original](https://github.com/sticknobills/DelugeFirmware))
