@@ -2724,6 +2724,32 @@ gotValidNoteIndex:
 
 					newTicksTil =
 					    nextNote->length; // Want this even if we're "skipping" playing the note (why exactly?)
+
+					// Spice and Spread can end this note before its written length. The note-off for
+					// them is worked out in the "note is playing" branch above, but that branch only
+					// runs when this row next wakes - and waking at the written length meant the
+					// shortened end had already gone by, so the note always ran its full length and
+					// both gate controls shortened nothing. Wake at the shortened end instead. Waking
+					// early is always safe: that branch recomputes the real note-off (Strum's offset,
+					// Spread's clamp and all) and goes back to sleep until it arrives. Lengthening
+					// needs nothing here - the written-length wake is already before it.
+					if (!nextNote->isDrone(effectiveLength)) {
+						int32_t gated = nextNote->length;
+						const auto* midiFx = clip->midiFxSettingsForRow(this);
+						if (midiFx != nullptr && midiFx->enabled
+						    && midiFx->spiceAmount != deluge::modulation::midi_fx::spice::kAmountOff) {
+							gated = deluge::modulation::midi_fx::spice::gateLength(
+							    gated, midiFx->spiceAmount, midiFx->spiceDice, modelStack->noteRowId, nextNote->pos);
+						}
+						if (clip->spreadGate != deluge::modulation::midi_fx::spread::kOff && drum == nullptr) {
+							gated = deluge::modulation::midi_fx::spread::gateLength(gated, clip->spreadGate,
+							                                                         modelStack->noteRowId,
+							                                                         nextNote->pos);
+						}
+						if (gated < newTicksTil) {
+							newTicksTil = gated < 1 ? 1 : gated;
+						}
+					}
 				}
 
 				ticksTilNextNoteEvent = newTicksTil;
