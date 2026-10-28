@@ -102,7 +102,6 @@ bool SampleBrowser::opened() {
 	qwertyAlwaysVisible = false;
 
 	favouritesManager.setCategory("SAMPLES");
-	favouritesChanged();
 	actionLogger.deleteAllLogs();
 
 	allowedFileExtensions = allowedFileExtensionsAudio;
@@ -112,6 +111,12 @@ bool SampleBrowser::opened() {
 	qwertyCurrentlyDrawnOnscreen = false;
 
 	currentlyShowingSamplePreview = false;
+
+	// Clear the previous overlay before drawing browser content, with browser visibility already reset.
+	getRootUI()->renderMainPads(0xFFFFFFFF, PadLEDs::image, PadLEDs::occupancyMask);
+	PadLEDs::reassessGreyout(true);
+	PadLEDs::sendOutMainPadColours();
+	favouritesChanged();
 
 	autoLoadEnabled = false;
 
@@ -1159,8 +1164,13 @@ doLoadAsSample:
 		}
 
 		uiNeedsRendering(&audioClipView);
+		display->removeWorkingAnimation();
 	}
-	display->removeWorkingAnimation();
+	else {
+		// Staying in the browser (auto-load), so nothing redraws over the animation. On 7SEG only
+		// removeLoadingAnimation() pops it, revealing the filename beneath - removeWorkingAnimation() is a no-op there.
+		display->removeLoadingAnimation();
+	}
 	return true;
 }
 

@@ -674,6 +674,8 @@ PLACE_SDRAM_DATA Language english{
         {STRING_FOR_CPU_HARD_CULLS, "Hard culls"},
         {STRING_FOR_CPU_RENDERS, "Renders"},
         {STRING_FOR_CPU_RESET, "Reset counters"},
+        {STRING_FOR_SHORTCUT_OVERLAY_MENU_ONLY, "On - Menu only"},
+        {STRING_FOR_SHORTCUT_OVERLAY_MENU_AND_CLIP, "On - Menu + Clip"},
         {STRING_FOR_TRACK_STILL_HAS_CLIPS_IN_SESSION, "Track still has clips in session"},
         {STRING_FOR_DELETE_ALL_TRACKS_CLIPS_FIRST, "Delete all track's clips first"},
         {STRING_FOR_CANT_DELETE_FINAL_CLIP, "Can't delete final Clip"},

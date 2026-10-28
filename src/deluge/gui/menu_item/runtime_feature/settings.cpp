@@ -124,7 +124,7 @@ OledOnlySettingToggle menuHorizontalMenus(RuntimeFeatureSettingType::HorizontalM
 SettingToggle menuTrimFromStartOfAudioClip(RuntimeFeatureSettingType::TrimFromStartOfAudioClip);
 SettingToggle menuShowBatteryLevel(RuntimeFeatureSettingType::ShowBatteryLevel);
 RoundedCornersSettingToggle menuRoundedCorners(RuntimeFeatureSettingType::RoundedCorners);
-SettingToggle menuShortcutOverlay(RuntimeFeatureSettingType::ShortcutOverlay);
+Setting menuShortcutOverlay(RuntimeFeatureSettingType::ShortcutOverlay);
 SettingToggle menuKitSplit(RuntimeFeatureSettingType::KitSplit);
 SettingToggle menuFourBandEq(RuntimeFeatureSettingType::FourBandEq);
 SettingToggle menuEnablePlaitsEngine(RuntimeFeatureSettingType::EnablePlaitsEngine);

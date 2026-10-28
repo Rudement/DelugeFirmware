@@ -1351,8 +1351,6 @@ weAreInArrangementEditorOrInClipInstance:
 	GlobalEffectableForClip::writeParamTagsToFile(writer, &paramManager, true, valuesForOverride);
 	writer.writeClosingTag("songParams");
 
-	performanceView.writeSettingsToFile(writer);
-
 	writer.writeArrayStart("instruments");
 	for (Output* thisOutput = firstOutput; thisOutput; thisOutput = thisOutput->next) {
 		thisOutput->writeToFile(nullptr, this);
@@ -2174,10 +2172,6 @@ loadOutput:
 				reader.exitTag("songParams", true);
 			}
 
-			else if (!strcmp(tagName, "performanceView")) {
-				performanceView.readSettingsFromFile(reader);
-			}
-
 			else if (!strcmp(tagName, "tracks") || !strcmp(tagName, "sessionClips")) {
 				Error error = readClipsFromFile(reader, &sessionClips);
 				if (error != Error::NONE) {
@@ -2360,7 +2354,10 @@ skipInstance:
 		if (thisOutput->type == OutputType::AUDIO) {
 			auto ao = (AudioOutput*)thisOutput;
 			if (ao->inputChannel == AudioInputChannel::SPECIFIC_OUTPUT) {
-				ao->setOutputRecordingFrom(getOutputFromIndex(ao->outputRecordingFromIndex));
+				// getOutputFromIndex() falls back to the first output, so don't let a missing or bad index land there
+				int32_t index = ao->outputRecordingFromIndex;
+				ao->setOutputRecordingFrom((index >= 0 && index < getNumOutputs()) ? getOutputFromIndex(index)
+				                                                                   : nullptr);
 			}
 		}
 		// If saved before V2.1, set sample-based synth instruments to linear interpolation, cos that's how it was
@@ -3702,8 +3699,6 @@ void Song::replaceInstrument(Instrument* oldOutput, Instrument* newOutput, bool 
 		}
 	}
 
-	Output* outputRecordingOldOutput = oldOutput->getOutputRecordingThis();
-
 	outputClipInstanceListIsCurrentlyInvalid = true;
 
 	// Tell all the Clips to change their Instrument.
@@ -3775,14 +3770,13 @@ traverseClips:
 	newOutput->armedForRecording = oldOutput->armedForRecording;
 	oldOutput->armedForRecording = false;
 
+	retargetRecordingFromReferences(oldOutput, newOutput);
+
 	// Properly do away with the oldInstrument
 	deleteOrAddToHibernationListOutput(oldOutput);
 
 	// Put the newInstrument into the master list
 	*prevPointer = newOutput;
-	if (outputRecordingOldOutput) {
-		((AudioOutput*)outputRecordingOldOutput)->setOutputRecordingFrom(newOutput);
-	}
 	AudioEngine::mustUpdateReverbParamsBeforeNextRender = true;
 }
 
@@ -3796,6 +3790,9 @@ void Song::deleteOrAddToHibernationListOutput(Output* output) {
 
 	// Otherwise, hibernate it
 	else {
+		// Hibernated instruments stay allocated but leave the active output list, so audio tracks must stop targeting
+		// them (they'd be saved as the wrong track).
+		clearRecordingFromReferencesTo(output);
 		addInstrumentToHibernationList((Instrument*)output);
 	}
 }
@@ -3826,6 +3823,16 @@ void Song::clearRecordingFromReferencesTo(Output* output) {
 	for (Output* other = firstOutput; other; other = other->next) {
 		if (other != output && other->getOutputRecordingFrom() == output) {
 			other->clearRecordingFrom();
+		}
+	}
+}
+
+// When an output is replaced (preset change, output type change), every track recording from it follows to the new one,
+// not just the one monitoring it. Otherwise the rest are left on an output that's about to be deleted or hibernated.
+void Song::retargetRecordingFromReferences(Output* oldOutput, Output* newOutput) {
+	for (Output* other = firstOutput; other; other = other->next) {
+		if (other != oldOutput && other->type == OutputType::AUDIO && other->getOutputRecordingFrom() == oldOutput) {
+			static_cast<AudioOutput*>(other)->setOutputRecordingFrom(newOutput);
 		}
 	}
 }
@@ -5517,6 +5524,8 @@ void Song::replaceOutputLowLevel(Output* newOutput, Output* oldOutput) {
 	newOutput->armedForRecording = oldOutput->armedForRecording;
 	oldOutput->armedForRecording = false;
 
+	retargetRecordingFromReferences(oldOutput, newOutput);
+
 	// Properly do away with the oldInstrument
 	deleteOrAddToHibernationListOutput(oldOutput);
 
@@ -5790,8 +5799,8 @@ Clip* Song::createPendingNextOverdubBelowClip(Clip* clip, int32_t clipIndex, Ove
 	if (anyClipsSoloing) {
 		return nullptr;
 	}
-	// if we're in rows or the clip can't support in place overdub then use the traditional deluge cloning looper
-	if (sessionLayout == SessionLayoutType::SessionLayoutTypeRows || clip->shouldCloneForOverdubs()) {
+	// Use the traditional cloning looper only for clips that don't support overdubbing in place.
+	if (clip->shouldCloneForOverdubs()) {
 		char modelStackMemory[MODEL_STACK_MAX_SIZE];
 		ModelStack* modelStack = setupModelStackWithSong(modelStackMemory, this);
 

@@ -57,6 +57,8 @@ enum RuntimeFeatureStateVisualizer : uint32_t {
 	VisualizerPulseGrid = 10,
 	VisualizerMidiPianoRoll = 11,
 };
+// Keep the former On value as MenuOnly to preserve existing settings.
+enum class RuntimeFeatureStateShortcutOverlay : uint32_t { Off = 0, MenuOnly = 1, MenuAndClip = 2 };
 
 /// Every setting needs to be declared in here
 enum RuntimeFeatureSettingType : uint32_t {

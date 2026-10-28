@@ -1,7 +1,7 @@
 # Rudement Firmware for the Synthstrom Deluge
 
 Rudement is a fork of the [Deluge Community Firmware](https://github.com/SynthstromAudible/DelugeFirmware),
-built on community release **1.3 RC2**. It adds new instruments, effects, MIDI tools and live-performance
+built on community release **1.3 RC3**. It adds new instruments, effects, MIDI tools and live-performance
 features. Almost every addition has its own On/Off switch under
 `SETTINGS > COMMUNITY FEATURES > Rudement upgrades`, so you can turn on only what you want.
 
